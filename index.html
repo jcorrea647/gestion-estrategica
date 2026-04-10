@@ -851,7 +851,7 @@ function renderSeguimiento() {
     html+='<div class="rb-actions">';
     html+='<button class="btn-reunion" onclick="abrirEditarReunion()">Editar reunion</button>';
     html+='<button class="btn-reunion gold" onclick="generarPDFReunion()">Generar informe PDF</button>';
-    html+='<button class="btn-reunion" onclick="abrirEnviarReunion()">Enviar reunion</button>';
+    html+='<button class="btn-reunion" onclick="abrirEnviarReunion()">Cerrar y enviar reunión</button>';
     html+='</div></div>';
   }
   DB.areas.forEach(area=>{
@@ -1800,23 +1800,16 @@ function renderVerReuniones() {
   html += '<div id="iaRespuesta" style="margin-top:12px;display:none"></div>';
   html += '</div>';
 
-  // LISTA DE REUNIONES
-  html += '<div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:start">';
-
-  // Columna izquierda: lista compacta con ícono
-  html += '<div class="card" style="padding:8px">';
-  html += '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px 8px 6px">Reuniones</div>';
+  // LISTA DE REUNIONES — desplegable
+  html += '<div style="display:grid;grid-template-columns:1fr;gap:16px;align-items:start">';
+  html += '<div class="card" style="padding:16px;margin-bottom:0">';
+  html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Seleccionar reunión</div>';
+  html += '<select class="form-select" onchange="window._reunionSeleccionada=this.value;renderCurrentPanel()" style="font-size:13px">';
+  html += '<option value="">— Elige una reunión —</option>';
   reuniones.forEach(function(r){
-    const activa = r.id === selId;
-    const mesesLabel = (r.meses_evaluacion||[]).map(m=>fmtMes(m,true)).join(', ');
-    html += '<div onclick="window._reunionSeleccionada=\''+r.id+'\';renderCurrentPanel()" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;background:'+(activa?'#E8F0EB':'transparent')+';margin-bottom:2px;transition:background .15s" title="'+r.titulo+'">';
-    html += '<div style="width:32px;height:32px;border-radius:8px;background:'+(activa?'var(--accent)':'var(--surface2)')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;border:1px solid '+(activa?'var(--accent)':'var(--border)')+'">📋</div>';
-    html += '<div style="min-width:0">';
-    html += '<div style="font-size:12px;font-weight:'+(activa?'600':'400')+';color:'+(activa?'var(--accent)':'var(--text)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+r.titulo+'</div>';
-    html += '<div style="font-size:10px;color:var(--muted)">'+r.fecha+(mesesLabel?' · '+mesesLabel:'')+'</div>';
-    html += '</div></div>';
+    html += '<option value="'+r.id+'"'+(r.id===selId?' selected':'')+'>'+r.titulo+' — '+r.fecha+'</option>';
   });
-  html += '</div>';
+  html += '</select></div>';
 
   // Columna derecha: detalle de la reunión seleccionada
   html += '<div>';
@@ -2114,6 +2107,11 @@ async function guardarReunion() {
   const titulo=document.getElementById('r-titulo')&&document.getElementById('r-titulo').value.trim();
   const fecha=document.getElementById('r-fecha')&&document.getElementById('r-fecha').value;
   if(!titulo||!fecha){showToast('Completa titulo y fecha');return;}
+  // Verificar título duplicado (solo al crear, no al editar)
+  if(!window._editReunionId){
+    const duplicado = DB.reuniones.find(function(r){ return r.titulo.trim().toLowerCase()===titulo.toLowerCase(); });
+    if(duplicado){ showToast('⚠️ Ya existe una reunión con ese título'); return; }
+  }
   const consultor=document.getElementById('r-consultor')&&document.getElementById('r-consultor').value.trim();
   const correoC=document.getElementById('r-correo-cons')&&document.getElementById('r-correo-cons').value.trim();
   const comentarios=document.getElementById('r-comentarios')&&document.getElementById('r-comentarios').value.trim();
