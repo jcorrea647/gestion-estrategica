@@ -194,9 +194,36 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 .loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:768px){.app-shell{grid-template-columns:1fr}.sidebar{display:none}.colegios-grid{grid-template-columns:1fr}}
+@media(max-width:768px){
+  .app-shell{grid-template-columns:1fr;grid-template-rows:56px 1fr}
+  .topbar{padding:0 12px;gap:6px}
+  .topbar .logo{font-size:14px}
+  .topbar .colegio-name{display:none}
+  .topbar .rbd-badge{display:none}
+  #topUserName{display:none}
+  .logout-btn{padding:4px 8px;font-size:11px}
+  .sidebar{display:none;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:500;background:var(--surface);border-right:none;border-top:1px solid var(--border);overflow-y:auto;padding:12px 0}
+  .sidebar.mobile-open{display:block}
+  .main{overflow-x:hidden;padding:12px}
+  .card{padding:14px}
+  .page-title{font-size:20px}
+  .colegios-grid{grid-template-columns:1fr}
+  .multi-content{padding:16px}
+  .hamburger-btn{display:flex}
+  .accion-table{font-size:11px}
+  .accion-table th,.accion-table td{padding:6px 4px}
+  .pct-input{width:52px}
+  .page-header>div{flex-direction:column;align-items:flex-start}
+  .export-group{flex-wrap:wrap;gap:4px}
+  .filter-bar{flex-wrap:wrap;gap:8px}
+  .informe-card{padding:14px}
+  .chart-wrap{height:160px}
+}
 
-.reunion-banner{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border-radius:var(--r);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow)}
+.hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px}
+.hamburger-btn span{display:block;width:20px;height:2px;background:rgba(255,255,255,.8);border-radius:2px;transition:all .2s}
+.mobile-overlay{display:none;position:fixed;inset:0;top:56px;background:rgba(0,0,0,.4);z-index:499}
+.mobile-overlay.show{display:block}background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border-radius:var(--r);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow)}
 .rb-title{font-family:'DM Serif Display',serif;color:#fff;font-size:16px;margin-bottom:2px}
 .rb-meta{color:rgba(255,255,255,.7);font-size:12px}
 .rb-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -240,6 +267,9 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 <div id="screenColegio" class="screen">
   <div class="app-shell">
     <header class="topbar">
+      <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileMenu()">
+        <span></span><span></span><span></span>
+      </button>
       <button class="back-btn" id="backBtn" onclick="volverMulti()" style="display:none">Colegios</button>
       <div class="logo">Gestión Estratégica</div>
       <span class="colegio-name" id="topColegio"></span>
@@ -251,6 +281,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
       <button class="logout-btn" style="margin-left:6px" onclick="doLogout()">Salir</button>
     </header>
     <nav class="sidebar" id="sidebarNav"></nav>
+    <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileMenu()"></div>
     <main class="main" id="mainContent"></main>
   </div>
 </div>
@@ -363,6 +394,19 @@ async function guardarCambioClave() {
 
   closeModal();
   showToast('✅ Contraseña actualizada correctamente');
+}
+
+function toggleMobileMenu() {
+  const sidebar = document.getElementById('sidebarNav');
+  const overlay = document.getElementById('mobileOverlay');
+  const isOpen  = sidebar.classList.contains('mobile-open');
+  sidebar.classList.toggle('mobile-open', !isOpen);
+  overlay.classList.toggle('show', !isOpen);
+}
+
+function closeMobileMenu() {
+  document.getElementById('sidebarNav')?.classList.remove('mobile-open');
+  document.getElementById('mobileOverlay')?.classList.remove('show');
 }
 
 function doLogout() {
@@ -728,6 +772,7 @@ function acMatchFilter(a) { if(filterCargo&&!getResps(a.id).some(r=>r.cargo_id==
 // PANELS
 function showPanel(id) {
   currentPanel = id;
+  closeMobileMenu();
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   const el = document.getElementById('nav-'+id); if(el) el.classList.add('active');
   renderCurrentPanel();
@@ -1185,6 +1230,7 @@ function renderAdminEstructura() {
   html += '<button class="btn btn-sm btn-export" onclick="exportarEstructura(\'pdf\')" title="Descargar PDF">PDF</button>';
   html += '<button class="btn btn-sm btn-export" style="background:#1E6B3C" onclick="exportarEstructura(\'excel\')" title="Descargar Excel">Excel</button>';
   html += '<button class="btn btn-sm btn-export" style="background:#1F4E79" onclick="exportarEstructura(\'word\')" title="Descargar Word">Word</button>';
+  html += '<button class="btn btn-sm btn-export" style="background:#6B3A8C" onclick="tablaAcciones()" title="Tabla de Acciones en una hoja">Tabla de Acciones</button>';
   html += '</div>';
   html += '<button class="btn btn-sm btn-outline" onclick="descargarPlantilla()">Plantilla</button>';
   html += '<label class="btn btn-sm btn-primary" style="cursor:pointer">Cargar archivo <input type="file" id="inputFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="cargarArchivo(this)"></label>';
@@ -1237,6 +1283,133 @@ function renderAdminEstructura() {
 
   html += '<button class="btn btn-primary" style="margin-top:8px" onclick="addArea()">+ Nueva area</button></div>';
   return html;
+}
+
+function tablaAcciones() {
+  const fMes   = window._estructuraFiltroMes   || '';
+  const fCargo = window._estructuraFiltroCargo || '';
+  const meses  = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const mesesLabel = ['Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'];
+
+  // Recopilar filas según filtros activos
+  const filas = [];
+  DB.areas.forEach(area => {
+    DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
+      DB.acciones.filter(ac => {
+        if(ac.objetivo_id !== obj.id) return false;
+        if(fMes && !ac.meses_activos.includes(fMes)) return false;
+        if(fCargo){ const r=getResps(ac.id); if(!r.some(r=>r.cargo_id===fCargo)) return false; }
+        return true;
+      }).forEach(ac => {
+        filas.push({ area, obj, ac, resps: getResps(ac.id) });
+      });
+    });
+  });
+
+  if(!filas.length){ showToast('No hay acciones para mostrar'); return; }
+
+  const W = window.open('','_blank');
+  const css = `
+    @page { size: A4 landscape; margin: 8mm; }
+    *{ box-sizing:border-box; margin:0; padding:0; }
+    body{ font-family: Arial, sans-serif; font-size: 8pt; color: #1A1916; }
+    .header{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+    .header h1{ font-size:13pt; color:#1E3A2F; }
+    .header .meta{ font-size:7pt; color:#7A7670; }
+    table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    th{ background:#1E3A2F; color:#fff; padding:4px 3px; font-size:7pt; font-weight:600; text-align:center; border:1px solid #fff; overflow:hidden; }
+    th.left{ text-align:left; }
+    td{ padding:3px 3px; border:1px solid #D0CDC6; vertical-align:middle; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    td.area{ background:#2D5A42; color:#fff; font-weight:700; font-size:7.5pt; writing-mode:horizontal-tb; }
+    td.obj{ background:#E8F0EB; color:#1E3A2F; font-weight:600; font-size:7pt; }
+    td.accion{ font-size:7.5pt; max-width:0; }
+    td.resp{ font-size:6.5pt; color:#555; max-width:0; }
+    td.mes{ text-align:center; font-size:9pt; font-weight:700; color:#1E3A2F; }
+    td.mes.x{ color:#2E7D52; }
+    tr:nth-child(even) td{ background-color:#F9F8F6; }
+    tr:nth-child(even) td.area{ background:#2D5A42; }
+    tr:nth-child(even) td.obj{ background:#E8F0EB; }
+    .print-btn{ position:fixed; top:8px; right:8px; background:#1E3A2F; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:10pt; cursor:pointer; }
+    @media print{ .print-btn{ display:none; } }
+  `;
+
+  // Agrupar filas por área y objetivo para calcular rowspans
+  let html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Tabla de Acciones</title><style>${css}</style></head><body>`;
+  html += `<button class="print-btn" onclick="window.print()">Imprimir</button>`;
+  html += `<div class="header"><h1>Tabla de Acciones — ${DB.colegio.nombre}</h1><span class="meta">RBD ${DB.colegio.rbd} · Generado ${new Date().toLocaleDateString('es-CL')}${fMes?' · '+fmtMes(fMes):''}</span></div>`;
+  html += `<div style="display:flex;gap:16px;margin-bottom:6px;font-size:7pt;align-items:center">
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#1A4D2E;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Logrado (≥90%)</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#3D6B4F;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> En proceso (70-89%)</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#7A1C2B;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Crítico (&lt;70%)</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#B8860B;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Pendiente</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#BFBDB8;display:inline-block;border:1px solid rgba(0,0,0,.12)"></span> Sin evaluar</span>
+  </div>`;
+
+  // Calcular rowspans
+  const areaSpan = {}, objSpan = {};
+  filas.forEach(({area,obj}) => {
+    areaSpan[area.id] = (areaSpan[area.id]||0) + 1;
+    objSpan[obj.id]   = (objSpan[obj.id]||0) + 1;
+  });
+  const areaUsed = {}, objUsed = {};
+
+  html += `<table><colgroup>
+    <col style="width:7%">
+    <col style="width:12%">
+    <col style="width:22%">
+    <col style="width:10%">
+    ${meses.map(()=>'<col style="width:'+(49/meses.length).toFixed(1)+'%">').join('')}
+  </colgroup>
+  <thead><tr>
+    <th class="left">Área</th>
+    <th class="left">Objetivo</th>
+    <th class="left">Acción</th>
+    <th class="left">Responsable</th>
+    ${mesesLabel.map(m=>`<th>${m}</th>`).join('')}
+  </tr></thead><tbody>`;
+
+  filas.forEach(({area,obj,ac,resps}) => {
+    html += '<tr>';
+    // Área con rowspan
+    if(!areaUsed[area.id]) {
+      areaUsed[area.id] = true;
+      html += `<td class="area" rowspan="${areaSpan[area.id]}">${area.nombre}</td>`;
+    }
+    // Objetivo con rowspan
+    if(!objUsed[obj.id]) {
+      objUsed[obj.id] = true;
+      html += `<td class="obj" rowspan="${objSpan[obj.id]}">${obj.nombre}</td>`;
+    }
+    // Acción
+    html += `<td class="accion" title="${ac.nombre}">${ac.nombre}</td>`;
+    // Responsables
+    const respNombres = resps.map(r=>r.cargo).join(', ')||'—';
+    html += `<td class="resp" title="${respNombres}">${respNombres}</td>`;
+    // Meses con círculo de color según seguimiento
+    meses.forEach(m => {
+      const activo = ac.meses_activos.includes(m);
+      if(!activo){ html += `<td></td>`; return; }
+      const seg = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === m);
+      let color = null;
+      let title = 'Sin evaluar';
+      let size = '12px';
+      if(seg) {
+        size = '14px';
+        if(seg.pendiente){ color='#B8860B'; title='Pendiente ('+seg.porcentaje+'%)'; }
+        else if(seg.porcentaje >= 90){ color='#1A4D2E'; title='Logrado ('+seg.porcentaje+'%)'; }
+        else if(seg.porcentaje >= 70){ color='#3D6B4F'; title='En proceso ('+seg.porcentaje+'%)'; }
+        else { color='#7A1C2B'; title='Crítico ('+seg.porcentaje+'%)'; }
+      }
+      html += `<td style="text-align:center;border:1px solid #D0CDC6" title="${title}">
+        <div style="width:${color?size:'6px'};height:${color?size:'6px'};border-radius:50%;background:${color||'#BFBDB8'};margin:0 auto;border:1px solid rgba(0,0,0,.12)"></div>
+      </td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += `</tbody></table></body></html>`;
+  W.document.write(html);
+  W.document.close();
 }
 
 function getAccionesFiltradas() {
