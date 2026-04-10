@@ -1085,6 +1085,15 @@ function renderInformes() {
   html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
   html+='<div class="export-group"><button class="btn btn-outline btn-sm" onclick="showPanel(\'ver-reuniones\')">📋 Ver Reuniones</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
   html+='</div></div>';
+  // BUSCADOR IA
+  html+='<div class="card" style="margin-bottom:20px">';
+  html+='<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px">🤖 Consulta inteligente sobre tus reuniones</div>';
+  html+='<div style="display:flex;gap:8px;align-items:flex-start">';
+  html+='<input class="form-input" id="iaQueryInformes" placeholder="Ej: ¿Qué acciones están en rojo? ¿Cuál es el área con menor avance? ¿Qué quedó pendiente en mayo?" onkeydown="if(event.key===\'Enter\')consultarIAInformes()" style="font-size:13px">';
+  html+='<button class="btn btn-primary" onclick="consultarIAInformes()" id="iaBtnInformes">Consultar</button>';
+  html+='</div>';
+  html+='<div id="iaRespuestaInformes" style="margin-top:12px;display:none"></div>';
+  html+='</div>';
   html+='<div class="informe-card">';
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
   html+='<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px">Informe General</div><div style="font-size:12px;color:var(--muted)">'+DB.colegio.nombre+' - RBD '+DB.colegio.rbd+' - '+mesL+'</div></div>';
@@ -1867,6 +1876,78 @@ function renderVerReuniones() {
   }
   html += '</div>'; // grid
   return html;
+}
+
+async function consultarIAInformes() {
+  const query = document.getElementById('iaQueryInformes')?.value.trim();
+  if(!query){ showToast('Escribe una pregunta'); return; }
+  const btn   = document.getElementById('iaBtnInformes');
+  const respEl= document.getElementById('iaRespuestaInformes');
+  if(btn){ btn.disabled=true; btn.textContent='Consultando...'; }
+  respEl.style.display='block';
+  respEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><div class="loading-spinner" style="width:18px;height:18px;border-width:2px"></div>Analizando datos del colegio...</div>';
+
+  const mes = filterMes||null;
+  const mesLabel = mes ? fmtMes(mes) : 'Acumulado';
+
+  // Construir contexto con datos del informe actual
+  let contexto = '=== COLEGIO: '+DB.colegio.nombre+' (RBD '+DB.colegio.rbd+') ===\n';
+  contexto += 'Período analizado: '+mesLabel+'\n';
+  contexto += 'Avance general: '+(calcGeneral(mes)!==null?calcGeneral(mes)+'%':'Sin datos')+'\n\n';
+
+  DB.areas.forEach(area=>{
+    const aR=calcArea(area.id,mes);
+    contexto += '--- ÁREA: '+area.nombre+' ('+Math.round(area.ponderador*100)+'%) — '+(aR!==null?aR+'%':'Sin datos')+' ---\n';
+    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
+      const oR=calcObjetivo(obj.id,mes);
+      contexto += '  Objetivo: '+obj.nombre+' — '+(oR!==null?oR+'%':'Sin datos')+'\n';
+      DB.acciones.filter(a=>a.objetivo_id===obj.id).forEach(ac=>{
+        const acR=calcAccion(ac.id,mes);
+        const segs=DB.seguimiento.filter(s=>s.accion_id===ac.id&&(!mes||s.mes===mes));
+        const pend=segs.some(s=>s.pendiente);
+        const comentarios=segs.filter(s=>s.comentario).map(s=>s.comentario).join('; ');
+        const resps=getResps(ac.id).map(r=>r.nombre).join(', ');
+        contexto += '    Acción: '+ac.nombre;
+        contexto += ' | Avance: '+(acR!==null?acR+'%':'Sin datos');
+        if(pend) contexto += ' [PENDIENTE]';
+        if(resps) contexto += ' | Responsable: '+resps;
+        if(comentarios) contexto += ' | Comentario: '+comentarios;
+        contexto += '\n';
+      });
+    });
+    contexto += '\n';
+  });
+
+  // Agregar contexto de reuniones si hay
+  if((DB.reuniones||[]).length){
+    contexto += '=== REUNIONES ===\n';
+    DB.reuniones.forEach(r=>{
+      contexto += 'Reunión: '+r.titulo+' ('+r.fecha+')\n';
+      if(r.comentarios_generales) contexto += '  Comentarios: '+r.comentarios_generales+'\n';
+    });
+  }
+
+  const prompt = 'Eres un asistente experto en gestión escolar chilena. Tienes acceso a los datos completos del plan de mejora del colegio. Responde de forma clara, concisa y en español, citando datos específicos cuando corresponda.\n\nDATOS DEL PLAN:\n\n'+contexto+'\n\nPREGUNTA: '+query;
+
+  try {
+    const res = await fetch('/api/consultar-ia', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ prompt })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(typeof data.error==='string'?data.error:JSON.stringify(data.error));
+    const texto = data.text || data.content?.[0]?.text || 'No se pudo obtener respuesta.';
+    respEl.innerHTML =
+      '<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:8px;padding:14px 16px">'+
+      '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--green);margin-bottom:8px">🤖 Respuesta IA</div>'+
+      '<div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">'+texto+'</div>'+
+      '</div>';
+  } catch(e) {
+    const msg = e.message||JSON.stringify(e)||'Error desconocido';
+    respEl.innerHTML = '<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--red)">Error al consultar: '+msg+'</div>';
+  }
+  if(btn){ btn.disabled=false; btn.textContent='Consultar'; }
 }
 
 async function consultarIA() {
