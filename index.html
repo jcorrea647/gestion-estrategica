@@ -1342,7 +1342,7 @@ function tablaAcciones() {
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#3D6B4F;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> En proceso (70-89%)</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#7A1C2B;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Crítico (&lt;70%)</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#B8860B;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Pendiente</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#BFBDB8;display:inline-block;border:1px solid rgba(0,0,0,.12)"></span> Sin evaluar</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:#BFBDB8;display:inline-block;border:1px solid rgba(0,0,0,.12)"></span> Sin evaluar</span>
   </div>`;
 
   // Calcular rowspans
@@ -1355,8 +1355,8 @@ function tablaAcciones() {
 
   html += `<table><colgroup>
     <col style="width:7%">
-    <col style="width:12%">
-    <col style="width:22%">
+    <col style="width:15%">
+    <col style="width:19%">
     <col style="width:10%">
     ${meses.map(()=>'<col style="width:'+(49/meses.length).toFixed(1)+'%">').join('')}
   </colgroup>
@@ -1401,7 +1401,7 @@ function tablaAcciones() {
         else { color='#7A1C2B'; title='Crítico ('+seg.porcentaje+'%)'; }
       }
       html += `<td style="text-align:center;border:1px solid #D0CDC6" title="${title}">
-        <div style="width:${color?size:'6px'};height:${color?size:'6px'};border-radius:50%;background:${color||'#BFBDB8'};margin:0 auto;border:1px solid rgba(0,0,0,.12)"></div>
+        <div style="width:${color?size:'9px'};height:${color?size:'9px'};border-radius:50%;background:${color||'#BFBDB8'};margin:0 auto;border:1px solid rgba(0,0,0,.12)"></div>
       </td>`;
     });
     html += '</tr>';
