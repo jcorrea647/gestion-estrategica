@@ -1701,7 +1701,7 @@ async function consultarIA() {
     });
     const data = await res.json();
     if(data.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
-    const texto = data.content?.[0]?.text || data.content?.[0]?.text || 'No se pudo obtener respuesta.';
+    const texto = data.text || data.content?.[0]?.text || 'No se pudo obtener respuesta.';
     if(!texto) throw new Error('Respuesta vacía: '+JSON.stringify(data));
     respEl.innerHTML =
       '<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:8px;padding:14px 16px">' +
