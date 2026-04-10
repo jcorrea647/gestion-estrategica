@@ -311,7 +311,10 @@ async function doLogin() {
 
   if (isMulti(user.rol)) {
     setLoading('Cargando colegios...');
-    const {data:cols} = await sb.from('colegios').select('*').order('nombre');
+    let query = sb.from('colegios').select('*').order('nombre');
+    // Sostenedor solo ve sus colegios asignados
+    if (user.rol === 'sostenedor') query = query.eq('sostenedor_id', user.id);
+    const {data:cols} = await query;
     SESSION.colegios = cols || [];
     hideLoading();
     renderMultiPanel();
@@ -338,26 +341,77 @@ function doLogout() {
 }
 
 // MULTI PANEL
+let colegiosSeleccionados = new Set();
+
+function toggleSeleccionColegio(id, e) {
+  e.stopPropagation();
+  if(colegiosSeleccionados.has(id)) colegiosSeleccionados.delete(id);
+  else colegiosSeleccionados.add(id);
+  actualizarSeleccion();
+}
+
+function actualizarSeleccion() {
+  const n = colegiosSeleccionados.size;
+  // Actualizar checkboxes
+  SESSION.colegios.forEach(c => {
+    const cb = document.getElementById('chk-'+c.id);
+    const card = document.getElementById('card-'+c.id);
+    if(cb) cb.checked = colegiosSeleccionados.has(c.id);
+    if(card) {
+      card.style.borderColor = colegiosSeleccionados.has(c.id) ? 'var(--accent)' : '';
+      card.style.boxShadow = colegiosSeleccionados.has(c.id) ? '0 0 0 2px var(--accent)' : '';
+    }
+  });
+  // Mostrar/ocultar barra de acción
+  const barra = document.getElementById('seleccionBarra');
+  if(barra) {
+    barra.style.display = n > 0 ? 'flex' : 'none';
+    const txt = document.getElementById('seleccionTxt');
+    if(txt) txt.textContent = n + ' colegio' + (n!==1?'s':'') + ' seleccionado' + (n!==1?'s':'');
+    const btnComp = document.getElementById('btnComparativo');
+    if(btnComp) btnComp.disabled = n < 2;
+    if(btnComp) btnComp.style.opacity = n < 2 ? '.5' : '1';
+  }
+}
+
 function renderMultiPanel() {
   const u = SESSION.user;
+  const esSostenedor = u.rol === 'sostenedor';
+  colegiosSeleccionados = new Set();
   document.getElementById('multiUserName').textContent = u.nombre;
   const rb = document.getElementById('multiRolBadge');
   rb.textContent = ROL_LABELS[u.rol]; rb.className = 'role-badge '+u.rol;
-  document.getElementById('multiTitle').textContent = u.rol==='superadmin' ? 'Panel de colegios' : 'Vista de colegios';
+  document.getElementById('multiTitle').textContent = esSostenedor ? 'Mis colegios' : 'Panel de colegios';
   const c = SESSION.colegios;
-  document.getElementById('multiSubtitle').textContent = c.length + ' colegio' + (c.length!==1?'s':'') + ' registrado' + (c.length!==1?'s':'');
+  document.getElementById('multiSubtitle').textContent = c.length + ' colegio' + (c.length!==1?'s':'') + ' registrado' + (c.length!==1?'s':'') + (esSostenedor ? ' — selecciona uno o más para generar informes' : '');
+
   const grid = document.getElementById('colegiosGrid');
-  grid.innerHTML = c.map(col => `
-    <div class="colegio-card" onclick="entrarColegio('${col.id}')">
+
+  // Barra de acción flotante para sostenedor
+  const barraHtml = esSostenedor ? `
+    <div id="seleccionBarra" style="display:none;position:sticky;top:0;z-index:100;background:var(--accent);padding:12px 20px;border-radius:10px;margin-bottom:16px;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.2)">
+      <span id="seleccionTxt" style="color:#fff;font-size:13px;font-weight:500"></span>
+      <div style="display:flex;gap:8px">
+        <button onclick="colegiosSeleccionados=new Set();actualizarSeleccion()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">Limpiar</button>
+        <button id="btnComparativo" onclick="generarInformeComparativo()" style="background:var(--gold);border:none;color:#fff;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">📊 Informe comparativo</button>
+      </div>
+    </div>` : '';
+
+  grid.innerHTML = barraHtml + c.map(col => `
+    <div class="colegio-card" id="card-${col.id}" onclick="${esSostenedor ? '' : ''}entrarColegio('${col.id}')">
+      ${esSostenedor ? `<div style="position:absolute;top:12px;right:12px;z-index:2" onclick="toggleSeleccionColegio('${col.id}',event)">
+        <input type="checkbox" id="chk-${col.id}" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
+      </div>` : ''}
       <div class="colegio-rbd">RBD ${col.rbd}</div>
       <div class="colegio-name">${col.nombre}</div>
       <div class="colegio-stats">
-        <div class="colegio-stat"><div class="colegio-stat-val" id="st-a-${col.id}">-</div><div class="colegio-stat-label">Areas</div></div>
+        <div class="colegio-stat"><div class="colegio-stat-val" id="st-a-${col.id}">-</div><div class="colegio-stat-label">Áreas</div></div>
         <div class="colegio-stat"><div class="colegio-stat-val" id="st-ac-${col.id}">-</div><div class="colegio-stat-label">Acciones</div></div>
         <div class="colegio-stat"><div class="colegio-stat-val" id="st-av-${col.id}">-</div><div class="colegio-stat-label">Avance</div></div>
       </div>
-      <button class="colegio-enter-btn">Ingresar</button>
-    </div>`).join('') + (u.rol==='superadmin'?`<div class="add-colegio-card" onclick="addColegio()"><div style="font-size:32px;color:var(--muted)">+</div><div style="font-size:13px;color:var(--muted);font-weight:500">Agregar colegio</div></div>`:'');
+      <button class="colegio-enter-btn" onclick="event.stopPropagation();entrarColegio('${col.id}')">Ingresar →</button>
+    </div>`).join('') + (!esSostenedor && u.rol==='superadmin' ? `<div class="add-colegio-card" onclick="addColegio()"><div style="font-size:32px;color:var(--muted)">+</div><div style="font-size:13px;color:var(--muted);font-weight:500">Agregar colegio</div></div>` : '');
+
   c.forEach(col => loadColegioStats(col));
 }
 
@@ -371,6 +425,127 @@ async function loadColegioStats(c) {
   if(ea) ea.textContent = nA??0;
   if(eac) eac.textContent = (acs||[]).length;
   if(eav) { const r=segs||[]; eav.textContent = r.length ? Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length)+'%' : '-'; }
+}
+
+async function generarInformeComparativo() {
+  if(colegiosSeleccionados.size < 2){ showToast('Selecciona al menos 2 colegios'); return; }
+  setLoading('Cargando datos de colegios...');
+
+  const ids = [...colegiosSeleccionados];
+  const colegios = SESSION.colegios.filter(c => ids.includes(c.id));
+
+  // Cargar datos de cada colegio en paralelo
+  const datosColegios = await Promise.all(colegios.map(async col => {
+    const [{data:areas},{data:objetivos},{data:acciones},{data:seguimiento}] = await Promise.all([
+      sb.from('areas').select('*').eq('colegio_id',col.id).order('orden'),
+      sb.from('objetivos').select('*,areas!inner(colegio_id)').eq('areas.colegio_id',col.id),
+      sb.from('acciones').select('*,objetivos!inner(area_id,areas!inner(colegio_id))').eq('objetivos.areas.colegio_id',col.id),
+      sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',col.id),
+    ]);
+    return { colegio:col, areas:areas||[], objetivos:objetivos||[], acciones:acciones||[], seguimiento:seguimiento||[] };
+  }));
+
+  hideLoading();
+
+  // Funciones de cálculo por colegio
+  function calcAccionC(d,id,mes){ const r=d.seguimiento.filter(s=>s.accion_id===id&&(!mes||s.mes===mes)&&!s.pendiente); if(!r.length)return null; return Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length*100)/100; }
+  function calcAreaC(d,areaId,mes){ const obs=d.objetivos.filter(o=>o.area_id===areaId); let sp=0,sv=0; obs.forEach(o=>{ const acs=d.acciones.filter(a=>a.objetivo_id===o.id); let op=0,ov=0; acs.forEach(a=>{const r=calcAccionC(d,a.id,mes);if(r!==null){ov+=r*a.ponderador;op+=a.ponderador;}}); if(op){const ro=Math.round(ov/op*100)/100; sv+=ro*o.ponderador; sp+=o.ponderador;}}); return sp?Math.round(sv/sp*100)/100:null; }
+  function calcGeneralC(d,mes){ let sp=0,sv=0; d.areas.forEach(a=>{const r=calcAreaC(d,a.id,mes);if(r!==null){sv+=r*a.ponderador;sp+=a.ponderador;}}); return sp?Math.round(sv/sp*100)/100:null; }
+  function estC(p){ if(p===null)return'sin_datos'; return p>=90?'verde':p>=70?'amarillo':'rojo'; }
+  function colEstC(e){ return e==='verde'?'#2E7D52':e==='amarillo'?'#B8860B':'#9B2335'; }
+
+  const mesesAll = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+
+  // Recopilar todas las áreas únicas (por nombre)
+  const areasUnicas = [];
+  datosColegios.forEach(d => d.areas.forEach(a => { if(!areasUnicas.find(x=>x.nombre===a.nombre)) areasUnicas.push({nombre:a.nombre}); }));
+
+  const W = window.open('','_blank');
+  const css = `
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',sans-serif;background:#F4F2EE;color:#1A1916;font-size:13px;padding:32px}
+    h1{font-size:26px;color:#1E3A2F;margin-bottom:4px}
+    .sub{font-size:13px;color:#7A7670;margin-bottom:28px}
+    h2{font-size:16px;color:#1E3A2F;margin:28px 0 12px;border-bottom:2px solid #1E3A2F;padding-bottom:6px}
+    h3{font-size:13px;color:#2D5A42;margin:16px 0 8px}
+    .card{background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px}
+    th{background:#1E3A2F;color:#fff;padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.4px}
+    td{padding:8px 10px;border-bottom:1px solid #E4E0D8;vertical-align:middle}
+    tr:nth-child(even) td{background:#F9F8F6}
+    .badge{display:inline-block;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:600}
+    .verde{background:#E8F5EE;color:#2E7D52}.amarillo{background:#FDF6E3;color:#B8860B}.rojo{background:#FCEEED;color:#9B2335}.sin_datos{background:#F4F2EE;color:#7A7670}
+    .rank-card{display:inline-flex;flex-direction:column;align-items:center;background:#fff;border:1px solid #E4E0D8;border-radius:10px;padding:16px 20px;margin-right:12px;margin-bottom:12px;min-width:180px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .rank-pos{font-size:28px;font-weight:700;color:#1E3A2F}
+    .rank-nombre{font-size:13px;font-weight:600;margin:6px 0 2px;text-align:center}
+    .rank-pct{font-size:24px;font-weight:700}
+    .print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+    @media print{.print-btn{display:none}body{padding:20px;background:#fff}}
+  `;
+
+  let body = `<button class="print-btn" onclick="window.print()">🖨 Imprimir / PDF</button>`;
+  body += `<h1>Informe Comparativo</h1><div class="sub">Sostenedor: ${SESSION.user.nombre} — ${colegios.length} colegios — Generado ${new Date().toLocaleDateString('es-CL')}</div>`;
+
+  // RANKING
+  const ranking = datosColegios.map(d=>({nombre:d.colegio.nombre,rbd:d.colegio.rbd,pct:calcGeneralC(d,null)})).sort((a,b)=>(b.pct||0)-(a.pct||0));
+  body += `<h2>Ranking general de avance</h2><div style="display:flex;flex-wrap:wrap;margin-bottom:8px">`;
+  ranking.forEach((r,i) => {
+    const est = estC(r.pct);
+    body += `<div class="rank-card"><div class="rank-pos">#${i+1}</div><div class="rank-nombre">${r.nombre}</div><div class="rank-pct" style="color:${colEstC(est)}">${r.pct!==null?r.pct+'%':'—'}</div><span class="badge ${est}">${est==='sin_datos'?'Sin datos':est}</span></div>`;
+  });
+  body += `</div>`;
+
+  // TABLA COMPARATIVA POR ÁREA
+  body += `<h2>Avance por área</h2><div class="card"><table><thead><tr><th>Área</th>`;
+  datosColegios.forEach(d => body += `<th>${d.colegio.nombre.replace('Liceo ','')}</th>`);
+  body += `</tr></thead><tbody>`;
+  // Fila avance general
+  body += `<tr style="font-weight:600;background:#E8F0EB"><td>AVANCE GENERAL</td>`;
+  datosColegios.forEach(d => { const p=calcGeneralC(d,null),e=estC(p); body += `<td><span class="badge ${e}">${p!==null?p+'%':'—'}</span></td>`; });
+  body += `</tr>`;
+  areasUnicas.forEach(area => {
+    body += `<tr><td style="font-weight:500">${area.nombre}</td>`;
+    datosColegios.forEach(d => {
+      const aObj = d.areas.find(a=>a.nombre===area.nombre);
+      const p = aObj ? calcAreaC(d,aObj.id,null) : null;
+      const e = estC(p);
+      body += `<td><span class="badge ${e}">${p!==null?p+'%':'—'}</span></td>`;
+    });
+    body += `</tr>`;
+  });
+  body += `</tbody></table></div>`;
+
+  // EVOLUCIÓN MENSUAL
+  body += `<h2>Evolución mensual — Avance general</h2><div class="card"><table><thead><tr><th>Colegio</th>`;
+  mesesAll.forEach(m => body += `<th style="text-align:center">${fmtMes(m,true)}</th>`);
+  body += `</tr></thead><tbody>`;
+  datosColegios.forEach(d => {
+    body += `<tr><td style="font-weight:500">${d.colegio.nombre}</td>`;
+    mesesAll.forEach(m => { const p=calcGeneralC(d,m),e=estC(p); body += `<td style="text-align:center"><span class="${e!=='sin_datos'?'badge '+e:''}" style="font-size:11px">${p!==null?p+'%':'—'}</span></td>`; });
+    body += `</tr>`;
+  });
+  body += `</tbody></table></div>`;
+
+  // DETALLE POR COLEGIO
+  body += `<h2>Detalle por colegio</h2>`;
+  datosColegios.forEach(d => {
+    const gen = calcGeneralC(d,null), est = estC(gen);
+    body += `<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div><div style="font-size:18px;font-weight:700;color:#1E3A2F">${d.colegio.nombre}</div><div style="font-size:11px;color:#7A7670">RBD ${d.colegio.rbd}</div></div><div style="text-align:right"><div style="font-size:28px;font-weight:700;color:${colEstC(est)}">${gen!==null?gen+'%':'—'}</div><span class="badge ${est}">${est==='sin_datos'?'Sin datos':est}</span></div></div>`;
+    body += `<table><thead><tr><th>Área</th><th>Objetivo</th><th style="text-align:center">Avance</th><th style="text-align:center">Estado</th></tr></thead><tbody>`;
+    d.areas.forEach(area => {
+      const aR=calcAreaC(d,area.id,null),aE=estC(aR);
+      body += `<tr style="background:#E8F0EB"><td colspan="2" style="font-weight:600">${area.nombre}</td><td style="text-align:center;font-weight:700;color:${colEstC(aE)}">${aR!==null?aR+'%':'—'}</td><td style="text-align:center"><span class="badge ${aE}">${aE==='sin_datos'?'Sin datos':aE}</span></td></tr>`;
+      d.objetivos.filter(o=>o.area_id===area.id).forEach(obj => {
+        const oR=calcGeneralC({areas:[area],objetivos:[obj],acciones:d.acciones.filter(a=>a.objetivo_id===obj.id),seguimiento:d.seguimiento},null);
+        const oE=estC(oR);
+        body += `<tr><td style="color:#7A7670;padding-left:20px">${area.nombre}</td><td>${obj.nombre}</td><td style="text-align:center;font-weight:600">${oR!==null?oR+'%':'—'}</td><td style="text-align:center"><span class="badge ${oE}">${oE==='sin_datos'?'Sin datos':oE}</span></td></tr>`;
+      });
+    });
+    body += `</tbody></table></div>`;
+  });
+
+  W.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Informe Comparativo</title><style>${css}</style></head><body>${body}</body></html>`);
+  W.document.close();
 }
 
 function addColegio() {
