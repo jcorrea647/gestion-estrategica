@@ -227,6 +227,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <span class="role-badge" id="multiRolBadge"></span>
     <div class="spacer"></div>
     <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:8px" id="multiUserName"></span>
+    <button class="logout-btn" onclick="abrirCambioClave()" style="margin-right:6px">🔑 Mi clave</button>
     <button class="logout-btn" onclick="doLogout()">Salir</button>
   </div>
   <div class="multi-content">
@@ -246,7 +247,8 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
       <span class="role-badge" id="topRolBadge" style="margin-right:8px"></span>
       <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:12px" id="topUserName"></span>
       <span class="rbd-badge" id="topRbd"></span>
-      <button class="logout-btn" style="margin-left:12px" onclick="doLogout()">Salir</button>
+      <button class="logout-btn" onclick="abrirCambioClave()" style="margin-left:12px">🔑 Mi clave</button>
+      <button class="logout-btn" style="margin-left:6px" onclick="doLogout()">Salir</button>
     </header>
     <nav class="sidebar" id="sidebarNav"></nav>
     <main class="main" id="mainContent"></main>
@@ -330,6 +332,37 @@ async function doLogin() {
       showPanel('dashboard');
     } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
   }
+}
+
+function abrirCambioClave() {
+  openModal('Cambiar mi contraseña',
+    '<div class="form-group"><label class="form-label">Contraseña actual</label><input class="form-input" id="f-clave-actual" type="password" placeholder="••••••••"></div>'+
+    '<div class="form-group"><label class="form-label">Nueva contraseña</label><input class="form-input" id="f-clave-nueva" type="password" placeholder="Mínimo 6 caracteres"></div>'+
+    '<div class="form-group"><label class="form-label">Confirmar nueva contraseña</label><input class="form-input" id="f-clave-confirm" type="password" placeholder="Repite la nueva contraseña"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Guardar contraseña',cls:'btn-primary',action:'guardarCambioClave()'}]);
+}
+
+async function guardarCambioClave() {
+  const actual  = document.getElementById('f-clave-actual')?.value;
+  const nueva   = document.getElementById('f-clave-nueva')?.value;
+  const confirm = document.getElementById('f-clave-confirm')?.value;
+
+  if(!actual||!nueva||!confirm){ showToast('Completa todos los campos'); return; }
+  if(nueva.length < 6){ showToast('La contraseña debe tener al menos 6 caracteres'); return; }
+  if(nueva !== confirm){ showToast('Las contraseñas nuevas no coinciden'); return; }
+
+  // Verificar contraseña actual
+  const {data:user, error} = await sb.from('usuarios')
+    .select('id').eq('id', SESSION.user.id).eq('password_hash', actual).single();
+  if(error || !user){ showToast('❌ La contraseña actual es incorrecta'); return; }
+
+  // Actualizar
+  const {error:updErr} = await sb.from('usuarios').update({password_hash: nueva}).eq('id', SESSION.user.id);
+  if(updErr){ showToast('❌ Error: '+updErr.message); return; }
+
+  closeModal();
+  showToast('✅ Contraseña actualizada correctamente');
 }
 
 function doLogout() {
