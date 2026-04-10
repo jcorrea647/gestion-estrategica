@@ -1,0 +1,1962 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mejora Escolar</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#F4F2EE;--surface:#FFF;--surface2:#F9F8F6;--border:#E4E0D8;--text:#1A1916;--muted:#7A7670;--accent:#1E3A2F;--accent2:#2D5A42;--gold:#C4962A;--green:#2E7D52;--yellow:#B8860B;--red:#9B2335;--green-bg:#E8F5EE;--yellow-bg:#FDF6E3;--red-bg:#FCEEED;--r:8px;--shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.05)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
+.screen{display:none}.screen.active{display:flex}
+#screenLogin{min-height:100vh;align-items:center;justify-content:center;background:var(--accent);background-image:radial-gradient(ellipse at 70% 20%,#2D5A42 0%,transparent 60%),radial-gradient(ellipse at 20% 80%,#0f2018 0%,transparent 50%)}
+.login-box{background:var(--surface);border-radius:16px;padding:48px 44px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,.3)}
+.login-logo{font-family:'DM Serif Display',serif;font-size:28px;color:var(--accent);margin-bottom:4px}
+.login-sub{color:var(--muted);font-size:13px;margin-bottom:36px}
+.form-error{color:var(--red);font-size:12px;margin-top:6px;display:none}.form-error.show{display:block}
+#screenMulti{flex-direction:column;min-height:100vh}
+.multi-topbar{background:var(--accent);display:flex;align-items:center;padding:0 28px;height:56px;gap:14px;flex-shrink:0}
+.multi-topbar .logo{font-family:'DM Serif Display',serif;color:#fff;font-size:20px}
+.multi-topbar .spacer{flex:1}
+.role-badge{border-radius:20px;padding:2px 10px;font-size:10px;font-weight:600;letter-spacing:.5px}
+.role-badge.superadmin{background:rgba(196,150,42,.3);color:#f0c96a}
+.role-badge.sostenedor{background:rgba(46,125,82,.3);color:#7ed4a0}
+.role-badge.director{background:rgba(30,58,47,.4);color:#a8d4bc}
+.role-badge.equipo_gestion{background:rgba(122,118,112,.3);color:#d0cdc8}
+.logout-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.logout-btn:hover{background:rgba(255,255,255,.2)}
+.multi-content{flex:1;padding:36px 40px;max-width:1100px;margin:0 auto;width:100%}
+.multi-page-title{font-size:30px;color:var(--accent);margin-bottom:6px}
+.multi-page-sub{color:var(--muted);font-size:13px;margin-bottom:32px}
+.colegios-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.colegio-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:var(--shadow);cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.colegio-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent)}
+.colegio-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,.12);border-color:var(--accent2)}
+.colegio-card:hover::before{background:var(--gold)}
+.colegio-rbd{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.colegio-name{font-family:'DM Serif Display',serif;font-size:19px;color:var(--text);margin-bottom:16px;line-height:1.3}
+.colegio-stats{display:flex;gap:12px;margin-bottom:20px}
+.colegio-stat{background:var(--surface2);border-radius:6px;padding:8px 12px;flex:1;text-align:center}
+.colegio-stat-val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--accent)}
+.colegio-stat-label{font-size:10px;color:var(--muted)}
+.colegio-enter-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.colegio-enter-btn:hover{background:var(--accent2)}
+.add-colegio-card{background:var(--surface2);border:2px dashed var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;min-height:200px;gap:10px}
+.add-colegio-card:hover{border-color:var(--accent);background:var(--surface)}
+#screenColegio{flex-direction:column;min-height:100vh}
+.app-shell{display:grid;grid-template-columns:240px 1fr;grid-template-rows:56px 1fr;height:100vh}
+.topbar{grid-column:1/-1;background:var(--accent);display:flex;align-items:center;padding:0 24px;gap:12px}
+.back-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.back-btn:hover{background:rgba(255,255,255,.2)}
+.topbar .logo{font-family:'DM Serif Display',serif;color:#fff;font-size:20px}
+.topbar .colegio-name{color:rgba(255,255,255,.6);font-size:13px}
+.topbar .spacer{flex:1}
+.rbd-badge{background:rgba(255,255,255,.12);color:rgba(255,255,255,.7);font-size:10px;border-radius:20px;padding:2px 10px;font-weight:600;letter-spacing:.5px}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:20px 0;overflow-y:auto}
+.nav-section{padding:0 12px;margin-bottom:6px}
+.nav-label{font-size:9px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);padding:0 8px;margin-bottom:4px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--muted);font-size:13px;transition:all .15s;margin-bottom:1px}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:#E8F0EB;color:var(--accent);font-weight:500}
+.nav-item .icon{font-size:15px;width:20px;text-align:center}
+.nav-divider{height:1px;background:var(--border);margin:10px 12px}
+.filter-select{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);cursor:pointer;outline:none}
+.filter-select:focus{border-color:var(--accent)}
+.main{overflow-y:auto;padding:28px}
+.page-header{margin-bottom:24px}
+.page-title{font-size:26px;color:var(--accent);margin-bottom:4px}
+.page-sub{color:var(--muted);font-size:13px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow)}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:12px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi-card.verde::before{background:var(--green)}.kpi-card.amarillo::before{background:var(--gold)}.kpi-card.rojo::before{background:var(--red)}
+.kpi-val{font-family:'DM Serif Display',serif;font-size:36px;line-height:1;margin-bottom:4px}
+.kpi-label{font-size:12px;color:var(--muted)}
+.kpi-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;border-radius:20px;padding:2px 8px;margin-top:6px}
+.kpi-badge.verde{background:var(--green-bg);color:var(--green)}.kpi-badge.amarillo{background:var(--yellow-bg);color:var(--yellow)}.kpi-badge.rojo{background:var(--red-bg);color:var(--red)}
+.semaforo{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;border-radius:20px;padding:2px 10px}
+.semaforo.verde{background:var(--green-bg);color:var(--green)}.semaforo.amarillo{background:var(--yellow-bg);color:var(--yellow)}.semaforo.rojo{background:var(--red-bg);color:var(--red)}.semaforo.sin_datos{background:var(--surface2);color:var(--muted)}
+.semaforo::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+.progress-wrap{background:var(--border);border-radius:20px;height:6px;overflow:hidden}
+.progress-bar{height:100%;border-radius:20px;transition:width .4s}
+.progress-bar.verde{background:var(--green)}.progress-bar.amarillo{background:var(--gold)}.progress-bar.rojo{background:var(--red)}
+.area-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
+.area-header{display:flex;align-items:center;gap:14px;padding:16px 20px;cursor:pointer;transition:background .15s}
+.area-header:hover{background:var(--surface2)}
+.area-name{font-family:'DM Serif Display',serif;font-size:17px;flex:1}
+.area-pct{font-family:'DM Serif Display',serif;font-size:22px;min-width:60px;text-align:right}
+.area-body{border-top:1px solid var(--border);padding:0 20px 16px;display:none}
+.area-body.open{display:block}
+.obj-row{padding:12px 0;border-bottom:1px solid var(--border)}.obj-row:last-child{border-bottom:none}
+.obj-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer}
+.obj-name{font-weight:500;font-size:13px;flex:1}
+.obj-pct{font-weight:600;font-size:14px;min-width:48px;text-align:right}
+.accion-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.accion-table th{text-align:left;font-weight:500;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:6px 8px;border-bottom:1px solid var(--border)}
+.accion-table td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle}
+.accion-table tr:last-child td{border-bottom:none}
+.accion-table tr:hover td{background:var(--surface2)}
+.accion-name{font-weight:500}
+.accion-desc{font-size:11px;color:var(--muted);margin-top:2px}
+.accion-responsable{color:var(--muted);font-size:11px}
+.accion-cargo{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:10px}
+.seguimiento-cell{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center}
+.pct-input{width:60px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-family:'DM Sans',sans-serif;font-size:12px;text-align:right;outline:none}
+.pct-input:focus{border-color:var(--accent)}
+.save-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:background .15s}
+.save-btn:hover{background:var(--accent2)}.save-btn:disabled{opacity:.5;cursor:not-allowed}
+.pending-btn{background:none;border:1px solid var(--gold);border-radius:5px;padding:4px 7px;font-size:11px;color:var(--yellow);cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:all .15s}
+.pending-btn:hover{background:var(--yellow-bg)}.pending-btn.on{background:var(--yellow-bg)}
+.evidence-btn{background:none;border:1px dashed var(--border);border-radius:5px;padding:3px 7px;font-size:10px;color:var(--muted);cursor:pointer;transition:all .15s}
+.evidence-btn:hover{border-color:var(--accent);color:var(--accent)}
+.periodo-btn{background:none;border:1px dashed var(--border);border-radius:5px;padding:3px 7px;font-size:10px;color:var(--muted);cursor:pointer;transition:all .15s}
+.info-btn{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;transition:background .15s;margin-top:2px}
+.info-btn:hover{background:var(--accent2)}
+.info-popup{position:fixed;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);width:320px;max-width:90vw}
+.info-popup-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 10px;border-bottom:1px solid var(--border);background:var(--accent);border-radius:10px 10px 0 0;cursor:move}
+.info-popup-title{font-family:'DM Serif Display',serif;font-size:15px;color:#fff;flex:1;margin-right:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.info-popup-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
+.info-popup-close:hover{color:#fff}
+.info-popup-body{padding:14px 16px}
+.info-field{margin-bottom:12px}.info-field:last-child{margin-bottom:0}
+.info-field-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px}
+.info-field-val{font-size:13px;color:var(--text);background:var(--surface2);border-radius:6px;padding:8px 10px;line-height:1.5}
+.info-field-val.empty{color:var(--muted);font-style:italic}
+.comentario-btn{background:var(--surface2);border:1px dashed var(--border);border-radius:5px;padding:4px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);cursor:pointer;transition:all .15s;max-width:150px;text-align:left}
+.comentario-btn:hover{border-color:var(--accent);background:var(--green-bg)}
+.com-popup{position:fixed;z-index:2001;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);width:378px;height:189px;display:flex;flex-direction:column}
+.com-popup-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 8px;background:var(--accent2);border-radius:10px 10px 0 0;cursor:move;flex-shrink:0}
+.com-popup-title{font-size:12px;font-weight:600;color:#fff;letter-spacing:.3px}
+.com-popup-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:15px;cursor:pointer;line-height:1;padding:0 2px}
+.com-popup-close:hover{color:#fff}
+.com-popup-body{flex:1;display:flex;flex-direction:column;padding:10px 12px 10px;gap:8px;overflow:hidden}
+.com-popup-textarea{flex:1;resize:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text);outline:none;line-height:1.5}
+.com-popup-textarea:focus{border-color:var(--accent)}
+.com-popup-footer{display:flex;justify-content:flex-end;gap:6px;flex-shrink:0}
+.com-save-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
+.com-save-btn:hover{background:var(--accent2)}
+.periodo-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal.wide{max-width:680px}
+.modal{background:var(--surface);border-radius:12px;width:100%;max-width:580px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.2)}
+.modal-body{padding:20px 24px;overflow-y:auto;flex:1}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-family:'DM Serif Display',serif;font-size:20px}
+.modal-close{background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:4px}
+.modal-close:hover{background:var(--surface2)}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.form-input,.form-select,.form-textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;transition:border-color .15s}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent)}
+.form-textarea{resize:vertical;min-height:80px}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:8px 16px;font-size:13px;font-family:'DM Sans',sans-serif;font-weight:500;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
+.btn-outline{background:none;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+.btn-danger{background:var(--red-bg);color:var(--red);border:1px solid transparent}.btn-danger:hover{border-color:var(--red)}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn-export{background:var(--gold);color:#fff}.btn-export:hover{background:#a87a20}
+.btn-full{width:100%;justify-content:center;padding:12px;font-size:14px}
+.informe-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow);margin-bottom:16px}
+.export-group{display:flex;gap:6px}
+.chart-wrap{position:relative;height:240px;margin-top:16px}
+.chart-wrap-sm{position:relative;height:160px}
+.evolution-table{width:100%;border-collapse:collapse;font-size:12px}
+.evolution-table th{padding:6px 10px;background:var(--surface2);font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.evolution-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:center}
+.evolution-table td:first-child{text-align:left;font-weight:500}
+.cell-verde{background:var(--green-bg);color:var(--green);font-weight:600;border-radius:4px;display:inline-block;padding:1px 6px}
+.cell-amarillo{background:var(--yellow-bg);color:var(--yellow);font-weight:600;border-radius:4px;display:inline-block;padding:1px 6px}
+.cell-rojo{background:var(--red-bg);color:var(--red);font-weight:600;border-radius:4px;display:inline-block;padding:1px 6px}
+.users-table{width:100%;border-collapse:collapse;font-size:13px}
+.users-table th{text-align:left;font-weight:600;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:8px 12px;border-bottom:2px solid var(--border);background:var(--surface2)}
+.users-table td{padding:12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.users-table tr:last-child td{border-bottom:none}
+.users-table tr:hover td{background:var(--surface2)}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;margin-right:10px;flex-shrink:0}
+.list-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.list-item:last-child{border-bottom:none}
+.icon-btn{background:none;border:none;cursor:pointer;padding:3px 6px;border-radius:4px;font-size:13px;color:var(--muted)}
+.icon-btn:hover{background:var(--surface2);color:var(--text)}
+.empty-state{text-align:center;padding:40px;color:var(--muted)}
+.empty-state .icon{font-size:36px;margin-bottom:10px}
+.tag{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;font-size:11px}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--accent);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:9999;transition:all .3s;opacity:0;transform:translateY(10px);pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:768px){.app-shell{grid-template-columns:1fr}.sidebar{display:none}.colegios-grid{grid-template-columns:1fr}}
+
+.reunion-banner{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border-radius:var(--r);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow)}
+.rb-title{font-family:'DM Serif Display',serif;color:#fff;font-size:16px;margin-bottom:2px}
+.rb-meta{color:rgba(255,255,255,.7);font-size:12px}
+.rb-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn-reunion{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:6px;padding:6px 14px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn-reunion:hover{background:rgba(255,255,255,.25)}
+.btn-reunion.gold{background:var(--gold);border-color:var(--gold)}.btn-reunion.gold:hover{background:#a87a20}
+.part-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.remove-part{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.remove-part:hover{background:var(--red-bg);color:var(--red)}
+</style>
+</head>
+<body>
+
+<div id="screenLogin" class="screen active">
+  <div class="login-box">
+    <div class="login-logo">Mejora Escolar</div>
+    <div class="login-sub">Ingresa con tu correo y contrasena</div>
+    <div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="loginEmail" type="email" placeholder="correo@ejemplo.cl" autocomplete="email"></div>
+    <div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="loginPassword" type="password" placeholder="..." onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"><div class="form-error" id="loginError">Correo o contrasena incorrectos.</div></div>
+    <button class="btn btn-primary btn-full" onclick="doLogin()" id="loginBtn">Ingresar</button>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);text-align:center;line-height:1.8"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5b3a3f3632351b363e3134293a3e283834373a29753837">[email&#160;protected]</a> / admin1234<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="097a667a7d6c676c6d667b496d686c64276a65">[email&#160;protected]</a> / sostenedor123<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f19598839492859e83b1958490838594df929d">[email&#160;protected]</a> / director123</div>
+  </div>
+</div>
+
+<div id="screenMulti" class="screen">
+  <div class="multi-topbar">
+    <div class="logo">Mejora Escolar</div>
+    <span class="role-badge" id="multiRolBadge"></span>
+    <div class="spacer"></div>
+    <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:8px" id="multiUserName"></span>
+    <button class="logout-btn" onclick="doLogout()">Salir</button>
+  </div>
+  <div class="multi-content">
+    <div class="multi-page-title" id="multiTitle">Panel de colegios</div>
+    <div class="multi-page-sub" id="multiSubtitle"></div>
+    <div class="colegios-grid" id="colegiosGrid"></div>
+  </div>
+</div>
+
+<div id="screenColegio" class="screen">
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="back-btn" id="backBtn" onclick="volverMulti()" style="display:none">Colegios</button>
+      <div class="logo">Mejora Escolar</div>
+      <span class="colegio-name" id="topColegio"></span>
+      <div class="spacer"></div>
+      <span class="role-badge" id="topRolBadge" style="margin-right:8px"></span>
+      <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:12px" id="topUserName"></span>
+      <span class="rbd-badge" id="topRbd"></span>
+      <button class="logout-btn" style="margin-left:12px" onclick="doLogout()">Salir</button>
+    </header>
+    <nav class="sidebar" id="sidebarNav"></nav>
+    <main class="main" id="mainContent"></main>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal">
+    <div class="modal-header"><div class="modal-title" id="modalTitle"></div><button class="modal-close" onclick="closeModal()">X</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:18px">Mejora Escolar</div>
+  <div style="color:var(--muted);font-size:12px" id="loadingMsg">Iniciando...</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+
+const {createClient} = supabase;
+const sb = createClient(
+  'https://tykbytaymysxgvyvlgah.supabase.co',
+  'sb_publishable_EN66VeyEh2Q5xvo1UWCqrw_zZP63P2e'
+);
+
+// SESSION & STATE
+let SESSION = {user:null, colegios:[], colegioActivo:null};
+let DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[]};
+let currentPanel='dashboard', filterCargo='', filterMes='';
+let openAreas=new Set(), openObjs=new Set(), charts={};
+
+const ROL_LABELS = {superadmin:'Superadmin',sostenedor:'Sostenedor',director:'Director',equipo_gestion:'Equipo Gestion'};
+const canConfig = rol => ['superadmin','director'].includes(rol);
+const canUsers  = rol => rol === 'superadmin';
+const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
+
+// INIT
+(async () => {
+  hideLoading();
+  showScreen('screenLogin');
+})();
+
+// AUTH
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  const btn   = document.getElementById('loginBtn');
+  errEl.classList.remove('show');
+  btn.textContent = 'Verificando...'; btn.disabled = true;
+
+  const {data:user, error} = await sb.from('usuarios')
+    .select('*').eq('email',email).eq('password_hash',pass).eq('activo',true).single();
+
+  btn.textContent = 'Ingresar'; btn.disabled = false;
+  if (error || !user) { errEl.classList.add('show'); return; }
+  SESSION.user = user;
+
+  if (isMulti(user.rol)) {
+    setLoading('Cargando colegios...');
+    const {data:cols} = await sb.from('colegios').select('*').order('nombre');
+    SESSION.colegios = cols || [];
+    hideLoading();
+    renderMultiPanel();
+    showScreen('screenMulti');
+  } else {
+    if (!user.colegio_id) { errEl.classList.add('show'); return; }
+    setLoading('Cargando datos...');
+    showScreen('screenColegio');
+    try {
+      await loadColegio(user.colegio_id);
+      setupColegioUI();
+      hideLoading();
+      showPanel('dashboard');
+    } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
+  }
+}
+
+function doLogout() {
+  SESSION = {user:null,colegios:[],colegioActivo:null};
+  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[]};
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
+  showScreen('screenLogin');
+}
+
+// MULTI PANEL
+function renderMultiPanel() {
+  const u = SESSION.user;
+  document.getElementById('multiUserName').textContent = u.nombre;
+  const rb = document.getElementById('multiRolBadge');
+  rb.textContent = ROL_LABELS[u.rol]; rb.className = 'role-badge '+u.rol;
+  document.getElementById('multiTitle').textContent = u.rol==='superadmin' ? 'Panel de colegios' : 'Vista de colegios';
+  const c = SESSION.colegios;
+  document.getElementById('multiSubtitle').textContent = c.length + ' colegio' + (c.length!==1?'s':'') + ' registrado' + (c.length!==1?'s':'');
+  const grid = document.getElementById('colegiosGrid');
+  grid.innerHTML = c.map(col => `
+    <div class="colegio-card" onclick="entrarColegio('${col.id}')">
+      <div class="colegio-rbd">RBD ${col.rbd}</div>
+      <div class="colegio-name">${col.nombre}</div>
+      <div class="colegio-stats">
+        <div class="colegio-stat"><div class="colegio-stat-val" id="st-a-${col.id}">-</div><div class="colegio-stat-label">Areas</div></div>
+        <div class="colegio-stat"><div class="colegio-stat-val" id="st-ac-${col.id}">-</div><div class="colegio-stat-label">Acciones</div></div>
+        <div class="colegio-stat"><div class="colegio-stat-val" id="st-av-${col.id}">-</div><div class="colegio-stat-label">Avance</div></div>
+      </div>
+      <button class="colegio-enter-btn">Ingresar</button>
+    </div>`).join('') + (u.rol==='superadmin'?`<div class="add-colegio-card" onclick="addColegio()"><div style="font-size:32px;color:var(--muted)">+</div><div style="font-size:13px;color:var(--muted);font-weight:500">Agregar colegio</div></div>`:'');
+  c.forEach(col => loadColegioStats(col));
+}
+
+async function loadColegioStats(c) {
+  const [{count:nA},{data:acs},{data:segs}] = await Promise.all([
+    sb.from('areas').select('*',{count:'exact',head:true}).eq('colegio_id',c.id),
+    sb.from('acciones').select('id,objetivos!inner(area_id,areas!inner(colegio_id))').eq('objetivos.areas.colegio_id',c.id),
+    sb.from('seguimiento').select('porcentaje,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',c.id),
+  ]);
+  const ea=document.getElementById('st-a-'+c.id), eac=document.getElementById('st-ac-'+c.id), eav=document.getElementById('st-av-'+c.id);
+  if(ea) ea.textContent = nA??0;
+  if(eac) eac.textContent = (acs||[]).length;
+  if(eav) { const r=segs||[]; eav.textContent = r.length ? Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length)+'%' : '-'; }
+}
+
+function addColegio() {
+  openModal('Nuevo colegio',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" placeholder="Ej: Liceo..."></div>' +
+    '<div class="form-group"><label class="form-label">RBD</label><input class="form-input" id="f-rbd" placeholder="Ej: 12345"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Crear colegio',cls:'btn-primary',action:'saveColegio()'}]);
+}
+async function saveColegio() {
+  const nombre=document.getElementById('f-nombre')?.value.trim(), rbd=document.getElementById('f-rbd')?.value.trim();
+  if(!nombre||!rbd){showToast('Completa nombre y RBD');return;}
+  const {data,error} = await sb.from('colegios').insert({nombre,rbd}).select().single();
+  if(error){showToast('Error: '+error.message);return;}
+  SESSION.colegios.push(data); closeModal(); renderMultiPanel(); showToast('Colegio creado');
+}
+
+// ENTRAR COLEGIO
+async function entrarColegio(colegioId) {
+  setLoading('Cargando datos del colegio...');
+  showScreen('screenColegio');
+  try {
+    await loadColegio(colegioId);
+    setupColegioUI();
+    hideLoading();
+    showPanel('dashboard');
+  } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenMulti'); }
+}
+
+async function loadColegio(colegioId) {
+  SESSION.colegioActivo = colegioId;
+  const [
+    {data:colegio},{data:cargos},{data:responsables},{data:areas},{data:objetivos},
+    {data:acciones},{data:ar},{data:segs},{data:reuniones}
+  ] = await Promise.all([
+    sb.from('colegios').select('*').eq('id',colegioId).single(),
+    sb.from('cargos').select('*').eq('colegio_id',colegioId).order('nombre'),
+    sb.from('responsables').select('*,cargos(nombre)').eq('colegio_id',colegioId).order('nombre'),
+    sb.from('areas').select('*').eq('colegio_id',colegioId).order('orden'),
+    sb.from('objetivos').select('*,areas!inner(colegio_id)').eq('areas.colegio_id',colegioId).order('orden'),
+    sb.from('acciones').select('*,objetivos!inner(area_id,areas!inner(colegio_id))').eq('objetivos.areas.colegio_id',colegioId),
+    sb.from('accion_responsable').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
+    sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
+    sb.from('reuniones').select('*,reunion_participantes(*)').eq('colegio_id',colegioId).order('created_at'),
+  ]);
+  DB = {
+    colegio, cargos:cargos||[],
+    responsables:(responsables||[]).map(r=>({...r,cargo:r.cargos?.nombre||''})),
+    areas:areas||[], objetivos:objetivos||[], acciones:acciones||[],
+    accion_responsable:ar||[], seguimiento:segs||[],
+    reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]}))
+  };
+}
+
+function setupColegioUI() {
+  const u = SESSION.user;
+  document.getElementById('topColegio').textContent = '- ' + DB.colegio.nombre;
+  document.getElementById('topRbd').textContent = 'RBD ' + DB.colegio.rbd;
+  document.getElementById('topUserName').textContent = u.nombre;
+  const trb = document.getElementById('topRolBadge');
+  trb.textContent = ROL_LABELS[u.rol]; trb.className = 'role-badge '+u.rol;
+  document.getElementById('backBtn').style.display = isMulti(u.rol) ? '' : 'none';
+  renderSidebar();
+  openAreas = new Set(DB.areas.length ? [DB.areas[0].id] : []);
+  openObjs = new Set(); filterCargo=''; filterMes='';
+  const fc=document.getElementById('filterCargo'), fm=document.getElementById('filterMes');
+  if(fc) fc.value=''; if(fm) fm.value='';
+  initFilters();
+}
+
+function renderSidebar() {
+  const u = SESSION.user;
+  const cc = canConfig(u.rol), cu = canUsers(u.rol);
+  document.getElementById('sidebarNav').innerHTML =
+    '<div class="nav-section">' +
+    '<div class="nav-label">Principal</div>' +
+    '<div class="nav-item active" onclick="showPanel(\'dashboard\')" id="nav-dashboard"><span class="icon">o</span> Dashboard</div>' +
+    '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
+    '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
+    '</div>' +
+    '<div class="nav-divider"></div>' +
+    '<div class="nav-section">' +
+    '<div class="nav-label">Filtros</div>' +
+    '<div style="padding:0 4px">' +
+    '<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Cargo</div>' +
+    '<select class="filter-select" id="filterCargo" onchange="applyFilters()" style="width:100%"><option value="">Todos los cargos</option></select></div>' +
+    '<div><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Mes</div>' +
+    '<select class="filter-select" id="filterMes" onchange="applyFilters()" style="width:100%">' +
+    '<option value="">Todos los meses</option>' +
+    '<option value="2026-03">Marzo 2026</option><option value="2026-04">Abril 2026</option><option value="2026-05">Mayo 2026</option>' +
+    '<option value="2026-06">Junio 2026</option><option value="2026-07">Julio 2026</option><option value="2026-08">Agosto 2026</option>' +
+    '<option value="2026-09">Septiembre 2026</option><option value="2026-10">Octubre 2026</option><option value="2026-11">Noviembre 2026</option>' +
+    '</select></div></div></div>' +
+    (cc ? '<div class="nav-divider"></div><div class="nav-section"><div class="nav-label">Configuracion</div>' +
+      '<div class="nav-item" onclick="showPanel(\'admin-estructura\')" id="nav-admin-estructura"><span class="icon">s</span> Estructura</div>' +
+      '<div class="nav-item" onclick="showPanel(\'admin-responsables\')" id="nav-admin-responsables"><span class="icon">r</span> Responsables</div>' +
+      '<div class="nav-item" onclick="showPanel(\'admin-cargos\')" id="nav-admin-cargos"><span class="icon">c</span> Cargos</div>' +
+      '</div>' : '') +
+    (cu ? '<div class="nav-divider"></div><div class="nav-section"><div class="nav-label">Acceso</div>' +
+      '<div class="nav-item" onclick="showPanel(\'admin-usuarios\')" id="nav-admin-usuarios"><span class="icon">u</span> Usuarios</div>' +
+      '</div>' : '');
+  initFilters();
+}
+
+function volverMulti() {
+  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[]};
+  SESSION.colegioActivo = null;
+  renderMultiPanel(); showScreen('screenMulti');
+}
+
+// CALCULATIONS
+function getEstado(p) { if(p===null||p===undefined) return 'sin_datos'; return p>=90?'verde':p>=70?'amarillo':'rojo'; }
+
+// Retorna el porcentaje de una acción solo si tiene seguimiento NO pendiente.
+// Si está pendiente o sin datos, retorna null (se excluye del cálculo).
+function calcAccion(id,mes) {
+  const r=DB.seguimiento.filter(s=>s.accion_id===id&&(!mes||s.mes===mes)&&!s.pendiente);
+  if(!r.length) return null;
+  return Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length*100)/100;
+}
+
+// Para el dashboard/informes: solo cuenta acciones con seguimiento efectivo (no pendiente)
+function calcObjetivo(id,mes) {
+  const a=DB.acciones.filter(a=>a.objetivo_id===id);
+  let sp=0,sv=0;
+  a.forEach(a=>{const r=calcAccion(a.id,mes);if(r!==null){sv+=r*a.ponderador;sp+=a.ponderador;}});
+  return sp?Math.round(sv/sp*100)/100:null;
+}
+function calcArea(id,mes) {
+  const o=DB.objetivos.filter(o=>o.area_id===id);
+  let sp=0,sv=0;
+  o.forEach(o=>{const r=calcObjetivo(o.id,mes);if(r!==null){sv+=r*o.ponderador;sp+=o.ponderador;}});
+  return sp?Math.round(sv/sp*100)/100:null;
+}
+function calcGeneral(mes) {
+  let sp=0,sv=0;
+  DB.areas.forEach(a=>{const r=calcArea(a.id,mes);if(r!==null){sv+=r*a.ponderador;sp+=a.ponderador;}});
+  return sp?Math.round(sv/sp*100)/100:null;
+}
+function getResps(id) { return DB.accion_responsable.filter(ar=>ar.accion_id===id).map(ar=>DB.responsables.find(r=>r.id===ar.responsable_id)).filter(Boolean); }
+
+// FILTERS
+function applyFilters() { filterCargo=document.getElementById('filterCargo')?.value||''; filterMes=document.getElementById('filterMes')?.value||''; renderCurrentPanel(); }
+function initFilters() { const s=document.getElementById('filterCargo'); if(!s) return; s.innerHTML='<option value="">Todos los cargos</option>'+DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join(''); }
+function acMatchFilter(a) { if(filterCargo&&!getResps(a.id).some(r=>r.cargo_id===filterCargo)) return false; if(filterMes&&!a.meses_activos.includes(filterMes)) return false; return true; }
+
+// PANELS
+function showPanel(id) {
+  currentPanel = id;
+  document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+  const el = document.getElementById('nav-'+id); if(el) el.classList.add('active');
+  renderCurrentPanel();
+}
+function renderCurrentPanel() {
+  destroyCharts();
+  const main = document.getElementById('mainContent'); if(!main) return;
+  switch(currentPanel) {
+    case 'dashboard':          main.innerHTML = renderDashboard(); break;
+    case 'seguimiento':        main.innerHTML = renderSeguimiento(); break;
+    case 'informes':           main.innerHTML = renderInformes(); break;
+    case 'ver-reuniones':      main.innerHTML = renderVerReuniones(); break;
+    case 'admin-estructura':   main.innerHTML = renderAdminEstructura(); break;
+    case 'admin-responsables': main.innerHTML = renderAdminResponsables(); break;
+    case 'admin-cargos':       main.innerHTML = renderAdminCargos(); break;
+    case 'admin-usuarios':     main.innerHTML = renderAdminUsuarios(); break;
+  }
+  if(currentPanel==='dashboard') setTimeout(initDashboardCharts,100);
+  if(currentPanel==='informes')  setTimeout(initInformeCharts,100);
+  if(currentPanel==='admin-usuarios') loadUsuariosPanel();
+}
+function destroyCharts() { Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}}); charts={}; }
+function toggleArea(id) { if(openAreas.has(id)) openAreas.delete(id); else openAreas.add(id); renderCurrentPanel(); }
+function toggleObj(id)  { if(openObjs.has(id))  openObjs.delete(id);  else openObjs.add(id);  renderCurrentPanel(); }
+
+// HELPERS
+function fmtMes(mes,short=false) {
+  const m={'01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio','07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre'};
+  const s={'01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic'};
+  const [y,mm] = mes.split('-'); return short ? s[mm] : m[mm]+' '+y;
+}
+function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(label||est==='sin_datos'?'Sin datos':est)+'</div>'; }
+function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
+
+// DASHBOARD
+function renderDashboard() {
+  const mes=filterMes||null, gen=calcGeneral(mes), est=getEstado(gen);
+  const v=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
+  const am=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
+  const r=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
+  const sd=DB.acciones.filter(a=>calcAccion(a.id,mes)===null).length;
+  if(!DB.areas.length) return '<div class="page-header"><div class="page-title">Dashboard</div></div><div class="card"><div class="empty-state"><div class="icon">clip</div><div style="font-weight:500;margin-bottom:8px">Sin estructura configurada</div><div style="font-size:12px">Ve a Configuracion &gt; Estructura para comenzar.</div></div></div>';
+  let html = '<div class="page-header"><div class="page-title">Dashboard de Mejora</div><div class="page-sub">'+DB.colegio.nombre+' - '+(filterMes?fmtMes(filterMes):'Acumulado')+'</div></div>';
+  html += '<div class="kpi-grid">';
+  html += '<div class="kpi-card '+est+'"><div class="kpi-val">'+(gen!==null?gen+'%':'-')+'</div><div class="kpi-label">Avance general</div><div class="kpi-badge '+est+'">'+(est==='verde'?'En ruta':est==='amarillo'?'Atencion':est==='rojo'?'Critico':'Sin datos')+'</div></div>';
+  html += '<div class="kpi-card verde"><div class="kpi-val">'+v+'</div><div class="kpi-label">En verde</div><div class="kpi-badge verde">&ge; 90%</div></div>';
+  html += '<div class="kpi-card amarillo"><div class="kpi-val">'+am+'</div><div class="kpi-label">En amarillo</div><div class="kpi-badge amarillo">70-89%</div></div>';
+  html += '<div class="kpi-card rojo"><div class="kpi-val">'+(r+sd)+'</div><div class="kpi-label">Rojo / sin datos</div><div class="kpi-badge rojo">&lt; 70%</div></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">';
+  html += '<div class="card"><div class="card-title">Avance por area</div><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>';
+  html += '<div class="card"><div class="card-title">Distribucion semaforos</div><div class="chart-wrap"><canvas id="chartSemaforos"></canvas></div></div>';
+  html += '</div>';
+  DB.areas.forEach(area => {
+    const aR=calcArea(area.id,mes), aE=getEstado(aR);
+    const col=aE==='verde'?'var(--green)':aE==='amarillo'?'var(--gold)':'var(--red)';
+    const isOpen=openAreas.has(area.id);
+    html += '<div class="area-block"><div class="area-header" onclick="toggleArea(\''+area.id+'\')">';
+    html += '<div style="width:4px;height:36px;border-radius:4px;background:'+col+';flex-shrink:0"></div>';
+    html += '<div style="flex:1"><div class="area-name">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
+    html += '<div style="margin-right:12px">'+semHtml(aE)+'</div>';
+    html += '<div class="area-pct" style="color:'+col+'">'+(aR!==null?aR+'%':'-')+'</div>';
+    html += '<div style="color:var(--muted);margin-left:8px">'+(isOpen?'v':'>')+'</div></div>';
+    html += '<div class="area-body '+(isOpen?'open':'')+'">';
+    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj => {
+      const oR=calcObjetivo(obj.id,mes), oE=getEstado(oR);
+      const oC=oE==='verde'?'var(--green)':oE==='amarillo'?'var(--gold)':oE==='rojo'?'var(--red)':'var(--muted)';
+      const oO=openObjs.has(obj.id);
+      html += '<div class="obj-row"><div class="obj-header" onclick="toggleObj(\''+obj.id+'\')">';
+      html += '<div class="obj-name">'+obj.nombre+'</div>'+semHtml(oE)+'<div class="obj-pct" style="color:'+oC+'">'+(oR!==null?oR+'%':'-')+'</div>';
+      html += '<div style="color:var(--muted);font-size:11px;margin-left:6px">'+(oO?'v':'>')+'</div></div>';
+      if(oO) {
+        html += '<table class="accion-table"><thead><tr><th>Accion</th><th>Responsable</th><th>Meses</th><th style="text-align:center">Avance</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
+        DB.acciones.filter(a=>a.objetivo_id===obj.id&&acMatchFilter(a)).forEach(ac => {
+          const acR=calcAccion(ac.id,mes), acE=getEstado(acR), resps=getResps(ac.id);
+          const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&(!mes||s.mes===mes));
+          const pend=seg?.pendiente===true;
+          html += '<tr><td><div class="accion-name">'+ac.nombre+'</div>'+acDesc(ac)+'</td>';
+          html += '<td><div class="accion-responsable">'+( resps.map(r=>r.nombre+' <span class="accion-cargo">'+r.cargo+'</span>').join('<br>')||'-')+'</div></td>';
+          html += '<td style="color:var(--muted);font-size:11px">'+ac.meses_activos.map(m=>fmtMes(m,true)).join(', ')+'</td>';
+          html += '<td style="text-align:center"><div style="display:flex;align-items:center;gap:6px;justify-content:center"><div class="progress-wrap" style="width:60px"><div class="progress-bar '+acE+'" style="width:'+(acR||0)+'%"></div></div><span style="font-weight:600;min-width:36px">'+(acR!==null?acR+'%':'-')+'</span></div></td>';
+          html += '<td style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:4px">'+semHtml(acE)+(pend?'<span title="Pendiente" style="font-size:13px">P</span>':'')+'</div></td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    });
+    html += '</div></div>';
+  });
+  return html;
+}
+
+function initDashboardCharts() {
+  const mes=filterMes||null, aV=DB.areas.map(a=>calcArea(a.id,mes)||0), aC=aV.map(v=>v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335');
+  const ctxA=document.getElementById('chartAreas');
+  if(ctxA) charts.areas=new Chart(ctxA,{type:'bar',data:{labels:DB.areas.map(a=>a.nombre),datasets:[{data:aV,backgroundColor:aC,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}},x:{grid:{display:false}}}}});
+  const vv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
+  const av=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
+  const rv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
+  const sv=DB.acciones.filter(a=>calcAccion(a.id,mes)===null).length;
+  const ctxS=document.getElementById('chartSemaforos');
+  if(ctxS) charts.semafs=new Chart(ctxS,{type:'doughnut',data:{labels:['Verde','Amarillo','Rojo','Sin datos'],datasets:[{data:[vv,av,rv,sv],backgroundColor:['#2E7D52','#B8860B','#9B2335','#D3D1C7'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{family:'DM Sans',size:12},padding:12}}},cutout:'65%'}});
+}
+
+// SEGUIMIENTO
+function renderSeguimiento() {
+  const mes=filterMes;
+  // Mostrar la reunion más reciente activa (independiente del mes filtrado)
+  const reunion=DB.reuniones&&DB.reuniones.length>0?DB.reuniones[DB.reuniones.length-1]:null;
+  if(reunion) window._reunionActiva=reunion.id;
+  let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html+='<div><div class="page-title">Ingresar seguimiento</div><div class="page-sub">'+(mes?'Mes: '+fmtMes(mes):'Selecciona un mes en el filtro lateral')+'</div></div>';
+  html+='<div style="display:flex;gap:8px">';
+  html+='<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()">+ Crear Reunion</button>';
+  html+='</div>';
+  html+='</div></div>';
+  if(!mes) return html+'<div class="card"><div class="empty-state">Selecciona un mes en el filtro lateral.</div></div>';
+  if(reunion){
+    html+='<div class="reunion-banner">';
+    html+='<div><div class="rb-title">'+reunion.titulo+'</div><div class="rb-meta">'+reunion.fecha+' | '+(reunion.consultor_nombre||'Sin consultor')+'</div></div>';
+    html+='<div class="rb-actions">';
+    html+='<button class="btn-reunion" onclick="abrirEditarReunion()">Editar reunion</button>';
+    html+='<button class="btn-reunion gold" onclick="generarPDFReunion()">Generar informe PDF</button>';
+    html+='<button class="btn-reunion" onclick="abrirEnviarReunion()">Enviar reunion</button>';
+    html+='</div></div>';
+  }
+  DB.areas.forEach(area=>{
+    const acs=DB.acciones.filter(a=>{const ids=DB.objetivos.filter(o=>o.area_id===area.id).map(o=>o.id);return ids.includes(a.objetivo_id)&&a.meses_activos.includes(mes)&&acMatchFilter(a);});
+    if(!acs.length) return;
+    html+='<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:16px">'+area.nombre+'</div>';
+    html+='<table class="accion-table"><thead><tr><th>Accion</th><th>Responsable</th><th style="text-align:center">% cumplimiento</th><th>Comentario</th><th style="text-align:center">Opciones</th></tr></thead><tbody>';
+    acs.forEach(ac=>{
+      const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&s.mes===mes);
+      const resps=getResps(ac.id), est=seg?getEstado(seg.porcentaje):'sin_datos';
+      const isPend=seg?.pendiente===true;
+      const semLabel=seg?(isPend?seg.porcentaje+'% P':seg.porcentaje+'%'):'-';
+      html+='<tr><td><div style="display:flex;align-items:flex-start;gap:6px">';
+      html+='<button class="info-btn" onclick="mostrarInfoAccion(event,\''+ac.id+'\')" title="Ver fórmula y evidencia">+</button>';
+      html+='<div><div class="accion-name">'+ac.nombre+'</div>'+acDesc(ac)+'</div></div></td>';
+      html+='<td><div class="accion-responsable">'+( resps.map(r=>r.nombre+' <span class="accion-cargo">'+r.cargo+'</span>').join(', '))+'</div></td>';
+      html+='<td style="text-align:center"><div class="seguimiento-cell">';
+      html+=semHtml(est,semLabel);
+      html+='<div style="display:flex;align-items:center;gap:4px;margin-top:4px">';
+      html+='<input class="pct-input" type="number" min="0" max="100" id="pct_'+ac.id+'" value="'+(seg?seg.porcentaje:'')+'" placeholder="0-100">';
+      html+='<button class="save-btn" id="btn_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',false)">OK</button>';
+      html+='<button class="pending-btn'+(isPend?' on':'')+'" id="pend_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',true)" title="Guardar como pendiente">P</button>';
+      html+='</div></div></td>';
+      html+='<td>';
+      const comVal=seg?.comentario||'';
+      html+='<button class="comentario-btn" onclick="abrirComentario(event,\''+ac.id+'\',\''+mes+'\')" title="Agregar comentario">';
+      html+=comVal?'<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">'+comVal+'</span>':'<span style="color:var(--muted)">+ Comentario</span>';
+      html+='</button></td>';
+      html+='<td style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap">';
+      html+='<button class="evidence-btn" onclick="openEvidenceModal(\''+ac.id+'\',\''+mes+'\')">Adj</button>';
+      html+='<button class="periodo-btn" onclick="cambiarPeriodo(\''+ac.id+'\')">Per</button>';
+      html+='</div></td></tr>';
+    });
+    html+='</tbody></table></div>';
+  });
+  return html;
+}
+
+function abrirComentario(event, accionId, mes) {
+  const prev = document.getElementById('comPopup');
+  if(prev) {
+    // Si el popup ya está abierto para la misma acción, cerrarlo
+    if(prev.dataset.accionId === accionId && prev.dataset.mes === mes) { prev.remove(); return; }
+    prev.remove();
+  }
+
+  const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
+  const ac  = DB.acciones.find(a=>a.id===accionId);
+
+  const popup = document.createElement('div');
+  popup.id = 'comPopup';
+  popup.className = 'com-popup';
+  popup.dataset.accionId = accionId;
+  popup.dataset.mes = mes;
+  popup.innerHTML =
+    '<div class="com-popup-header" id="comPopupHeader">'+
+      '<div class="com-popup-title">Comentario — '+(ac?.nombre||'')+'</div>'+
+      '<button class="com-popup-close" onclick="document.getElementById(\'comPopup\').remove()">✕</button>'+
+    '</div>'+
+    '<div class="com-popup-body">'+
+      '<textarea class="com-popup-textarea" id="comPopupText" placeholder="Escribe tu comentario aquí...">'+(seg?.comentario||'')+'</textarea>'+
+      '<div class="com-popup-footer">'+
+        '<button class="com-save-btn" onclick="guardarComentarioPopup(\''+accionId+'\',\''+mes+'\')">Guardar</button>'+
+      '</div>'+
+    '</div>';
+
+  // Posicionar
+  const rect = event.target.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = rect.left;
+  if(left + 378 > window.innerWidth) left = window.innerWidth - 386;
+  if(top + 189 > window.innerHeight) top = rect.top - 197;
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+  document.body.appendChild(popup);
+  document.getElementById('comPopupText').focus();
+
+  // Arrastrable
+  const header = document.getElementById('comPopupHeader');
+  let drag=false, sx, sy, sl, st;
+  header.addEventListener('mousedown', function(e){
+    drag=true; sx=e.clientX; sy=e.clientY;
+    sl=parseInt(popup.style.left); st=parseInt(popup.style.top);
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!drag) return;
+    popup.style.left=(sl+e.clientX-sx)+'px';
+    popup.style.top=(st+e.clientY-sy)+'px';
+  });
+  document.addEventListener('mouseup', function(){ drag=false; });
+}
+
+async function guardarComentarioPopup(accionId, mes) {
+  const texto = document.getElementById('comPopupText')?.value.trim()||'';
+  const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
+  if(!ex) { showToast('Guarda primero el % de cumplimiento'); return; }
+  const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
+  if(error){ showToast('Error: '+error.message); return; }
+  const i = DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
+  if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario:texto};
+  document.getElementById('comPopup')?.remove();
+  renderCurrentPanel();
+  showToast('Comentario guardado');
+}
+
+function mostrarInfoAccion(event, accionId) {
+  // Cerrar popup anterior si existe
+  const prev = document.getElementById('infoPopup');
+  if(prev) prev.remove();
+
+  const ac = DB.acciones.find(a=>a.id===accionId);
+  if(!ac) return;
+
+  const popup = document.createElement('div');
+  popup.id = 'infoPopup';
+  popup.className = 'info-popup';
+  popup.innerHTML =
+    '<div class="info-popup-header" id="infoPopupHeader">'+
+      '<div class="info-popup-title">'+ac.nombre+'</div>'+
+      '<button class="info-popup-close" onclick="document.getElementById(\'infoPopup\').remove()">✕</button>'+
+    '</div>'+
+    '<div class="info-popup-body">'+
+      '<div class="info-field">'+
+        '<div class="info-field-label">Fórmula de cumplimiento</div>'+
+        '<div class="info-field-val'+(ac.formula_cumplimiento?'':' empty')+'">'+
+          (ac.formula_cumplimiento||'No definida')+'</div>'+
+      '</div>'+
+      '<div class="info-field">'+
+        '<div class="info-field-label">Evidencia esperada</div>'+
+        '<div class="info-field-val'+(ac.evidencia_tipo?'':' empty')+'">'+
+          (ac.evidencia_tipo||'No definida')+'</div>'+
+      '</div>'+
+    '</div>';
+
+  // Posicionar cerca del botón
+  const rect = event.target.getBoundingClientRect();
+  let top = rect.bottom + 8;
+  let left = rect.left;
+  if(left + 320 > window.innerWidth) left = window.innerWidth - 328;
+  if(top + 200 > window.innerHeight) top = rect.top - 210;
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+  document.body.appendChild(popup);
+
+  // Hacer arrastrable
+  const header = document.getElementById('infoPopupHeader');
+  let isDragging = false, startX, startY, startLeft, startTop;
+  header.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startLeft = parseInt(popup.style.left); startTop = parseInt(popup.style.top);
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) {
+    if(!isDragging) return;
+    popup.style.left = (startLeft + e.clientX - startX) + 'px';
+    popup.style.top  = (startTop  + e.clientY - startY) + 'px';
+  });
+  document.addEventListener('mouseup', function() { isDragging = false; });
+}
+
+async function guardarSeg(accionId, mes, pendiente) {
+  const pctEl=document.getElementById('pct_'+accionId);
+  const btnEl=document.getElementById(pendiente?'pend_'+accionId:'btn_'+accionId);
+  const pct=parseFloat(pctEl?.value);
+  if(isNaN(pct)||pct<0||pct>100){showToast('Valor entre 0 y 100');return;}
+  if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
+  // Preservar comentario existente
+  const exSeg=DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
+  const comentario=exSeg?.comentario||'';
+  const payload={accion_id:accionId,mes,porcentaje:pct,comentario,pendiente,updated_at:new Date().toISOString()};
+  let error;
+  if(exSeg) {
+    ({error}=await sb.from('seguimiento').update(payload).eq('id',exSeg.id));
+    if(!error){const i=DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);if(i>=0)DB.seguimiento[i]={...DB.seguimiento[i],...payload};}
+  } else {
+    const {data,error:err}=await sb.from('seguimiento').insert(payload).select().single();
+    error=err; if(data) DB.seguimiento.push(data);
+  }
+  if(btnEl){btnEl.disabled=false;btnEl.textContent=pendiente?'P':'OK';}
+  if(error){showToast('Error: '+error.message);return;}
+  if(pctEl) pctEl.style.borderColor=pendiente?'var(--gold)':'var(--green)';
+  showToast(pendiente?'Guardado como pendiente':'Guardado');
+  renderCurrentPanel();
+}
+
+function openEvidenceModal(accionId, mes) {
+  const ac=DB.acciones.find(a=>a.id===accionId);
+  openModal('Evidencias - '+(ac?.nombre||''),
+    '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..."></div>'+
+    '<div class="form-group"><label class="form-label">Descripcion</label><input class="form-input" id="evDesc"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Guardar',cls:'btn-primary',action:'saveEvidence(\''+accionId+'\',\''+mes+'\')'}]);
+}
+async function saveEvidence(accionId, mes) {
+  const url=document.getElementById('evUrl')?.value.trim();
+  if(!url){showToast('Ingresa el link');return;}
+  const {error}=await sb.from('evidencias').insert({accion_id:accionId,mes,url,descripcion:document.getElementById('evDesc')?.value||''});
+  if(error){showToast('Error: '+error.message);return;}
+  closeModal(); showToast('Evidencia guardada');
+}
+
+function cambiarPeriodo(accionId) {
+  const ac=DB.acciones.find(a=>a.id===accionId); if(!ac) return;
+  const meses=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const checks=meses.map(m=>'<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer"><input type="checkbox" value="'+m+'" class="mes-check"'+(ac.meses_activos.includes(m)?' checked':'')+' style="width:15px;height:15px;accent-color:var(--accent)"><span>'+fmtMes(m)+'</span></label>').join('');
+  openModal('Periodo - '+ac.nombre,
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;padding:10px;background:var(--surface2);border-radius:6px">Selecciona los meses en que esta accion debe ser evaluada.</div><div>'+checks+'</div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Guardar periodo',cls:'btn-primary',action:'savePeriodo(\''+accionId+'\')'}]);
+}
+async function savePeriodo(accionId) {
+  const meses=[...document.querySelectorAll('.mes-check:checked')].map(c=>c.value);
+  if(!meses.length){showToast('Selecciona al menos un mes');return;}
+  const {error}=await sb.from('acciones').update({meses_activos:meses}).eq('id',accionId);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.acciones.findIndex(a=>a.id===accionId);
+  if(i>=0) DB.acciones[i]={...DB.acciones[i],meses_activos:meses};
+  closeModal(); renderCurrentPanel(); showToast('Periodo actualizado');
+}
+
+// INFORMES
+function renderInformes() {
+  const mes=filterMes||null, mesL=mes?fmtMes(mes):'Acumulado', gen=calcGeneral(mes), estG=getEstado(gen);
+  const vv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
+  const av=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
+  const rv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
+  const mA=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
+  html+='<div class="export-group"><button class="btn btn-outline btn-sm" onclick="showPanel(\'ver-reuniones\')">📋 Ver Reuniones</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
+  html+='</div></div>';
+  html+='<div class="informe-card">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px">Informe General</div><div style="font-size:12px;color:var(--muted)">'+DB.colegio.nombre+' - RBD '+DB.colegio.rbd+' - '+mesL+'</div></div>';
+  html+=semHtml(estG)+'</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">';
+  html+='<div style="text-align:center;padding:14px;background:var(--surface2);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px">'+(gen!==null?gen+'%':'-')+'</div><div style="font-size:11px;color:var(--muted)">Avance general</div></div>';
+  html+='<div style="text-align:center;padding:14px;background:var(--green-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--green)">'+vv+'</div><div style="font-size:11px;color:var(--green)">Verdes</div></div>';
+  html+='<div style="text-align:center;padding:14px;background:var(--yellow-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--yellow)">'+av+'</div><div style="font-size:11px;color:var(--yellow)">Amarillas</div></div>';
+  html+='<div style="text-align:center;padding:14px;background:var(--red-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--red)">'+rv+'</div><div style="font-size:11px;color:var(--red)">Rojas</div></div>';
+  html+='</div><div class="chart-wrap" style="height:200px"><canvas id="chartInformeAreas"></canvas></div></div>';
+  DB.areas.forEach(area=>{
+    const aR=calcArea(area.id,mes), aE=getEstado(aR), col=aE==='verde'?'var(--green)':aE==='amarillo'?'var(--gold)':'var(--red)';
+    html+='<div class="informe-card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html+='<div style="width:4px;height:48px;background:'+col+';border-radius:4px;flex-shrink:0"></div>';
+    html+='<div style="flex:1"><div style="font-family:\'DM Serif Display\',serif;font-size:20px">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
+    html+='<div style="text-align:right"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+col+'">'+(aR!==null?aR+'%':'-')+'</div>'+semHtml(aE)+'</div></div>';
+    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
+      const oR=calcObjetivo(obj.id,mes), oE=getEstado(oR);
+      html+='<div style="margin-bottom:12px;padding:12px;background:var(--surface2);border-radius:6px">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-weight:500;font-size:13px">'+obj.nombre+'</div>';
+      html+='<div style="display:flex;align-items:center;gap:8px">'+semHtml(oE)+'<span style="font-weight:600">'+(oR!==null?oR+'%':'-')+'</span></div></div>';
+      html+='<table class="accion-table"><thead><tr><th>Accion</th><th>Responsable</th><th>Formula</th><th>Meses</th><th style="text-align:center">Avance</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
+      DB.acciones.filter(a=>a.objetivo_id===obj.id).forEach(ac=>{
+        const acR=calcAccion(ac.id,mes), acE=getEstado(acR), resps=getResps(ac.id);
+        const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&(!mes||s.mes===mes));
+        const pend=seg?.pendiente===true;
+        html+='<tr><td><div class="accion-name">'+ac.nombre+'</div>'+acDesc(ac)+'</td>';
+        html+='<td><div class="accion-responsable">'+(resps.map(r=>r.nombre+' <span class="accion-cargo">'+r.cargo+'</span>').join(', ')||'-')+'</div></td>';
+        html+='<td style="font-size:11px;color:var(--muted)">'+(ac.formula_cumplimiento||'-')+'</td>';
+        html+='<td style="font-size:11px;color:var(--muted)">'+ac.meses_activos.map(m=>fmtMes(m,true)).join(', ')+'</td>';
+        html+='<td style="text-align:center;font-weight:600">'+(acR!==null?acR+'%':'-')+(pend?' P':'')+'</td>';
+        html+='<td style="text-align:center">'+semHtml(acE)+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    });
+    html+='<div style="margin-top:12px"><div class="card-title">Evolucion mensual</div><div class="chart-wrap-sm"><canvas id="chartArea_'+area.id+'"></canvas></div></div></div>';
+  });
+  html+='<div class="informe-card"><div style="font-family:\'DM Serif Display\',serif;font-size:20px;margin-bottom:16px">Evolucion mensual por area</div><div style="overflow-x:auto">';
+  html+='<table class="evolution-table"><thead><tr><th style="text-align:left">Area</th>'+mA.map(m=>'<th>'+fmtMes(m,true)+'</th>').join('')+'</tr></thead><tbody>';
+  DB.areas.forEach(area=>{
+    html+='<tr><td>'+area.nombre+'</td>';
+    mA.forEach(m=>{const v=calcArea(area.id,m),e=getEstado(v);html+='<td><span class="'+(v!==null?'cell-'+e:'')+'">'+(v!==null?v+'%':'-')+'</span></td>';});
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  return html;
+}
+
+function initInformeCharts() {
+  const mes=filterMes||null, mA=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const aV=DB.areas.map(a=>calcArea(a.id,mes)||0), aC=aV.map(v=>v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335');
+  const ctxI=document.getElementById('chartInformeAreas');
+  if(ctxI) charts.informeAreas=new Chart(ctxI,{type:'bar',data:{labels:DB.areas.map(a=>a.nombre),datasets:[{label:'Avance (%)',data:aV,backgroundColor:aC,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}},x:{grid:{display:false}}}}});
+  DB.areas.forEach(area=>{
+    const ctx=document.getElementById('chartArea_'+area.id); if(!ctx) return;
+    const vals=mA.map(m=>calcArea(area.id,m));
+    charts['area_'+area.id]=new Chart(ctx,{type:'line',data:{labels:mA.map(m=>fmtMes(m,true)),datasets:[{data:vals,tension:0.3,fill:true,backgroundColor:'rgba(46,125,82,.08)',borderColor:'#2E7D52',borderWidth:2,pointBackgroundColor:vals.map(v=>v===null?'transparent':v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335'),pointRadius:vals.map(v=>v===null?0:5),spanGaps:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,min:0,ticks:{callback:v=>v+'%',font:{size:10}}},x:{grid:{display:false},ticks:{font:{size:10}}}}}});
+  });
+}
+
+function exportPDF() { showToast('Generando PDF...'); setTimeout(()=>window.print(),300); }
+function exportExcel() {
+  showToast('Exportando...');
+  const mes=filterMes||null;
+  const rows=[['Area','Objetivo','Accion','Descripcion','Formula','Responsable','Cargo','Meses','Avance (%)','Estado']];
+  DB.areas.forEach(a=>DB.objetivos.filter(o=>o.area_id===a.id).forEach(o=>DB.acciones.filter(ac=>ac.objetivo_id===o.id).forEach(ac=>{
+    const resps=getResps(ac.id), acR=calcAccion(ac.id,mes);
+    rows.push([a.nombre,o.nombre,ac.nombre,ac.descripcion||'',ac.formula_cumplimiento||'',resps.map(r=>r.nombre).join('; '),resps.map(r=>r.cargo).join('; '),ac.meses_activos.join(', '),acR!==null?acR:'',getEstado(acR)]);
+  })));
+  const csv = rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='informe_'+( DB.colegio?.rbd||'colegio')+'.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+// ADMIN ESTRUCTURA
+function renderAdminEstructura() {
+  const fMes   = window._estructuraFiltroMes   || '';
+  const fCargo = window._estructuraFiltroCargo || '';
+  const mesesOpts = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11']
+    .map(m=>'<option value="'+m+'"'+(fMes===m?' selected':'')+'>'+fmtMes(m)+'</option>').join('');
+  const cargosOpts = DB.cargos.map(c=>'<option value="'+c.id+'"'+(fCargo===c.id?' selected':'')+'>'+c.nombre+'</option>').join('');
+
+  let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html += '<div><div class="page-title">Estructura del plan</div><div class="page-sub">Areas, objetivos y acciones</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html += '<select class="filter-select" onchange="window._estructuraFiltroMes=this.value;renderCurrentPanel()" style="font-size:12px"><option value="">Todos los meses</option>'+mesesOpts+'</select>';
+  html += '<select class="filter-select" onchange="window._estructuraFiltroCargo=this.value;renderCurrentPanel()" style="font-size:12px"><option value="">Todos los cargos</option>'+cargosOpts+'</select>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm btn-export" onclick="exportarEstructura(\'pdf\')" title="Descargar PDF">PDF</button>';
+  html += '<button class="btn btn-sm btn-export" style="background:#1E6B3C" onclick="exportarEstructura(\'excel\')" title="Descargar Excel">Excel</button>';
+  html += '<button class="btn btn-sm btn-export" style="background:#1F4E79" onclick="exportarEstructura(\'word\')" title="Descargar Word">Word</button>';
+  html += '</div>';
+  html += '<button class="btn btn-sm btn-outline" onclick="descargarPlantilla()">Plantilla</button>';
+  html += '<label class="btn btn-sm btn-primary" style="cursor:pointer">Cargar archivo <input type="file" id="inputFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="cargarArchivo(this)"></label>';
+  html += '</div></div></div><div>';
+
+  let hayAcciones = false;
+  DB.areas.forEach(area=>{
+    // Filtrar acciones según mes y cargo
+    const accionesArea = DB.acciones.filter(ac=>{
+      const objIds = DB.objetivos.filter(o=>o.area_id===area.id).map(o=>o.id);
+      if(!objIds.includes(ac.objetivo_id)) return false;
+      if(fMes && !ac.meses_activos.includes(fMes)) return false;
+      if(fCargo){
+        const resps = getResps(ac.id);
+        if(!resps.some(r=>r.cargo_id===fCargo)) return false;
+      }
+      return true;
+    });
+    if((fMes||fCargo) && !accionesArea.length) return;
+    hayAcciones = true;
+
+    html += '<div class="card" style="margin-bottom:14px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+    html += '<div><div style="font-family:\'DM Serif Display\',serif;font-size:18px">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
+    html += '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="editArea(\''+area.id+'\')">Editar</button><button class="btn btn-sm btn-primary" onclick="addObjetivo(\''+area.id+'\')">+ Objetivo</button></div></div>';
+    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
+      const accionesObj = accionesArea.filter(a=>a.objetivo_id===obj.id);
+      if((fMes||fCargo) && !accionesObj.length) return;
+      html += '<div style="margin-left:16px;margin-bottom:10px;padding:10px 14px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--border)">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+      html += '<div><span style="font-weight:500">'+obj.nombre+'</span><span style="font-size:11px;color:var(--muted);margin-left:8px">Pond: '+(obj.ponderador*100).toFixed(0)+'%</span></div>';
+      html += '<div style="display:flex;gap:4px"><button class="btn btn-sm btn-outline" onclick="editObjetivo(\''+obj.id+'\')">Ed</button><button class="btn btn-sm btn-primary" onclick="addAccion(\''+obj.id+'\')">+ Accion</button></div></div>';
+      accionesObj.forEach(ac=>{
+        const resps=getResps(ac.id);
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px;margin-bottom:4px;border:1px solid var(--border)">';
+        html += '<div style="flex:1;font-size:12px"><div style="font-weight:500">'+ac.nombre+'</div>'+(ac.descripcion?'<div style="font-size:11px;color:var(--muted);margin-top:1px">'+ac.descripcion+'</div>':'')+'</div>';
+        html += '<div style="font-size:10px;color:var(--muted)">'+resps.map(r=>'<span class="accion-cargo">'+r.cargo+'</span>').join(' ')+'</div>';
+        html += '<div style="font-size:10px;color:var(--muted)">'+ac.meses_activos.map(m=>fmtMes(m,true)).join(', ')+'</div>';
+        html += '<button class="icon-btn" onclick="editAccion(\''+ac.id+'\')">Ed</button>';
+        html += '<button class="icon-btn" style="color:var(--red)" onclick="deleteAccion(\''+ac.id+'\',\''+ac.nombre.replace(/'/g,"\\'")+'\')" title="Eliminar">✕</button></div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  if((fMes||fCargo) && !hayAcciones) {
+    html += '<div class="card"><div class="empty-state"><div class="icon">🔍</div>No hay acciones para el filtro seleccionado.</div></div>';
+  }
+
+  html += '<button class="btn btn-primary" style="margin-top:8px" onclick="addArea()">+ Nueva area</button></div>';
+  return html;
+}
+
+function getAccionesFiltradas() {
+  const fMes   = window._estructuraFiltroMes   || '';
+  const fCargo = window._estructuraFiltroCargo || '';
+  const resultado = [];
+  DB.areas.forEach(area=>{
+    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
+      DB.acciones.filter(ac=>{
+        if(ac.objetivo_id!==obj.id) return false;
+        if(fMes && !ac.meses_activos.includes(fMes)) return false;
+        if(fCargo){ const resps=getResps(ac.id); if(!resps.some(r=>r.cargo_id===fCargo)) return false; }
+        return true;
+      }).forEach(ac=>{
+        resultado.push({area, obj, ac, resps: getResps(ac.id)});
+      });
+    });
+  });
+  return resultado;
+}
+
+function exportarEstructura(tipo) {
+  const fMes   = window._estructuraFiltroMes   || '';
+  const fCargo = window._estructuraFiltroCargo || '';
+  const items  = getAccionesFiltradas();
+  if(!items.length){ showToast('No hay acciones para exportar'); return; }
+
+  const titulo = 'Estructura del Plan de Mejora';
+  const subtitulo = DB.colegio.nombre + (fMes?' · '+fmtMes(fMes):'') + (fCargo?' · '+DB.cargos.find(c=>c.id===fCargo)?.nombre:'');
+
+  if(tipo==='excel') {
+    const rows = [
+      ['Area','Objetivo','Accion','Descripcion','Formula de Cumplimiento','Evidencia Esperada','Responsables','Cargos','Meses Activos','Ponderador (%)']
+    ];
+    items.forEach(({area,obj,ac,resps})=>{
+      rows.push([
+        area.nombre, obj.nombre, ac.nombre,
+        ac.descripcion||'', ac.formula_cumplimiento||'', ac.evidencia_tipo||'',
+        resps.map(r=>r.nombre).join('; '), resps.map(r=>r.cargo).join('; '),
+        ac.meses_activos.map(m=>fmtMes(m,true)).join(', '),
+        Math.round(ac.ponderador*100)
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    // Ancho de columnas
+    ws['!cols'] = [22,22,30,30,28,28,24,20,20,12].map(w=>({wch:w}));
+    // Estilo cabecera (solo disponible en versión pro, pero el formato de celda sí aplica)
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estructura PME');
+    const fname = 'estructura_pme'+(fMes?'_'+fmtMes(fMes,true):'')+'.xlsx';
+    XLSX.writeFile(wb, fname);
+    showToast('Excel descargado');
+    return;
+  }
+
+  // Construir HTML común para PDF y Word
+  const css = `
+    body{font-family:Calibri,sans-serif;margin:2cm;color:#1A1916}
+    h1{font-size:22px;color:#1E3A2F;margin-bottom:4px}
+    .sub{font-size:12px;color:#7A7670;margin-bottom:24px}
+    h2{font-size:15px;color:#1E3A2F;margin:20px 0 6px;border-bottom:2px solid #1E3A2F;padding-bottom:4px}
+    h3{font-size:13px;color:#2D5A42;margin:12px 0 4px;padding-left:8px;border-left:3px solid #2D5A42}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:11px}
+    th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-size:10px;letter-spacing:.4px}
+    td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}
+    tr:nth-child(even) td{background:#F9F8F6}
+    .tag{display:inline-block;background:#E8F0EB;color:#1E3A2F;border-radius:3px;padding:1px 6px;font-size:10px;margin-right:3px}
+    .muted{color:#7A7670}
+    .no-print{display:none}
+    @media print{.no-print{display:none}}
+  `;
+
+  // Agrupar por área
+  const porArea = {};
+  items.forEach(item=>{
+    if(!porArea[item.area.id]) porArea[item.area.id]={area:item.area,porObj:{}};
+    const objKey = item.obj.id;
+    if(!porArea[item.area.id].porObj[objKey]) porArea[item.area.id].porObj[objKey]={obj:item.obj,acciones:[]};
+    porArea[item.area.id].porObj[objKey].acciones.push(item);
+  });
+
+  let body = '<button class="no-print" onclick="window.print()" style="position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;cursor:pointer">Imprimir / Guardar PDF</button>';
+  body += '<h1>'+titulo+'</h1><div class="sub">'+subtitulo+' &mdash; Generado '+new Date().toLocaleDateString('es-CL')+'</div>';
+
+  Object.values(porArea).forEach(({area,porObj})=>{
+    body += '<h2>'+area.nombre+' <span style="font-size:11px;font-weight:400;color:#7A7670">(Ponderador: '+(area.ponderador*100).toFixed(0)+'%)</span></h2>';
+    Object.values(porObj).forEach(({obj,acciones})=>{
+      body += '<h3>'+obj.nombre+' <span class="muted" style="font-size:10px">(Pond: '+(obj.ponderador*100).toFixed(0)+'%)</span></h3>';
+      body += '<table><thead><tr><th>Acción</th><th>Descripción</th><th>Fórmula</th><th>Evidencia</th><th>Responsables</th><th>Meses</th><th>Pond.</th></tr></thead><tbody>';
+      acciones.forEach(({ac,resps})=>{
+        body += '<tr>';
+        body += '<td style="font-weight:600">'+ac.nombre+'</td>';
+        body += '<td class="muted">'+(ac.descripcion||'—')+'</td>';
+        body += '<td>'+(ac.formula_cumplimiento||'—')+'</td>';
+        body += '<td>'+(ac.evidencia_tipo||'—')+'</td>';
+        body += '<td>'+resps.map(r=>'<span class="tag">'+r.nombre+'</span>').join('')+(resps.length?'':'—')+'</td>';
+        body += '<td class="muted">'+ac.meses_activos.map(m=>fmtMes(m,true)).join(', ')+'</td>';
+        body += '<td style="text-align:center">'+Math.round(ac.ponderador*100)+'%</td>';
+        body += '</tr>';
+      });
+      body += '</tbody></table>';
+    });
+  });
+
+  const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+titulo+'</title><style>'+css+'</style></head><body>'+body+'</body></html>';
+
+  if(tipo==='pdf') {
+    const W = window.open('','_blank');
+    W.document.write(html); W.document.close();
+    showToast('Usa Imprimir para guardar como PDF');
+  } else if(tipo==='word') {
+    const blob = new Blob([html], {type:'application/msword'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a'); a.href=url;
+    a.download = 'estructura_pme'+(fMes?'_'+fmtMes(fMes,true):'')+'.doc';
+    a.click(); URL.revokeObjectURL(url);
+    showToast('Word descargado');
+  }
+}
+
+// PLANTILLA CSV
+function descargarPlantilla(){
+  const b64='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';
+  const bin=atob(b64);
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='plantilla_estructura_pme.xlsx';a.click();
+  URL.revokeObjectURL(url);showToast('Plantilla Excel descargada');
+}
+
+function parseMeses(texto) {
+  if(!texto||!texto.trim()) return [];
+  const t = texto.trim().toLowerCase();
+  if(t==='todos'||t==='all') return ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const map = {ene:'03',enero:'03',feb:'04',febrero:'04',mar:'03',marzo:'03',abr:'04',abril:'04',may:'05',mayo:'05',jun:'06',junio:'06',jul:'07',julio:'07',ago:'08',agosto:'08',sep:'09',septiembre:'09',sept:'09',oct:'10',octubre:'10',nov:'11',noviembre:'11',dic:'12',diciembre:'12'};
+  const partes = t.split(/[,;/ ]+/).map(p=>p.trim().replace(/-/g,'')).filter(Boolean);
+  const meses=[];
+  for(const p of partes){const num=map[p];if(num&&!meses.includes('2026-'+num))meses.push('2026-'+num);}
+  return meses.sort();
+}
+
+function parsePond(texto) {
+  if(!texto) return null;
+  const n = parseFloat(String(texto).replace('%','').trim());
+  if(isNaN(n)) return null;
+  return n>1 ? n/100 : n;
+}
+
+function cargarArchivo(input) {
+  const file=input.files&&input.files[0]; if(!file) return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='xlsx'||ext==='xls'){
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const data=new Uint8Array(e.target.result);
+        const wb=XLSX.read(data,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        if(raw.length<4){showToast('El archivo no tiene datos');return;}
+        const headers=raw[2].map(function(h){return String(h||'').toLowerCase().replace(/[^a-z]/g,'');});
+        const rows=raw.slice(3).filter(function(r){return r.some(function(c){return c!=='';});});
+        procesarFilas(headers,rows);
+      }catch(e){showToast('Error leyendo XLSX: '+e.message);}
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader=new FileReader();
+    reader.onload=function(e){procesarCSV(e.target.result);};
+    reader.readAsText(file,'UTF-8');
+  }
+  input.value='';
+}
+
+function procesarFilas(headers, rows) {
+  const idx = {
+    area:     headers.findIndex(h=>h.includes('rea')&&!h.includes('obj')),
+    pondArea: headers.findIndex(h=>h.startsWith('pond')&&!h.includes('obj')&&!h.includes('acc')),
+    obj:      headers.findIndex(h=>h.startsWith('obj')),
+    pondObj:  headers.findIndex(h=>h.includes('pond')&&h.includes('obj')),
+    accion:   headers.findIndex(h=>h.startsWith('acc')||h.includes('accion')),
+    desc:     headers.findIndex(h=>h.includes('desc')),
+    pondAc:   headers.findIndex(h=>h.includes('pond')&&h.includes('acc')),
+    resps:    headers.findIndex(h=>h.includes('resp')),
+    periodo:  headers.findIndex(h=>h.includes('per')||h.includes('eval')),
+    formula:  headers.findIndex(h=>h.includes('form')||h.includes('cumpl')),
+    evidencia:headers.findIndex(h=>h.includes('evid')),
+  };
+  if(idx.area<0||idx.accion<0){showToast('No se encontraron columnas Area y Accion');return;}
+  const get=(row,i)=>i>=0&&i<row.length?String(row[i]??'').trim():'';
+  const prev=rows.slice(0,3).map(r=>'<tr><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.area)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.obj)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.accion)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.periodo)+'</td></tr>').join('');
+  openModal('Vista previa - Carga de estructura',
+    '<div style="background:var(--surface2);border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--muted)">Se encontraron <strong style="color:var(--text)">'+rows.length+' filas</strong>. Areas y objetivos existentes se reutilizan. Acciones duplicadas se omiten, solo se crean las nuevas.</div>'+
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><thead><tr><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Area</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Objetivo</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Accion</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Periodo</th></tr></thead><tbody>'+prev+'</tbody></table>'+
+    (rows.length>3?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">... y '+(rows.length-3)+' filas mas</div>':'')+
+    '<div id="cargaLog" style="display:none;background:var(--surface2);border-radius:6px;padding:12px;font-size:12px;max-height:120px;overflow-y:auto"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Confirmar e importar',cls:'btn-primary',action:'ejecutarCarga()'}]);
+  window._cargaRows=rows; window._cargaIdx=idx;
+}
+
+function procesarCSV(raw) {
+  function parseLine(line) {
+    const result=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+      else if(c===','&&!inQ){result.push(cur.trim());cur='';}
+      else cur+=c;
+    }
+    result.push(cur.trim()); return result;
+  }
+  const lines = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim());
+  if(lines.length<2){showToast('El archivo esta vacio');return;}
+  let headerLine=0;
+  const firstRow=parseLine(lines[0]).map(h=>h.toLowerCase().replace(/[^a-z]/g,''));
+  if(!firstRow.includes('area')&&lines.length>2) headerLine=2;
+  const headers=parseLine(lines[headerLine]).map(h=>h.toLowerCase().replace(/[^a-z]/g,''));
+  const rows=lines.slice(headerLine+1).map(l=>parseLine(l));
+  const idx = {
+    area:     headers.findIndex(h=>h.includes('rea')&&!h.includes('obj')),
+    pondArea: headers.findIndex(h=>h.startsWith('pond')&&!h.includes('obj')&&!h.includes('acc')),
+    obj:      headers.findIndex(h=>h.startsWith('obj')),
+    pondObj:  headers.findIndex(h=>h.includes('pond')&&h.includes('obj')),
+    accion:   headers.findIndex(h=>h.startsWith('acc')||h.includes('accion')),
+    desc:     headers.findIndex(h=>h.includes('desc')),
+    pondAc:   headers.findIndex(h=>h.includes('pond')&&h.includes('acc')),
+    resps:    headers.findIndex(h=>h.includes('resp')),
+    periodo:  headers.findIndex(h=>h.includes('per')||h.includes('eval')),
+    formula:  headers.findIndex(h=>h.includes('form')||h.includes('cumpl')),
+    evidencia:headers.findIndex(h=>h.includes('evid')),
+  };
+  if(idx.area<0||idx.accion<0){showToast('No se encontraron columnas Area y Accion');return;}
+  const get=(row,i)=>i>=0&&i<row.length?row[i].trim():'';
+  const prev=rows.slice(0,3).map(r=>'<tr><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.area)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.obj)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.accion)+'</td><td style="font-size:11px;padding:4px 6px;border-bottom:1px solid var(--border)">'+get(r,idx.periodo)+'</td></tr>').join('');
+  openModal('Vista previa - Carga de estructura',
+    '<div style="background:var(--surface2);border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--muted)">Se encontraron <strong style="color:var(--text)">'+rows.length+' filas</strong>. Areas y objetivos existentes se reutilizan. Las acciones se crean nuevas.</div>'+
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><thead><tr><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Area</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Objetivo</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Accion</th><th style="text-align:left;font-size:10px;color:var(--muted);padding:4px 6px;border-bottom:2px solid var(--border)">Periodo</th></tr></thead><tbody>'+prev+'</tbody></table>'+
+    (rows.length>3?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">... y '+(rows.length-3)+' filas mas</div>':'')+
+    '<div id="cargaLog" style="display:none;background:var(--surface2);border-radius:6px;padding:12px;font-size:12px;max-height:120px;overflow-y:auto"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Confirmar e importar',cls:'btn-primary',action:'ejecutarCarga()'}]);
+  window._cargaRows=rows;window._cargaIdx=idx;
+}
+
+async function ejecutarCarga(rows, idx) {
+  rows = rows || window._cargaRows;
+  idx  = idx  || window._cargaIdx;
+  if(!rows||!idx){showToast('No hay datos para importar');return;}
+  const logEl=document.getElementById('cargaLog');
+  if(logEl){logEl.style.display='block';logEl.innerHTML='Iniciando importacion...<br>';}
+  const log=msg=>{if(logEl){logEl.innerHTML+=msg+'<br>';logEl.scrollTop=logEl.scrollHeight;}};
+  document.querySelectorAll('#modalFooter .btn').forEach(b=>b.disabled=true);
+  const get=(row,i)=>i>=0&&i<row.length?String(row[i]??'').trim():'';
+  const creadas={areas:0,objetivos:0,acciones:0,actualizadas:0,errors:0};
+
+  // Cachés iniciales incluyendo acciones por objetivo+nombre
+  const areasCache={}, objsCache={}, accionesCache={};
+  DB.areas.forEach(a=>{areasCache[a.nombre.toLowerCase()]=a.id;});
+  DB.objetivos.forEach(o=>{objsCache[o.area_id+'_'+o.nombre.toLowerCase()]=o.id;});
+  DB.acciones.forEach(a=>{accionesCache[a.objetivo_id+'_'+a.nombre.toLowerCase()]=a.id;});
+
+  for(let ri=0;ri<rows.length;ri++){
+    const row=rows[ri];
+    const areaNombre=get(row,idx.area), acNombre=get(row,idx.accion);
+    if(!areaNombre||!acNombre){log('Fila '+(ri+2)+': area o accion vacia, omitida');continue;}
+
+    // AREA — reusar o crear
+    let areaId=areasCache[areaNombre.toLowerCase()];
+    if(!areaId){
+      const pondA=parsePond(get(row,idx.pondArea))||0.33;
+      const {data:aData,error:aErr}=await sb.from('areas').insert({colegio_id:SESSION.colegioActivo,nombre:areaNombre,ponderador:pondA,orden:DB.areas.length+creadas.areas+1}).select().single();
+      if(aErr){log('Error area "'+areaNombre+'": '+aErr.message);creadas.errors++;continue;}
+      areaId=aData.id; areasCache[areaNombre.toLowerCase()]=areaId; DB.areas.push(aData); creadas.areas++;
+      log('Area creada: '+areaNombre);
+    }
+
+    // OBJETIVO — reusar o crear
+    const objNombre=get(row,idx.obj);
+    let objId=null;
+    if(objNombre){
+      const key=areaId+'_'+objNombre.toLowerCase();
+      objId=objsCache[key];
+      if(!objId){
+        const pondO=parsePond(get(row,idx.pondObj))||0.5;
+        const {data:oData,error:oErr}=await sb.from('objetivos').insert({area_id:areaId,nombre:objNombre,ponderador:pondO,orden:0}).select().single();
+        if(oErr){log('Error objetivo "'+objNombre+'": '+oErr.message);creadas.errors++;continue;}
+        objId=oData.id; objsCache[key]=objId; DB.objetivos.push(oData); creadas.objetivos++;
+        log('  Objetivo creado: '+objNombre);
+      }
+    } else {
+      const primObj=DB.objetivos.find(o=>o.area_id===areaId);
+      if(primObj){objId=primObj.id;}
+      else{
+        const {data:oData,error:oErr}=await sb.from('objetivos').insert({area_id:areaId,nombre:'Sin objetivo definido',ponderador:1,orden:0}).select().single();
+        if(oErr){creadas.errors++;continue;}
+        objId=oData.id; DB.objetivos.push(oData); creadas.objetivos++;
+      }
+    }
+
+    // ACCION — actualizar si existe, crear si no
+    const pondAc=parsePond(get(row,idx.pondAc))||1;
+    const meses=parseMeses(get(row,idx.periodo));
+    const acPayload={
+      objetivo_id:objId, nombre:acNombre,
+      descripcion:get(row,idx.desc)||null,
+      ponderador:pondAc,
+      meses_activos:meses.length?meses:['2026-05'],
+      formula_cumplimiento:get(row,idx.formula)||null,
+      evidencia_tipo:get(row,idx.evidencia)||null,
+      meta:100
+    };
+    const acKey=objId+'_'+acNombre.toLowerCase();
+    const acIdExistente=accionesCache[acKey];
+    let acData=null;
+    if(acIdExistente){
+      // Accion ya existe — omitir, no duplicar
+      log('  Accion ya existe (omitida): '+acNombre);
+      creadas.actualizadas++;
+      continue;
+    } else {
+      // Crear accion nueva
+      const {data:ins,error:insErr}=await sb.from('acciones').insert(acPayload).select().single();
+      if(insErr){log('Error creando "'+acNombre+'": '+insErr.message);creadas.errors++;continue;}
+      acData=ins; creadas.acciones++;
+      DB.acciones.push(acData);
+      accionesCache[acKey]=acData.id;
+      log('  Accion creada: '+acNombre);
+    }
+
+    // RESPONSABLES — solo para acciones nuevas o si cambiaron
+    const respsTexto=get(row,idx.resps);
+    if(respsTexto&&acData){
+      await sb.from('accion_responsable').delete().eq('accion_id',acData.id);
+      DB.accion_responsable=DB.accion_responsable.filter(ar=>ar.accion_id!==acData.id);
+      for(const nr of respsTexto.split(/[,;]/).map(r=>r.trim()).filter(Boolean)){
+        let resp=DB.responsables.find(r=>r.nombre.toLowerCase()===nr.toLowerCase());
+        if(!resp) resp=DB.responsables.find(r=>r.cargo.toLowerCase()===nr.toLowerCase());
+        if(resp){
+          await sb.from('accion_responsable').insert({accion_id:acData.id,responsable_id:resp.id});
+          DB.accion_responsable.push({accion_id:acData.id,responsable_id:resp.id});
+        } else { log('  Responsable "'+nr+'" no encontrado'); }
+      }
+    }
+  }
+  log('<br><strong>Completado:</strong> '+creadas.areas+' areas, '+creadas.objetivos+' objetivos, '+creadas.acciones+' acciones nuevas.'+(creadas.actualizadas>0?' '+creadas.actualizadas+' ya existian (omitidas).':'')+(creadas.errors>0?' '+creadas.errors+' errores.':''));
+  document.querySelectorAll('#modalFooter .btn').forEach(b=>b.disabled=false);
+  const cb=document.querySelector('#modalFooter .btn-primary');
+  if(cb){cb.textContent='Cerrar';cb.onclick=()=>{closeModal();renderCurrentPanel();};}
+}
+
+function addArea(){openModal('Nueva area','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveArea()'}]);}
+async function saveArea(){const nombre=document.getElementById('f-nombre')?.value.trim(),pond=parseFloat(document.getElementById('f-pond')?.value)/100;if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}const{data,error}=await sb.from('areas').insert({colegio_id:SESSION.colegioActivo,nombre,ponderador:pond,orden:DB.areas.length+1}).select().single();if(error){showToast('Error: '+error.message);return;}DB.areas.push(data);closeModal();renderCurrentPanel();showToast('Area creada');}
+function addObjetivo(aId){openModal('Nuevo objetivo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:"saveObjetivo('"+aId+"')"}]);}
+async function saveObjetivo(aId){const nombre=document.getElementById('f-nombre')?.value.trim(),pond=parseFloat(document.getElementById('f-pond')?.value)/100;if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}const{data,error}=await sb.from('objetivos').insert({area_id:aId,nombre,ponderador:pond,orden:0}).select().single();if(error){showToast('Error: '+error.message);return;}DB.objetivos.push(data);closeModal();renderCurrentPanel();showToast('Objetivo creado');}
+function addAccion(objId){
+  const rO=DB.responsables.map(r=>'<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--surface)"><input type="checkbox" value="'+r.id+'" class="resp-check" style="accent-color:var(--accent);width:14px;height:14px"> '+r.nombre+' <span class="accion-cargo">'+r.cargo+'</span></label>').join('');
+  const mO=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'].map(m=>'<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px"><input type="checkbox" value="'+m+'" class="mes-check"> '+fmtMes(m)+'</label>').join('');
+  openModal('Nueva accion',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div>'+
+    '<div class="form-group"><label class="form-label">Descripcion</label><textarea class="form-textarea" id="f-desc" style="min-height:60px"></textarea></div>'+
+    '<div class="form-group"><label class="form-label">Formula de cumplimiento</label><input class="form-input" id="f-formula"></div>'+
+    '<div class="form-group"><label class="form-label">Evidencia esperada</label><input class="form-input" id="f-evidencia" placeholder="Ej: Acta firmada, Informe PDF, Registro fotográfico..."></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>'+
+    '<div class="form-group"><label class="form-label">Responsables <span style="font-weight:400;color:var(--muted)">(puede seleccionar varios)</span></label>'+
+    '<div style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;padding:4px 0" id="respsContainer">'+rO+'</div></div>'+
+    '<div class="form-group"><label class="form-label">Meses activos</label>'+mO+'</div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:"saveAccion('"+objId+"')"}]);
+}
+async function saveAccion(objId){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  const meses=[...document.querySelectorAll('.mes-check:checked')].map(c=>c.value);
+  const respIds=[...document.querySelectorAll('.resp-check:checked')].map(c=>c.value);
+  const desc=document.getElementById('f-desc')?.value.trim()||null;
+  const formula=document.getElementById('f-formula')?.value.trim()||null;
+  const evidencia=document.getElementById('f-evidencia')?.value.trim()||null;
+  if(!nombre||isNaN(pond)||!meses.length){showToast('Completa nombre, ponderador y al menos un mes');return;}
+  const{data:ac,error}=await sb.from('acciones').insert({objetivo_id:objId,nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses,meta:100}).select().single();
+  if(error){showToast('Error: '+error.message);return;}
+  DB.acciones.push(ac);
+  for(const rId of respIds){
+    await sb.from('accion_responsable').insert({accion_id:ac.id,responsable_id:rId});
+    DB.accion_responsable.push({accion_id:ac.id,responsable_id:rId});
+  }
+  closeModal();renderCurrentPanel();showToast('Accion creada');
+}
+function editArea(id){showToast('Proximamente');}
+async function deleteAccion(id, nombre) {
+  if(!confirm('¿Eliminar la acción "'+nombre+'"?\nTambién se eliminará su seguimiento y evidencias.')) return;
+  const {error} = await sb.from('acciones').delete().eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  DB.acciones = DB.acciones.filter(a=>a.id!==id);
+  DB.accion_responsable = DB.accion_responsable.filter(ar=>ar.accion_id!==id);
+  DB.seguimiento = DB.seguimiento.filter(s=>s.accion_id!==id);
+  renderCurrentPanel();
+  showToast('Acción eliminada');
+}
+function editObjetivo(id){
+  const obj=DB.objetivos.find(o=>o.id===id); if(!obj) return;
+  openModal('Editar objetivo',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+obj.nombre+'"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(obj.ponderador*100)+'"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateObjetivo('"+id+"')"}]);
+}
+async function updateObjetivo(id){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}
+  const{error}=await sb.from('objetivos').update({nombre,ponderador:pond}).eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.objetivos.findIndex(o=>o.id===id);
+  if(i>=0) DB.objetivos[i]={...DB.objetivos[i],nombre,ponderador:pond};
+  closeModal();renderCurrentPanel();showToast('Objetivo actualizado');
+}
+function editAccion(id){
+  const ac=DB.acciones.find(a=>a.id===id); if(!ac) return;
+  const respActivos=DB.accion_responsable.filter(ar=>ar.accion_id===id).map(ar=>ar.responsable_id);
+  const rO=DB.responsables.map(r=>'<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--surface)"><input type="checkbox" value="'+r.id+'" class="resp-check"'+(respActivos.includes(r.id)?' checked':'')+' style="accent-color:var(--accent);width:14px;height:14px"> '+r.nombre+' <span class="accion-cargo">'+r.cargo+'</span></label>').join('');
+  const mO=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'].map(m=>'<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px"><input type="checkbox" value="'+m+'" class="mes-check"'+(ac.meses_activos.includes(m)?' checked':'')+' > '+fmtMes(m)+'</label>').join('');
+  openModal('Editar accion',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+ac.nombre+'"></div>'+
+    '<div class="form-group"><label class="form-label">Descripcion</label><textarea class="form-textarea" id="f-desc" style="min-height:60px">'+(ac.descripcion||'')+'</textarea></div>'+
+    '<div class="form-group"><label class="form-label">Formula de cumplimiento</label><input class="form-input" id="f-formula" value="'+(ac.formula_cumplimiento||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Evidencia esperada</label><input class="form-input" id="f-evidencia" value="'+(ac.evidencia_tipo||'')+'" placeholder="Ej: Acta firmada, Informe PDF..."></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(ac.ponderador*100)+'"></div>'+
+    '<div class="form-group"><label class="form-label">Responsables <span style="font-weight:400;color:var(--muted)">(puede seleccionar varios)</span></label>'+
+    '<div style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;padding:4px 0">'+rO+'</div></div>'+
+    '<div class="form-group"><label class="form-label">Meses activos</label>'+mO+'</div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateAccion('"+id+"')"}]);
+}
+async function updateAccion(id){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  const meses=[...document.querySelectorAll('.mes-check:checked')].map(c=>c.value);
+  const respIds=[...document.querySelectorAll('.resp-check:checked')].map(c=>c.value);
+  const desc=document.getElementById('f-desc')?.value.trim()||null;
+  const formula=document.getElementById('f-formula')?.value.trim()||null;
+  const evidencia=document.getElementById('f-evidencia')?.value.trim()||null;
+  if(!nombre||isNaN(pond)||!meses.length){showToast('Completa nombre, ponderador y al menos un mes');return;}
+  const{error}=await sb.from('acciones').update({nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses}).eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.acciones.findIndex(a=>a.id===id);
+  if(i>=0) DB.acciones[i]={...DB.acciones[i],nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses};
+  // Actualizar responsables
+  await sb.from('accion_responsable').delete().eq('accion_id',id);
+  DB.accion_responsable=DB.accion_responsable.filter(ar=>ar.accion_id!==id);
+  for(const rId of respIds){
+    await sb.from('accion_responsable').insert({accion_id:id,responsable_id:rId});
+    DB.accion_responsable.push({accion_id:id,responsable_id:rId});
+  }
+  closeModal();renderCurrentPanel();showToast('Accion actualizada');
+}
+
+// ADMIN RESPONSABLES
+function renderAdminResponsables(){
+  return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Responsables</div><div class="page-sub">Personas asignadas a acciones</div></div><button class="btn btn-primary" onclick="addResponsable()">+ Nuevo</button></div></div>'+
+    '<div class="card">'+(DB.responsables.length?DB.responsables.map(r=>'<div class="list-item"><div><div style="font-weight:500">'+r.nombre+'</div><div style="font-size:11px;color:var(--muted)">'+r.cargo+'</div></div><div style="display:flex;gap:4px;align-items:center"><span class="tag">'+r.cargo+'</span><button class="icon-btn" style="color:var(--red)" onclick="deleteResponsable(\''+r.id+'\')">X</button></div></div>').join(''):'<div class="empty-state"><div class="icon">?</div>Sin responsables.</div>')+'</div>';
+}
+function addResponsable(){const cO=DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');openModal('Nuevo responsable','<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveResponsable()'}]);}
+async function saveResponsable(){const nombre=document.getElementById('f-nombre')?.value.trim(),cargoId=document.getElementById('f-cargo')?.value;if(!nombre||!cargoId){showToast('Completa los campos');return;}const cargo=DB.cargos.find(c=>c.id===cargoId);const{data,error}=await sb.from('responsables').insert({colegio_id:SESSION.colegioActivo,nombre,cargo_id:cargoId}).select().single();if(error){showToast('Error: '+error.message);return;}DB.responsables.push({...data,cargo:cargo?.nombre||''});closeModal();renderCurrentPanel();showToast('Responsable creado');initFilters();}
+async function deleteResponsable(id){if(!confirm('Eliminar?'))return;const{error}=await sb.from('responsables').delete().eq('id',id);if(error){showToast('Error: '+error.message);return;}DB.responsables=DB.responsables.filter(r=>r.id!==id);renderCurrentPanel();}
+
+// ADMIN CARGOS
+function renderAdminCargos(){
+  return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Cargos</div><div class="page-sub">Tipos de rol</div></div><button class="btn btn-primary" onclick="addCargo()">+ Nuevo</button></div></div>'+
+    '<div class="card" style="max-width:480px">'+(DB.cargos.length?DB.cargos.map((c,i)=>'<div class="list-item"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px">'+(i+1)+'.</span><span style="font-weight:500">'+c.nombre+'</span></div><div style="display:flex;gap:4px"><button class="icon-btn" onclick="editCargo(\''+c.id+'\')">Ed</button><button class="icon-btn" style="color:var(--red)" onclick="deleteCargo(\''+c.id+'\')">X</button></div></div>').join(''):'<div class="empty-state">Sin cargos.</div>')+'</div>';
+}
+function addCargo(){openModal('Nuevo cargo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" placeholder="Ej: Director, UTP..."></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveCargo()'}]);}
+async function saveCargo(){const nombre=document.getElementById('f-nombre')?.value.trim();if(!nombre){showToast('Escribe el nombre');return;}const{data,error}=await sb.from('cargos').insert({colegio_id:SESSION.colegioActivo,nombre}).select().single();if(error){showToast('Error: '+error.message);return;}DB.cargos.push(data);closeModal();renderCurrentPanel();showToast('Cargo creado');initFilters();}
+function editCargo(id){const c=DB.cargos.find(c=>c.id===id);openModal('Editar cargo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+c.nombre+'"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateCargo('"+id+"')"}]);}
+async function updateCargo(id){const nombre=document.getElementById('f-nombre')?.value.trim();if(!nombre)return;const{error}=await sb.from('cargos').update({nombre}).eq('id',id);if(error){showToast('Error: '+error.message);return;}const c=DB.cargos.find(c=>c.id===id);if(c){c.nombre=nombre;DB.responsables.filter(r=>r.cargo_id===id).forEach(r=>r.cargo=nombre);}closeModal();renderCurrentPanel();showToast('Actualizado');initFilters();}
+async function deleteCargo(id){if(!confirm('Eliminar?'))return;const{error}=await sb.from('cargos').delete().eq('id',id);if(error){showToast('Error: '+error.message);return;}DB.cargos=DB.cargos.filter(c=>c.id!==id);renderCurrentPanel();}
+
+// ADMIN USUARIOS
+function renderAdminUsuarios(){
+  return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Usuarios</div><div class="page-sub">Accesos al colegio '+DB.colegio.nombre+'</div></div><button class="btn btn-primary" onclick="openAddUsuario()">+ Nuevo usuario</button></div></div>'+
+    '<div class="card" id="usuariosTableWrap"><div class="empty-state"><div class="loading-spinner" style="margin:0 auto"></div></div></div>';
+}
+async function loadUsuariosPanel(){
+  const{data:usuarios,error}=await sb.from('usuarios').select('*').eq('colegio_id',SESSION.colegioActivo).order('nombre');
+  const wrap=document.getElementById('usuariosTableWrap'); if(!wrap) return;
+  if(error){wrap.innerHTML='<div class="empty-state">Error al cargar usuarios</div>';return;}
+  if(!usuarios||!usuarios.length){wrap.innerHTML='<div class="empty-state"><div class="icon">?</div>Sin usuarios. Haz clic en Nuevo usuario.</div>';return;}
+  wrap.innerHTML='<table class="users-table"><thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead><tbody>'+
+    usuarios.map(u=>{
+      const initials=u.nombre.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+      return '<tr'+(u.activo?'':' style="opacity:.5"')+'><td><div style="display:flex;align-items:center"><div class="user-avatar">'+initials+'</div><div style="font-weight:500">'+u.nombre+'</div></div></td>'+
+        '<td style="color:var(--muted)">'+u.email+'</td>'+
+        '<td><span class="tag">'+ROL_LABELS[u.rol]+'</span></td>'+
+        '<td><div class="semaforo '+(u.activo?'verde':'sin_datos')+'">'+(u.activo?'Activo':'Inactivo')+'</div></td>'+
+        '<td style="text-align:right"><button class="btn btn-sm btn-outline" onclick="openEditUsuario(\''+u.id+'\',\''+u.nombre+'\',\''+u.email+'\',\''+u.rol+'\','+u.activo+')">Editar</button>'+
+        '<button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="toggleUsuario(\''+u.id+'\','+u.activo+')">'+(u.activo?'Desactivar':'Activar')+'</button></td></tr>';
+    }).join('')+'</tbody></table>';
+}
+function openAddUsuario(){
+  openModal('Nuevo usuario',
+    '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div>'+
+    '<div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-email" type="email"></div>'+
+    '<div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="f-pass" type="password"></div>'+
+    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director">Director</option><option value="equipo_gestion">Equipo Gestion</option></select></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear usuario',cls:'btn-primary',action:'saveUsuario()'}]);
+}
+async function saveUsuario(){
+  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),pass=document.getElementById('f-pass')?.value,rol=document.getElementById('f-rol')?.value;
+  if(!nombre||!email||!pass){showToast('Completa todos los campos');return;}
+  if(pass.length<6){showToast('La contrasena debe tener al menos 6 caracteres');return;}
+  const{error}=await sb.from('usuarios').insert({colegio_id:SESSION.colegioActivo,nombre,email,password_hash:pass,rol,activo:true}).select().single();
+  if(error){showToast(error.code==='23505'?'Ya existe un usuario con ese email':'Error: '+error.message);return;}
+  closeModal();loadUsuariosPanel();showToast('Usuario creado');
+}
+function openEditUsuario(id,nombre,email,rol,activo){
+  openModal('Editar usuario',
+    '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre" value="'+nombre+'"></div>'+
+    '<div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-email" type="email" value="'+email+'"></div>'+
+    '<div class="form-group"><label class="form-label">Nueva contrasena (dejar vacio para no cambiar)</label><input class="form-input" id="f-pass" type="password"></div>'+
+    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director"'+(rol==='director'?' selected':'')+'>Director</option><option value="equipo_gestion"'+(rol==='equipo_gestion'?' selected':'')+'>Equipo Gestion</option></select></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateUsuario('"+id+"')"}]);
+}
+async function updateUsuario(id){
+  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),pass=document.getElementById('f-pass')?.value,rol=document.getElementById('f-rol')?.value;
+  if(!nombre||!email){showToast('Completa nombre y email');return;}
+  const payload={nombre,email,rol};
+  if(pass){if(pass.length<6){showToast('La contrasena debe tener al menos 6 caracteres');return;}payload.password_hash=pass;}
+  const{error}=await sb.from('usuarios').update(payload).eq('id',id);
+  if(error){showToast(error.code==='23505'?'Ya existe un usuario con ese email':'Error: '+error.message);return;}
+  closeModal();loadUsuariosPanel();showToast('Usuario actualizado');
+}
+async function toggleUsuario(id,activo){
+  if(!confirm((activo?'Desactivar':'Activar')+' este usuario?'))return;
+  const{error}=await sb.from('usuarios').update({activo:!activo}).eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  loadUsuariosPanel();showToast('Usuario '+(activo?'desactivado':'activado'));
+}
+
+
+// VER REUNIONES (historial de solo lectura)
+function renderVerReuniones() {
+  const reuniones = (DB.reuniones||[]).slice().sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  const selId = window._reunionSeleccionada || null;
+  const selR  = selId ? reuniones.find(r=>r.id===selId) : null;
+
+  let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html += '<div><div class="page-title">Reuniones</div><div class="page-sub">'+DB.colegio.nombre+' — '+reuniones.length+' reunión'+(reuniones.length!==1?'es':(reuniones.length===1?'':' registradas'))+'</div></div>';
+  html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver</button>';
+  html += '</div></div>';
+
+  if(!reuniones.length) {
+    return html+'<div class="card"><div class="empty-state"><div class="icon">📋</div><div style="font-weight:500;margin-bottom:8px">Sin reuniones registradas</div><div style="font-size:12px">Crea reuniones desde Ingresar seguimiento.</div></div></div>';
+  }
+
+  // BUSCADOR IA
+  html += '<div class="card" style="margin-bottom:20px">';
+  html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px">🤖 Consulta inteligente sobre tus reuniones</div>';
+  html += '<div style="display:flex;gap:8px;align-items:flex-start">';
+  html += '<div style="flex:1"><input class="form-input" id="iaQuery" placeholder="Ej: ¿Cuándo se evaluó talleres deportivos? ¿Qué acciones están pendientes? ¿Qué comentó el consultor en mayo?" onkeydown="if(event.key===\'Enter\')consultarIA()" style="font-size:13px"></div>';
+  html += '<button class="btn btn-primary" onclick="consultarIA()" id="iaBtn">Consultar</button>';
+  html += '</div>';
+  html += '<div id="iaRespuesta" style="margin-top:12px;display:none"></div>';
+  html += '</div>';
+
+  // LISTA DE REUNIONES
+  html += '<div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">';
+
+  // Columna izquierda: lista seleccionable
+  html += '<div>';
+  html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Seleccionar reunión</div>';
+  reuniones.forEach(function(r){
+    const activa = r.id === selId;
+    html += '<div onclick="window._reunionSeleccionada=\''+r.id+'\';renderCurrentPanel()" style="padding:12px 14px;border-radius:8px;border:1px solid '+(activa?'var(--accent)':'var(--border)')+';background:'+(activa?'#E8F0EB':'var(--surface)')+';cursor:pointer;margin-bottom:8px;transition:all .15s">';
+    html += '<div style="font-weight:500;font-size:13px;color:'+(activa?'var(--accent)':'var(--text)')+'">'+r.titulo+'</div>';
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+r.fecha+(r.consultor_nombre?' · '+r.consultor_nombre:'')+'</div>';
+    if((r.meses_evaluacion||[]).length) html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">'+r.meses_evaluacion.map(m=>fmtMes(m,true)).join(', ')+'</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Columna derecha: detalle de la reunión seleccionada
+  html += '<div>';
+  if(!selR) {
+    html += '<div class="card"><div class="empty-state" style="padding:60px 20px"><div class="icon">👈</div><div style="font-size:13px">Selecciona una reunión para ver su detalle</div></div></div>';
+  } else {
+    const partes = selR.reunion_participantes||[];
+    const meses  = (selR.meses_evaluacion||[]).map(m=>fmtMes(m,true)).join(', ')||'—';
+    html += '<div class="card">';
+    // Header
+    html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">';
+    html += '<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px;margin-bottom:6px">'+selR.titulo+'</div>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)">';
+    html += '<span>📅 '+selR.fecha+'</span><span>📆 '+meses+'</span>';
+    if(selR.consultor_nombre) html += '<span>👤 '+selR.consultor_nombre+(selR.consultor_correo?' · '+selR.consultor_correo:'')+'</span>';
+    html += '</div></div>';
+    html += '<button class="btn btn-outline btn-sm" onclick="generarPDFReunionById(\''+selR.id+'\')">📄 Ver PDF</button>';
+    html += '</div>';
+    // Participantes
+    if(partes.length) {
+      html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Participantes</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      partes.forEach(function(p){ html += '<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-size:12px">'+p.nombre+(p.correo?' <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</span>'; });
+      html += '</div></div>';
+    }
+    // Comentarios generales
+    if(selR.comentarios_generales) {
+      html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Comentarios generales</div>';
+      html += '<div style="background:var(--surface2);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6">'+selR.comentarios_generales.replace(/\n/g,'<br>')+'</div></div>';
+    }
+    // Seguimiento
+    const accionesData = [];
+    DB.areas.forEach(function(area){
+      DB.objetivos.filter(o=>o.area_id===area.id).forEach(function(obj){
+        DB.acciones.filter(a=>a.objetivo_id===obj.id).forEach(function(ac){
+          const mesesEval = selR.meses_evaluacion||[];
+          const segsRel = mesesEval.length ? DB.seguimiento.filter(s=>s.accion_id===ac.id&&mesesEval.includes(s.mes)) : DB.seguimiento.filter(s=>s.accion_id===ac.id);
+          if(segsRel.length) accionesData.push({area,ac,segs:segsRel});
+        });
+      });
+    });
+    if(accionesData.length) {
+      html += '<div><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Seguimiento por acción</div>';
+      html += '<table class="accion-table"><thead><tr><th>Área</th><th>Acción</th><th>Mes</th><th style="text-align:center">%</th><th style="text-align:center">Estado</th><th>Comentario</th></tr></thead><tbody>';
+      accionesData.forEach(function(item){
+        item.segs.forEach(function(seg){
+          const est = seg.pendiente?'amarillo':getEstado(seg.porcentaje);
+          const estL = seg.pendiente?'Pendiente':est==='verde'?'Completo':est==='amarillo'?'En proceso':'Crítico';
+          html += '<tr><td style="color:var(--muted);font-size:11px">'+item.area.nombre+'</td><td><div class="accion-name">'+item.ac.nombre+'</div></td>';
+          html += '<td style="font-size:11px;color:var(--muted)">'+fmtMes(seg.mes,true)+'</td>';
+          html += '<td style="text-align:center;font-weight:600">'+(seg.porcentaje!==null?seg.porcentaje+'%':'—')+(seg.pendiente?' P':'')+'</td>';
+          html += '<td style="text-align:center"><div class="semaforo '+est+'" style="font-size:10px">'+estL+'</div></td>';
+          html += '<td style="font-size:12px;color:var(--muted)">'+(seg.comentario||'—')+'</td></tr>';
+        });
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>'; // grid
+  return html;
+}
+
+async function consultarIA() {
+  const query = document.getElementById('iaQuery')?.value.trim();
+  if(!query){ showToast('Escribe una pregunta'); return; }
+  const btn   = document.getElementById('iaBtn');
+  const respEl= document.getElementById('iaRespuesta');
+  if(btn){ btn.disabled=true; btn.textContent='Consultando...'; }
+  respEl.style.display='block';
+  respEl.innerHTML='<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><div class="loading-spinner" style="width:18px;height:18px;border-width:2px"></div>Analizando tus reuniones...</div>';
+
+  // Construir contexto de todas las reuniones
+  const reuniones = (DB.reuniones||[]).slice().sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
+  const contexto = reuniones.map(function(r){
+    const partes = (r.reunion_participantes||[]).map(p=>p.nombre+(p.correo?' ('+p.correo+')':'')).join(', ');
+    const meses  = (r.meses_evaluacion||[]).map(m=>fmtMes(m)).join(', ');
+    // Seguimiento de esa reunión
+    const segsTexto = [];
+    DB.areas.forEach(function(area){
+      DB.objetivos.filter(o=>o.area_id===area.id).forEach(function(obj){
+        DB.acciones.filter(a=>a.objetivo_id===obj.id).forEach(function(ac){
+          const mesesEval = r.meses_evaluacion||[];
+          const segsRel = mesesEval.length ? DB.seguimiento.filter(s=>s.accion_id===ac.id&&mesesEval.includes(s.mes)) : [];
+          segsRel.forEach(function(seg){
+            segsTexto.push('  - '+ac.nombre+' ('+area.nombre+'): '+seg.porcentaje+'%'+(seg.pendiente?' [PENDIENTE]':'')+(seg.comentario?' — '+seg.comentario:''));
+          });
+        });
+      });
+    });
+    return '=== REUNIÓN: '+r.titulo+' ===\nFecha: '+r.fecha+'\nMeses evaluados: '+(meses||'—')+'\nConsultor: '+(r.consultor_nombre||'—')+'\nParticipantes: '+(partes||'—')+'\nComentarios generales: '+(r.comentarios_generales||'—')+'\nSeguimiento:\n'+(segsTexto.length?segsTexto.join('\n'):'  (sin seguimiento registrado)');
+  }).join('\n\n');
+
+  const prompt = 'Eres un asistente de gestión escolar. Tienes acceso al historial completo de reuniones de mejora del colegio "'+DB.colegio.nombre+'". Responde la siguiente pregunta de forma clara, concisa y en español, citando fechas y datos específicos cuando corresponda.\n\nHISTORIAL DE REUNIONES:\n\n'+contexto+'\n\nPREGUNTA: '+query;
+
+  try {
+    const res = await fetch('/api/consultar-ia', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ prompt })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const texto = data.content?.[0]?.text || 'No se pudo obtener respuesta.';
+    respEl.innerHTML =
+      '<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:8px;padding:14px 16px">' +
+      '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--green);margin-bottom:8px">🤖 Respuesta IA</div>' +
+      '<div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">'+texto+'</div>' +
+      '</div>';
+  } catch(e) {
+    respEl.innerHTML = '<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--red)">Error al consultar: '+e.message+'</div>';
+  }
+  if(btn){ btn.disabled=false; btn.textContent='Consultar'; }
+}
+
+function generarPDFReunionById(reunionId) {
+  const r = (DB.reuniones||[]).find(x=>x.id===reunionId);
+  if(!r){showToast('Reunion no encontrada');return;}
+  window._reunionActiva = reunionId;
+  generarPDFReunion();
+}
+
+// REUNIONES
+function abrirCrearReunion() {
+  window._editReunionId=null;
+  const hoy=new Date().toISOString().split('T')[0];
+  const mesActual=filterMes||new Date().toISOString().slice(0,7);
+  openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
+}
+function abrirEditarReunion() {
+  const reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
+  if(!reunion)return;
+  window._editReunionId=reunion.id;
+  openModalReunion(Object.assign({},reunion,{meses_evaluacion:reunion.meses_evaluacion||[]}));
+}
+function openModalReunion(datos) {
+  const parts=datos.reunion_participantes||[];
+  let partsHtml=''; parts.forEach(function(p,i){partsHtml+=partRow(i,p.nombre,p.correo);});
+  const modalEl=document.getElementById('modal');
+  if(modalEl) modalEl.style.maxWidth='640px';
+  document.getElementById('modalTitle').textContent=window._editReunionId?'Editar Reunion':'Crear Reunion';
+  document.getElementById('modalBody').innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+    '<div class="form-group"><label class="form-label">Titulo</label><input class="form-input" id="r-titulo" value="'+(datos.titulo||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="r-fecha" type="date" value="'+(datos.fecha||'')+'"></div></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+    '<div class="form-group"><label class="form-label">Consultor Responsable</label><input class="form-input" id="r-consultor" placeholder="Nombre" value="'+(datos.consultor_nombre||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Correo Consultor</label><input class="form-input" id="r-correo-cons" type="email" placeholder="correo@ejemplo.cl" value="'+(datos.consultor_correo||'')+'"></div></div>'+
+    '<div class="form-group"><label class="form-label">Meses de evaluacion a revisar</label>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px" id="mesesGrid"><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-03\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Marzo</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-04\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Abril</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-05\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Mayo</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-06\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Junio</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-07\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Julio</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-08\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Agosto</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-09\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Septiembre</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-10\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Octubre</label><label style=\"display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer\"><input type=\"checkbox\" value=\"2026-11\" class=\"mes-reunion-check\" style=\"accent-color:var(--accent)\"> Noviembre</label></div>'+
+    '<div id="meses-sel-label" style="font-size:11px;color:var(--muted);margin-top:5px">Selecciona al menos un mes</div></div>'+
+    '<div class="form-group"><label class="form-label">Comentarios Generales</label>'+
+    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales..." style="min-height:90px">'+(datos.comentarios_generales||'')+'</textarea>'+
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:5px" onclick="guardarComentariosReunion()">Guardar comentarios</button></div>'+
+    '<div class="form-group"><label class="form-label">Participantes</label>'+
+    '<div id="partsContainer">'+partsHtml+'</div>'+
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="agregarParticipante()">+ Agregar participante</button></div>';
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>'+
+    '<button class="btn btn-primary" onclick="guardarReunion()">Guardar reunion</button>';
+  document.getElementById('modalOverlay').style.display='flex';
+  // Marcar meses guardados y activar listeners
+  const mEval=datos.meses_evaluacion||[];
+  document.querySelectorAll('.mes-reunion-check').forEach(function(cb){
+    if(mEval.includes(cb.value)) cb.checked=true;
+    cb.addEventListener('change',actualizarLabelMeses);
+  });
+  actualizarLabelMeses();
+}
+
+function partRow(idx,nombre,correo) {
+  return '<div class="part-row" id="pr-'+idx+'">'+
+    '<input class="form-input" placeholder="Nombre" value="'+(nombre||'')+'" id="pn-'+idx+'" style="flex:1.2">'+
+    '<input class="form-input" placeholder="Correo" type="email" value="'+(correo||'')+'" id="pc-'+idx+'" style="flex:1.5">'+
+    '<button class="remove-part" onclick="eliminarParticipante('+idx+')" title="Eliminar">x</button></div>';
+}
+function agregarParticipante() {
+  const cont=document.getElementById('partsContainer');
+  if(cont) cont.insertAdjacentHTML('beforeend',partRow(cont.querySelectorAll('.part-row').length,'',''));
+}
+function eliminarParticipante(idx) {
+  const row=document.getElementById('pr-'+idx); if(row)row.remove();
+  const cont=document.getElementById('partsContainer'); if(!cont)return;
+  [].slice.call(cont.querySelectorAll('.part-row')).forEach(function(row,i){
+    row.id='pr-'+i;
+    var nb=row.querySelector('[id^="pn-"]');if(nb)nb.id='pn-'+i;
+    var cb=row.querySelector('[id^="pc-"]');if(cb)cb.id='pc-'+i;
+    var btn=row.querySelector('.remove-part');if(btn)btn.setAttribute('onclick','eliminarParticipante('+i+')');
+  });
+}
+function getParticipantes() {
+  const cont=document.getElementById('partsContainer');if(!cont)return[];
+  return [].slice.call(cont.querySelectorAll('.part-row')).map(function(row,i){
+    var nb=document.getElementById('pn-'+i),cb=document.getElementById('pc-'+i);
+    var nombre=nb?nb.value.trim():'',correo=cb?cb.value.trim():'';
+    return nombre?{nombre:nombre,correo:correo}:null;
+  }).filter(Boolean);
+}
+
+function actualizarLabelMeses() {
+  const sel=[].slice.call(document.querySelectorAll('.mes-reunion-check:checked')).map(function(c){return c.value;});
+  const lbl=document.getElementById('meses-sel-label');
+  if(lbl) lbl.textContent=sel.length?sel.map(function(m){return fmtMes(m,true);}).join(', '):'Ninguno seleccionado';
+}
+function getMesesReunion() {
+  return [].slice.call(document.querySelectorAll('.mes-reunion-check:checked')).map(function(c){return c.value;});
+}
+
+async function guardarComentariosReunion() {
+  const rId=window._editReunionId||window._reunionActiva;
+  if(!rId){showToast('Guarda la reunion primero');return;}
+  const comentarios=document.getElementById('r-comentarios')&&document.getElementById('r-comentarios').value.trim();
+  const{error}=await sb.from('reuniones').update({comentarios_generales:comentarios||null,updated_at:new Date().toISOString()}).eq('id',rId);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.reuniones.findIndex(function(x){return x.id===rId;});
+  if(i>=0)DB.reuniones[i]=Object.assign({},DB.reuniones[i],{comentarios_generales:comentarios||null});
+  showToast('Comentarios guardados');
+}
+
+async function guardarReunion() {
+  const titulo=document.getElementById('r-titulo')&&document.getElementById('r-titulo').value.trim();
+  const fecha=document.getElementById('r-fecha')&&document.getElementById('r-fecha').value;
+  if(!titulo||!fecha){showToast('Completa titulo y fecha');return;}
+  const consultor=document.getElementById('r-consultor')&&document.getElementById('r-consultor').value.trim();
+  const correoC=document.getElementById('r-correo-cons')&&document.getElementById('r-correo-cons').value.trim();
+  const comentarios=document.getElementById('r-comentarios')&&document.getElementById('r-comentarios').value.trim();
+  const participantes=getParticipantes();
+  const mesesEval=getMesesReunion();
+  const mes=mesesEval.length?mesesEval[0]:filterMes||new Date().toISOString().slice(0,7);
+  const payload={colegio_id:SESSION.colegioActivo,mes:mes,meses_evaluacion:mesesEval,fecha:fecha,titulo:titulo,consultor_nombre:consultor||null,consultor_correo:correoC||null,comentarios_generales:comentarios||null,updated_at:new Date().toISOString()};
+  var rId=window._editReunionId;
+  if(rId){
+    var res=await sb.from('reuniones').update(payload).eq('id',rId);
+    if(res.error){showToast('Error: '+res.error.message);return;}
+    var i=DB.reuniones.findIndex(function(x){return x.id===rId;});
+    if(i>=0)DB.reuniones[i]=Object.assign({},DB.reuniones[i],payload);
+  } else {
+    var res=await sb.from('reuniones').insert(payload).select().single();
+    if(res.error){showToast('Error: '+res.error.message);return;}
+    rId=res.data.id; DB.reuniones.push(Object.assign({},res.data,{reunion_participantes:[]}));
+  }
+  await sb.from('reunion_participantes').delete().eq('reunion_id',rId);
+  if(participantes.length){
+    await sb.from('reunion_participantes').insert(participantes.map(function(p,i){return{reunion_id:rId,nombre:p.nombre,correo:p.correo,orden:i};}));
+  }
+  var ri=DB.reuniones.findIndex(function(x){return x.id===rId;});
+  if(ri>=0)DB.reuniones[ri]=Object.assign({},DB.reuniones[ri],payload,{reunion_participantes:participantes.map(function(p,i){return{nombre:p.nombre,correo:p.correo,orden:i};})});
+  window._reunionActiva=rId;
+  closeModal();renderCurrentPanel();showToast('Reunion guardada');
+}
+function abrirEnviarReunion() {
+  var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
+  if(!reunion)return;
+  var parts=reunion.reunion_participantes||[];
+  var partsList=parts.length?parts.map(function(p){return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">'+p.nombre+(p.correo?' - <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</div>';}).join(''):'<div style="font-size:12px;color:var(--muted)">Sin participantes.</div>';
+  document.getElementById('modalTitle').textContent='Enviar Reunion';
+  document.getElementById('modalBody').innerHTML=
+    '<div style="background:var(--surface2);border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--muted)">El informe PDF se generara y descargara. El envio por correo estara disponible proximamente.</div>'+
+    '<div class="form-group"><label class="form-label">Participantes registrados</label><div style="background:var(--bg);border-radius:6px;padding:8px 12px;margin-bottom:8px">'+partsList+'</div></div>'+
+    '<div class="form-group"><label class="form-label">Agregar destinatarios adicionales</label><div id="extraDest"></div><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="agregarDestExtra()">+ Agregar</button></div>';
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-primary" onclick="generarPDFReunion()">Generar y descargar PDF</button>';
+  document.getElementById('modalOverlay').style.display='flex';
+}
+function agregarDestExtra() {
+  var cont=document.getElementById('extraDest');if(!cont)return;
+  cont.insertAdjacentHTML('beforeend',partRow(cont.querySelectorAll('.part-row').length,'',''));
+}
+function generarPDFReunion() {
+  var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
+  if(!reunion){showToast('No hay reunion activa');return;}
+  closeModal();
+  var mes=reunion.mes, partes=reunion.reunion_participantes||[];
+  var mesesAll=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  var accionesConSeg=[];
+  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id&&a.meses_activos.includes(mes);}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mes;});accionesConSeg.push({area:area,obj:obj,ac:ac,seg:seg});});});});
+  var metasPorEvaluar=[];
+  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mes;});var pm=ac.meses_activos.filter(function(m){return m>=mes;});if(pm.length>0||(seg&&seg.pendiente))metasPorEvaluar.push({area:area,ac:ac,seg:seg,pm:pm});});});});
+  var W=window.open('','_blank');
+  if(!W){showToast('Permite ventanas emergentes para generar el PDF');return;}
+  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:60px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:40px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:24px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:28px;color:#1E3A2F;margin-bottom:8px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:20px;color:#2D5A42;margin-bottom:24px}.cover .meta-row{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px}.cover .meta-item{font-size:11px;color:#7A7670}.cover .meta-item strong{color:#1A1916}.section{margin-bottom:32px}.section-title{font-family:"DM Serif Display",serif;font-size:16px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.section-sub{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.verde{color:#2E7D52;font-weight:600}.amarillo{color:#B8860B;font-weight:600}.rojo{color:#9B2335;font-weight:600}.sin_datos{color:#7A7670}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.pendiente{background:#FDF6E3;color:#C4962A}.comentario-box{font-size:10px;background:#F9F8F6;padding:6px 10px;border-left:3px solid #2D5A42;border-radius:3px;margin-top:4px}.participantes-r{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center}.participante-r{background:#F4F2EE;border:1px solid #E4E0D8;border-radius:16px;padding:3px 12px;font-size:10px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+reunion.titulo+'</title><style>'+pdfCSS+'</style></head><body>';
+  html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
+  // PORTADA
+  html+='<div class="cover"><div class="logo-r">Mejora Escolar &mdash; Informe de Reunion</div>';
+  html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
+  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes:</strong> '+fmtMes(mes)+'</div>';
+  if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
+  if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
+  html+='</div>';
+  if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
+  html+='</div>';
+  // COMENTARIOS GENERALES
+  html+='<div class="section"><div class="section-title">Comentarios Generales</div>';
+  html+=reunion.comentarios_generales?'<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>':'<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
+  html+='</div>';
+  // COMENTARIOS POR ACCION
+  html+='<div class="section"><div class="section-title">Comentarios por Accion</div>';
+  if(accionesConSeg.length){
+    var areaActual='';
+    accionesConSeg.forEach(function(item){
+      var area=item.area,ac=item.ac,seg=item.seg;
+      if(area.nombre!==areaActual){
+        if(areaActual)html+='</tbody></table>';
+        html+='<div class="section-sub" style="margin-top:16px">'+area.nombre+'</div>';
+        html+='<table><thead><tr><th>Accion</th><th>Descripcion</th><th>Responsable</th><th style="text-align:center">%</th><th style="text-align:center">Estado</th><th>Comentario</th></tr></thead><tbody>';
+        areaActual=area.nombre;
+      }
+      var pct=seg?seg.porcentaje:null;
+      var est=seg?(seg.pendiente?'pendiente':getEstado(pct)):'sin_datos';
+      var estLabel=seg?(seg.pendiente?'Pendiente':pct>=90?'Completo':pct>=70?'En proceso':'Critico'):'Sin datos';
+      var resps=getResps(ac.id).map(function(r){return r.nombre;}).join(', ')||'-';
+      html+='<tr><td style="font-weight:500">'+ac.nombre+'</td><td style="color:#7A7670">'+(ac.descripcion||'-')+'</td><td>'+resps+'</td>';
+      html+='<td style="text-align:center;font-weight:600" class="'+(est==='pendiente'?'amarillo':est)+'">'+(pct!==null&&pct!==undefined?pct+'%':'-')+'</td>';
+      html+='<td style="text-align:center"><span class="badge '+(est==='pendiente'?'pendiente':est)+'">'+estLabel+'</span></td>';
+      html+='<td>'+(seg&&seg.comentario?'<div class="comentario-box" style="margin:0">'+seg.comentario+'</div>':'-')+'</td></tr>';
+    });
+    if(areaActual)html+='</tbody></table>';
+  } else {html+='<p style="color:#7A7670;font-style:italic">No hay acciones con seguimiento para este mes.</p>';}
+  html+='</div>';
+  // RESUMEN MENSUAL
+  html+='<div class="section"><div class="section-title">Resumen Mensual por Area</div>';
+  html+='<table><thead><tr><th>Area</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
+  DB.areas.forEach(function(area){html+='<tr><td style="font-weight:500">'+area.nombre+'</td>';mesesAll.forEach(function(m){var v=calcArea(area.id,m),e=getEstado(v);html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%':'-')+'</span></td>';});html+='</tr>';});
+  html+='</tbody></table>';
+  html+='<table><thead><tr><th>Accion</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
+  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){html+='<tr><td style="font-weight:500">'+ac.nombre+'</td>';mesesAll.forEach(function(m){var v=calcAccion(ac.id,m),e=getEstado(v),s=DB.seguimiento.find(function(x){return x.accion_id===ac.id&&x.mes===m;});var p=s&&s.pendiente;html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%'+(p?' P':''):'-')+'</span></td>';});html+='</tr>';});});});
+  html+='</tbody></table></div>';
+  // METAS POR EVALUAR
+  html+='<div class="section"><div class="section-title">Metas por Evaluar</div>';
+  html+='<table><thead><tr><th>Accion</th><th>Descripcion</th><th>Area</th><th>Meses de evaluacion</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
+  metasPorEvaluar.forEach(function(item){
+    var ac=item.ac,seg=item.seg,area=item.area,pm=item.pm;
+    var isPend=seg&&seg.pendiente,pct=seg?seg.porcentaje:null;
+    html+='<tr><td style="font-weight:500">'+ac.nombre+'</td><td style="color:#7A7670">'+(ac.descripcion||'-')+'</td><td>'+area.nombre+'</td>';
+    html+='<td>'+pm.map(function(m){return fmtMes(m,true);}).join(', ')+'</td>';
+    html+='<td style="text-align:center">'+(isPend?'<span class="badge pendiente">Pendiente '+pct+'%</span>':pct!==null&&pct!==undefined?'<span class="badge '+getEstado(pct)+'">'+pct+'%</span>':'<span class="badge sin_datos">Por evaluar</span>')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  html+='</div></body></html>';
+  W.document.write(html);W.document.close();
+  showToast('Informe generado. Usa Imprimir para guardar como PDF.');
+}
+// MODAL
+function openModal(title,body,btns){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=body;
+  document.getElementById('modalFooter').innerHTML=btns.map(b=>'<button class="btn '+b.cls+'" onclick="'+b.action+'">'+b.label+'</button>').join('');
+  document.getElementById('modalOverlay').style.display='flex';
+}
+function closeModal(){document.getElementById('modalOverlay').style.display='none';var m=document.getElementById('modal');if(m)m.style.maxWidth='';}
+
+// UTILS
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function setLoading(msg){document.getElementById('loadingMsg').textContent=msg||'Cargando...';document.getElementById('loadingOverlay').style.display='flex';}
+function hideLoading(){document.getElementById('loadingOverlay').style.display='none';}
+
+</script>
+</body>
+</html>
