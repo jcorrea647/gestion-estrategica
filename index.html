@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mejora Escolar</title>
+<title>Gestión Estratégica</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -212,7 +212,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 
 <div id="screenLogin" class="screen active">
   <div class="login-box">
-    <div class="login-logo">Mejora Escolar</div>
+    <div class="login-logo">Gestión Estratégica</div>
     <div class="login-sub">Ingresa con tu correo y contrasena</div>
     <div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="loginEmail" type="email" placeholder="correo@ejemplo.cl" autocomplete="email"></div>
     <div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="loginPassword" type="password" placeholder="..." onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"><div class="form-error" id="loginError">Correo o contrasena incorrectos.</div></div>
@@ -223,7 +223,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 
 <div id="screenMulti" class="screen">
   <div class="multi-topbar">
-    <div class="logo">Mejora Escolar</div>
+    <div class="logo">Gestión Estratégica</div>
     <span class="role-badge" id="multiRolBadge"></span>
     <div class="spacer"></div>
     <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:8px" id="multiUserName"></span>
@@ -240,7 +240,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   <div class="app-shell">
     <header class="topbar">
       <button class="back-btn" id="backBtn" onclick="volverMulti()" style="display:none">Colegios</button>
-      <div class="logo">Mejora Escolar</div>
+      <div class="logo">Gestión Estratégica</div>
       <span class="colegio-name" id="topColegio"></span>
       <div class="spacer"></div>
       <span class="role-badge" id="topRolBadge" style="margin-right:8px"></span>
@@ -263,7 +263,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-spinner"></div>
-  <div style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:18px">Mejora Escolar</div>
+  <div style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:18px">Gestión Estratégica</div>
   <div style="color:var(--muted);font-size:12px" id="loadingMsg">Iniciando...</div>
 </div>
 <div class="toast" id="toast"></div>
@@ -1883,7 +1883,7 @@ function generarPDFReunion() {
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+reunion.titulo+'</title><style>'+pdfCSS+'</style></head><body>';
   html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
   // PORTADA
-  html+='<div class="cover"><div class="logo-r">Mejora Escolar &mdash; Informe de Reunion</div>';
+  html+='<div class="cover"><div class="logo-r">Gestión Estratégica &mdash; Informe de Reunion</div>';
   html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
   html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes:</strong> '+fmtMes(mes)+'</div>';
   if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
