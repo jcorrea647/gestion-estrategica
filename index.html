@@ -2139,21 +2139,165 @@ async function guardarReunion() {
   window._reunionActiva=rId;
   closeModal();renderCurrentPanel();showToast('Reunion guardada');
 }
-function abrirEnviarReunion() {
-  var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
-  if(!reunion)return;
-  var parts=reunion.reunion_participantes||[];
-  var partsList=parts.length?parts.map(function(p){return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">'+p.nombre+(p.correo?' - <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</div>';}).join(''):'<div style="font-size:12px;color:var(--muted)">Sin participantes.</div>';
-  document.getElementById('modalTitle').textContent='Enviar Reunion';
-  document.getElementById('modalBody').innerHTML=
-    '<div style="background:var(--surface2);border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--muted)">El informe PDF se generara y descargara. El envio por correo estara disponible proximamente.</div>'+
-    '<div class="form-group"><label class="form-label">Participantes registrados</label><div style="background:var(--bg);border-radius:6px;padding:8px 12px;margin-bottom:8px">'+partsList+'</div></div>'+
-    '<div class="form-group"><label class="form-label">Agregar destinatarios adicionales</label><div id="extraDest"></div><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="agregarDestExtra()">+ Agregar</button></div>';
-  document.getElementById('modalFooter').innerHTML=
-    '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-primary" onclick="generarPDFReunion()">Generar y descargar PDF</button>';
-  document.getElementById('modalOverlay').style.display='flex';
+async function abrirEnviarReunion() {
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
+  if(!reunion){ showToast('No hay reunión activa'); return; }
+  const mes = filterMes || reunion.mes;
+
+  // Paso 1: Guardar todos los seguimientos del mes que tengan valor ingresado
+  setLoading('Cerrando reunión...');
+  const promesas = [];
+  DB.areas.forEach(area => {
+    DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
+      DB.acciones.filter(a => a.objetivo_id === obj.id && a.meses_activos.includes(mes)).forEach(ac => {
+        const pctEl = document.getElementById('pct_'+ac.id);
+        if(pctEl && pctEl.value !== '') {
+          const pct = parseFloat(pctEl.value);
+          if(!isNaN(pct) && pct >= 0 && pct <= 100) {
+            const ex = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === mes);
+            const comentario = ex?.comentario || '';
+            const pendiente = ex?.pendiente || false;
+            const payload = { accion_id: ac.id, mes, porcentaje: pct, comentario, pendiente, updated_at: new Date().toISOString() };
+            if(ex) {
+              promesas.push(sb.from('seguimiento').update(payload).eq('id', ex.id).then(() => {
+                const i = DB.seguimiento.findIndex(s => s.accion_id === ac.id && s.mes === mes);
+                if(i >= 0) DB.seguimiento[i] = { ...DB.seguimiento[i], ...payload };
+              }));
+            } else {
+              promesas.push(sb.from('seguimiento').insert({ colegio_id: SESSION.colegioActivo, ...payload }).select().single().then(({data}) => {
+                if(data) DB.seguimiento.push(data);
+              }));
+            }
+          }
+        }
+      });
+    });
+  });
+  await Promise.all(promesas);
+  hideLoading();
+
+  // Paso 2: Mostrar modal de confirmación con opciones de descarga
+  const partes = reunion.reunion_participantes || [];
+  const partsList = partes.map(p => `
+    <div class="part-row" id="dest-row-${p.nombre.replace(/\s/g,'_')}">
+      <input class="form-input" style="flex:1;font-size:12px" value="${p.nombre}" placeholder="Nombre" readonly>
+      <input class="form-input" style="flex:1;font-size:12px" value="${p.correo||''}" placeholder="Email" id="dest-email-${p.nombre.replace(/\s/g,'_')}">
+      <button class="remove-part" onclick="this.closest('.part-row').remove()">✕</button>
+    </div>`).join('');
+
+  document.getElementById('modalTitle').textContent = '✅ Reunión cerrada correctamente';
+  document.getElementById('modalBody').innerHTML =
+    '<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">' +
+    '<div style="font-size:24px">✅</div>' +
+    '<div><div style="font-weight:600;color:var(--green);margin-bottom:2px">Reunión cerrada correctamente</div>' +
+    '<div style="font-size:12px;color:var(--muted)">Todos los seguimientos han sido guardados.</div></div></div>' +
+    '<div class="form-group"><label class="form-label">Lista de destinatarios <span style="font-weight:400;color:var(--muted)">(aparecerá en el documento)</span></label>' +
+    '<div id="destList">'+partsList+'</div>' +
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="agregarDestEnvio()">+ Agregar destinatario</button></div>';
+
+  document.getElementById('modalFooter').innerHTML =
+    '<button class="btn btn-outline" onclick="closeModal()">Cerrar</button>' +
+    '<button class="btn btn-primary" style="background:#1F4E79" onclick="descargarWordReunion()">📄 Descargar Word</button>' +
+    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>';
+
+  document.getElementById('modalOverlay').style.display = 'flex';
+  document.getElementById('modal').style.maxWidth = '560px';
 }
+
+function agregarDestEnvio() {
+  const cont = document.getElementById('destList');
+  if(!cont) return;
+  const idx = cont.querySelectorAll('.part-row').length;
+  cont.insertAdjacentHTML('beforeend',
+    `<div class="part-row">
+      <input class="form-input" style="flex:1;font-size:12px" placeholder="Nombre">
+      <input class="form-input" style="flex:1;font-size:12px" placeholder="Email">
+      <button class="remove-part" onclick="this.closest('.part-row').remove()">✕</button>
+    </div>`);
+}
+
+function getDestinatariosEnvio() {
+  const rows = document.querySelectorAll('#destList .part-row');
+  const dest = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const nombre = inputs[0]?.value.trim();
+    const correo = inputs[1]?.value.trim();
+    if(nombre) dest.push({ nombre, correo });
+  });
+  return dest;
+}
+
+function descargarWordReunion() {
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
+  if(!reunion){ showToast('No hay reunión activa'); return; }
+  const destinatarios = getDestinatariosEnvio();
+  const mes = filterMes || reunion.mes;
+
+  const accionesConSeg = [];
+  DB.areas.forEach(area => {
+    DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
+      DB.acciones.filter(a => a.objetivo_id === obj.id && a.meses_activos.includes(mes)).forEach(ac => {
+        const seg = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === mes);
+        accionesConSeg.push({ area, obj, ac, seg });
+      });
+    });
+  });
+
+  const destHTML = destinatarios.length
+    ? destinatarios.map(d => d.nombre + (d.correo ? ' &lt;'+d.correo+'&gt;' : '')).join(' | ')
+    : '—';
+
+  const css = `
+    body{font-family:Calibri,sans-serif;margin:2cm;color:#1A1916;font-size:12pt}
+    h1{font-size:22pt;color:#1E3A2F;margin-bottom:4px}
+    h2{font-size:14pt;color:#1E3A2F;margin:20px 0 8px;border-bottom:2px solid #1E3A2F;padding-bottom:4px}
+    .meta{font-size:10pt;color:#7A7670;margin-bottom:20px}
+    .dest{font-size:10pt;background:#F4F2EE;padding:8px 12px;border-radius:4px;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:16px}
+    th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-size:9pt}
+    td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}
+    tr:nth-child(even) td{background:#F9F8F6}
+    .verde{color:#2E7D52;font-weight:bold}.amarillo{color:#B8860B;font-weight:bold}.rojo{color:#9B2335;font-weight:bold}
+  `;
+
+  let body = `<h1>${reunion.titulo}</h1>`;
+  body += `<div class="meta">Colegio: <strong>${DB.colegio.nombre}</strong> | Fecha: <strong>${reunion.fecha}</strong> | Mes: <strong>${fmtMes(mes)}</strong>`;
+  if(reunion.consultor_nombre) body += ` | Consultor: <strong>${reunion.consultor_nombre}</strong>`;
+  body += `</div>`;
+  body += `<div class="dest"><strong>Destinatarios:</strong> ${destHTML}</div>`;
+
+  if(reunion.comentarios_generales) {
+    body += `<h2>Comentarios Generales</h2><p>${reunion.comentarios_generales.replace(/\n/g,'<br>')}</p>`;
+  }
+
+  body += `<h2>Seguimiento por Acción</h2>`;
+  if(accionesConSeg.length) {
+    body += `<table><thead><tr><th>Área</th><th>Acción</th><th>Responsable</th><th>%</th><th>Estado</th><th>Comentario</th></tr></thead><tbody>`;
+    accionesConSeg.forEach(({area, ac, seg}) => {
+      const pct = seg ? seg.porcentaje : null;
+      const est = seg ? (seg.pendiente ? 'Pendiente' : pct >= 90 ? 'Completo' : pct >= 70 ? 'En proceso' : 'Crítico') : 'Sin datos';
+      const cls = seg ? (seg.pendiente ? 'amarillo' : getEstado(seg.porcentaje)) : '';
+      const resps = getResps(ac.id).map(r => r.nombre).join(', ') || '—';
+      body += `<tr><td>${area.nombre}</td><td><strong>${ac.nombre}</strong></td><td>${resps}</td>`;
+      body += `<td class="${cls}" style="text-align:center">${pct !== null ? pct+'%' : '—'}</td>`;
+      body += `<td class="${cls}">${est}</td>`;
+      body += `<td>${seg?.comentario || '—'}</td></tr>`;
+    });
+    body += `</tbody></table>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><style>${css}</style></head><body>${body}</body></html>`;
+  const blob = new Blob([html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = reunion.titulo.replace(/\s+/g,'_') + '_' + reunion.fecha + '.doc';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Word descargado');
+}
+
 function agregarDestExtra() {
   var cont=document.getElementById('extraDest');if(!cont)return;
   cont.insertAdjacentHTML('beforeend',partRow(cont.querySelectorAll('.part-row').length,'',''));
