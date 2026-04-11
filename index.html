@@ -195,29 +195,84 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:768px){
-  .app-shell{grid-template-columns:1fr;grid-template-rows:56px 1fr}
-  .topbar{padding:0 12px;gap:6px}
-  .topbar .logo{font-size:14px}
+  /* Layout */
+  .app-shell{grid-template-columns:1fr;grid-template-rows:52px 1fr}
+  .main{overflow-x:hidden;padding:12px;overflow-y:auto}
+
+  /* Topbar */
+  .topbar{padding:0 10px;gap:4px;height:52px}
+  .topbar .logo{font-size:13px}
   .topbar .colegio-name{display:none}
   .topbar .rbd-badge{display:none}
   #topUserName{display:none}
-  .logout-btn{padding:4px 8px;font-size:11px}
-  .sidebar{display:none;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:500;background:var(--surface);border-right:none;border-top:1px solid var(--border);overflow-y:auto;padding:12px 0}
-  .sidebar.mobile-open{display:block}
-  .main{overflow-x:hidden;padding:12px}
-  .card{padding:14px}
-  .page-title{font-size:20px}
-  .colegios-grid{grid-template-columns:1fr}
-  .multi-content{padding:16px}
+  #topRolBadge{display:none}
+  .logout-btn{padding:3px 8px;font-size:11px}
+  .back-btn{padding:3px 8px;font-size:11px}
   .hamburger-btn{display:flex}
-  .accion-table{font-size:11px}
-  .accion-table th,.accion-table td{padding:6px 4px}
-  .pct-input{width:52px}
-  .page-header>div{flex-direction:column;align-items:flex-start}
+
+  /* Sidebar como drawer */
+  .sidebar{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:500;background:var(--surface);border-top:1px solid var(--border);overflow-y:auto;padding:8px 0}
+  .sidebar.mobile-open{display:block}
+
+  /* Cards y contenido */
+  .card{padding:12px;border-radius:8px}
+  .page-title{font-size:18px}
+  .page-sub{font-size:12px}
+  .page-header{margin-bottom:16px}
+  .page-header>div{flex-direction:column;align-items:flex-start;gap:8px}
+
+  /* KPIs */
+  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
+  .kpi-card{padding:12px 14px}
+  .kpi-val{font-size:26px}
+
+  /* Gráficos */
+  .chart-wrap{height:140px}
+
+  /* Filtros y exports */
   .export-group{flex-wrap:wrap;gap:4px}
-  .filter-bar{flex-wrap:wrap;gap:8px}
-  .informe-card{padding:14px}
-  .chart-wrap{height:160px}
+  .filter-bar{flex-wrap:wrap;gap:6px}
+  .filter-select{font-size:11px;padding:4px 8px}
+  .btn{font-size:12px;padding:6px 10px}
+  .btn-sm{font-size:11px;padding:4px 8px}
+
+  /* Multi panel colegios */
+  .colegios-grid{grid-template-columns:1fr}
+  .multi-content{padding:12px}
+  .multi-topbar{padding:0 12px}
+  .multi-topbar .logo{font-size:14px}
+
+  /* Seguimiento - tabla */
+  .accion-table{font-size:11px;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .accion-table thead{display:none}
+  .accion-table tbody{display:block}
+  .accion-table tr{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;padding:10px 12px;gap:6px}
+  .accion-table td{display:flex;align-items:center;justify-content:space-between;padding:2px 0;border:none;font-size:12px}
+  .accion-table td:first-child{flex-direction:column;align-items:flex-start;gap:4px;padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:4px}
+  .seguimiento-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .pct-input{width:58px}
+  .accion-name{font-size:13px;font-weight:500}
+  .accion-responsable{font-size:11px}
+  .info-btn{flex-shrink:0}
+  .comentario-btn{font-size:11px;max-width:140px}
+
+  /* Reunión banner */
+  .reunion-banner{flex-direction:column;align-items:flex-start;padding:12px}
+  .rb-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .btn-reunion{text-align:center;font-size:11px;padding:6px 4px}
+
+  /* Informes */
+  .informe-card{padding:12px}
+
+  /* Estructura */
+  .btn-export{font-size:10px;padding:4px 6px}
+
+  /* Modal */
+  .modal{max-width:calc(100vw - 32px)!important;margin:16px;max-height:90vh;overflow-y:auto}
+  .modal-body{max-height:60vh;overflow-y:auto}
+
+  /* Área/objetivo/acción botones */
+  .btn.btn-sm{min-height:30px}
 }
 
 .hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px}
