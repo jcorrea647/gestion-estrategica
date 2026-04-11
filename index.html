@@ -805,7 +805,7 @@ function fmtMes(mes,short=false) {
   const s={'01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic'};
   const [y,mm] = mes.split('-'); return short ? s[mm] : m[mm]+' '+y;
 }
-function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(label||est==='sin_datos'?'Sin datos':est)+'</div>'; }
+function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='sin_datos'?'Sin datos':(label||est))+'</div>'; }
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
 
 // DASHBOARD
