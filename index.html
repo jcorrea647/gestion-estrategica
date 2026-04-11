@@ -1268,7 +1268,7 @@ function renderAdminEstructura() {
       html += '<div style="margin-left:16px;margin-bottom:10px;padding:10px 14px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--border)">';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
       html += '<div><span style="font-weight:500">'+obj.nombre+'</span><span style="font-size:11px;color:var(--muted);margin-left:8px">Pond: '+(obj.ponderador*100).toFixed(0)+'%</span></div>';
-      html += '<div style="display:flex;gap:4px"><button class="btn btn-sm btn-outline" onclick="editObjetivo(\''+obj.id+'\')">Ed</button><button class="btn btn-sm btn-primary" onclick="addAccion(\''+obj.id+'\')">+ Accion</button></div></div>';
+      html += '<div style="display:flex;gap:4px"><button class="btn btn-sm btn-outline" onclick="editObjetivo(\''+obj.id+'\')">Ed</button><button class="btn btn-sm btn-primary" onclick="addAccion(\''+obj.id+'\')">+ Accion</button><button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red)" onclick="deleteObjetivo(\''+obj.id+'\',\''+obj.nombre.replace(/'/g,"\\'")+'\')" >✕</button></div></div>';
       accionesObj.forEach(ac=>{
         const resps=getResps(ac.id);
         html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px;margin-bottom:4px;border:1px solid var(--border)">';
@@ -1897,6 +1897,18 @@ async function deleteAccion(id, nombre) {
   DB.seguimiento = DB.seguimiento.filter(s=>s.accion_id!==id);
   renderCurrentPanel();showToast('Acción eliminada');
 }
+async function deleteObjetivo(id, nombre){
+  if(!confirm('¿Eliminar el objetivo "'+nombre+'"?\nSe eliminarán también todas sus acciones y seguimiento asociado.\n\nEsta acción no se puede deshacer.')) return;
+  const{error}=await sb.from('objetivos').delete().eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  DB.objetivos=DB.objetivos.filter(o=>o.id!==id);
+  const acIds=DB.acciones.filter(a=>a.objetivo_id===id).map(a=>a.id);
+  DB.acciones=DB.acciones.filter(a=>a.objetivo_id!==id);
+  DB.accion_responsable=DB.accion_responsable.filter(ar=>!acIds.includes(ar.accion_id));
+  DB.seguimiento=DB.seguimiento.filter(s=>!acIds.includes(s.accion_id));
+  renderCurrentPanel();showToast('Objetivo eliminado');
+}
+
 function editObjetivo(id){
   const obj=DB.objetivos.find(o=>o.id===id); if(!obj) return;
   const usados = Math.round(DB.objetivos.filter(o=>o.area_id===obj.area_id&&o.id!==id).reduce((s,o)=>s+o.ponderador,0)*100);
