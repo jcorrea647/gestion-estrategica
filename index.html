@@ -1076,11 +1076,11 @@ async function guardarSeg(accionId, mes, pendiente) {
   } else {
     const {data,error:err}=await sb.from('seguimiento').insert(payload).select().single();
     error=err;
-    if(data) DB.seguimiento.push(data);
-    else if(!err) {
-      // Supabase no devolvió data ni error — recargar desde BD
-      const {data:fresh}=await sb.from('seguimiento').select('*').eq('accion_id',accionId).eq('mes',mes).single();
-      if(fresh) DB.seguimiento.push(fresh);
+    if(data) {
+      DB.seguimiento.push(data);
+    } else if(!err) {
+      // Supabase guardó pero no devolvió la fila — usar payload directamente
+      DB.seguimiento.push({...payload, id:'temp_'+accionId+'_'+mes});
     }
   }
   if(btnEl){btnEl.disabled=false;btnEl.textContent=pendiente?'P':'OK';}
