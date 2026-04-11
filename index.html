@@ -1261,7 +1261,7 @@ function renderAdminEstructura() {
     html += '<div class="card" style="margin-bottom:14px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
     html += '<div><div style="font-family:\'DM Serif Display\',serif;font-size:18px">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
-    html += '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="editArea(\''+area.id+'\')">Editar</button><button class="btn btn-sm btn-primary" onclick="addObjetivo(\''+area.id+'\')">+ Objetivo</button></div></div>';
+    html += '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="editArea(\''+area.id+'\')">Editar</button><button class="btn btn-sm btn-primary" onclick="addObjetivo(\''+area.id+'\')">+ Objetivo</button><button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red)" onclick="deleteArea(\''+area.id+'\',\''+area.nombre.replace(/'/g,"\\'")+'\')" >✕ Eliminar</button></div></div>';
     DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
       const accionesObj = accionesArea.filter(a=>a.objetivo_id===obj.id);
       if((fMes||fCargo) && !accionesObj.length) return;
@@ -1769,11 +1769,56 @@ async function ejecutarCarga(rows, idx) {
   if(cb){cb.textContent='Cerrar';cb.onclick=()=>{closeModal();renderCurrentPanel();};}
 }
 
-function addArea(){openModal('Nueva area','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveArea()'}]);}
-async function saveArea(){const nombre=document.getElementById('f-nombre')?.value.trim(),pond=parseFloat(document.getElementById('f-pond')?.value)/100;if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}const{data,error}=await sb.from('areas').insert({colegio_id:SESSION.colegioActivo,nombre,ponderador:pond,orden:DB.areas.length+1}).select().single();if(error){showToast('Error: '+error.message);return;}DB.areas.push(data);closeModal();renderCurrentPanel();showToast('Area creada');}
-function addObjetivo(aId){openModal('Nuevo objetivo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:"saveObjetivo('"+aId+"')"}]);}
-async function saveObjetivo(aId){const nombre=document.getElementById('f-nombre')?.value.trim(),pond=parseFloat(document.getElementById('f-pond')?.value)/100;if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}const{data,error}=await sb.from('objetivos').insert({area_id:aId,nombre,ponderador:pond,orden:0}).select().single();if(error){showToast('Error: '+error.message);return;}DB.objetivos.push(data);closeModal();renderCurrentPanel();showToast('Objetivo creado');}
+function validarPonderador(pond, existentes, excludeId=null) {
+  const total = Math.round((existentes.filter(x=>x.id!==excludeId).reduce((s,x)=>s+x.ponderador,0) + pond)*100);
+  if(total !== 100) {
+    const actual = Math.round(existentes.filter(x=>x.id!==excludeId).reduce((s,x)=>s+x.ponderador,0)*100);
+    showToast('⚠️ Los ponderadores deben sumar 100%. Actual: '+actual+'% + nuevo: '+Math.round(pond*100)+'% = '+total+'%');
+    return false;
+  }
+  return true;
+}
+
+function addArea(){
+  const usados = Math.round(DB.areas.reduce((s,a)=>s+a.ponderador,0)*100);
+  const sugerido = Math.max(1, 100-usados);
+  openModal('Nueva área',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Usado: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+sugerido+'"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveArea()'}]);
+}
+async function saveArea(){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}
+  if(!validarPonderador(pond, DB.areas)) return;
+  const{data,error}=await sb.from('areas').insert({colegio_id:SESSION.colegioActivo,nombre,ponderador:pond,orden:DB.areas.length+1}).select().single();
+  if(error){showToast('Error: '+error.message);return;}
+  DB.areas.push(data);closeModal();renderCurrentPanel();showToast('Área creada');
+}
+
+function addObjetivo(aId){
+  const usados = Math.round(DB.objetivos.filter(o=>o.area_id===aId).reduce((s,o)=>s+o.ponderador,0)*100);
+  const sugerido = Math.max(1, 100-usados);
+  openModal('Nuevo objetivo',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Usado: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+sugerido+'"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:"saveObjetivo('"+aId+"')"}]);
+}
+async function saveObjetivo(aId){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}
+  if(!validarPonderador(pond, DB.objetivos.filter(o=>o.area_id===aId))) return;
+  const{data,error}=await sb.from('objetivos').insert({area_id:aId,nombre,ponderador:pond,orden:0}).select().single();
+  if(error){showToast('Error: '+error.message);return;}
+  DB.objetivos.push(data);closeModal();renderCurrentPanel();showToast('Objetivo creado');
+}
 function addAccion(objId){
+  const usados = Math.round(DB.acciones.filter(a=>a.objetivo_id===objId).reduce((s,a)=>s+a.ponderador,0)*100);
+  const sugerido = Math.max(1, 100-usados);
   const rO=DB.responsables.map(r=>'<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--surface)"><input type="checkbox" value="'+r.id+'" class="resp-check" style="accent-color:var(--accent);width:14px;height:14px"> '+r.nombre+' <span class="accion-cargo">'+r.cargo+'</span></label>').join('');
   const mO=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'].map(m=>'<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px"><input type="checkbox" value="'+m+'" class="mes-check"> '+fmtMes(m)+'</label>').join('');
   openModal('Nueva accion',
@@ -1781,7 +1826,8 @@ function addAccion(objId){
     '<div class="form-group"><label class="form-label">Descripcion</label><textarea class="form-textarea" id="f-desc" style="min-height:60px"></textarea></div>'+
     '<div class="form-group"><label class="form-label">Formula de cumplimiento</label><input class="form-input" id="f-formula"></div>'+
     '<div class="form-group"><label class="form-label">Evidencia esperada</label><input class="form-input" id="f-evidencia" placeholder="Ej: Acta firmada, Informe PDF, Registro fotográfico..."></div>'+
-    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Usado: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+sugerido+'"></div>'+
     '<div class="form-group"><label class="form-label">Responsables <span style="font-weight:400;color:var(--muted)">(puede seleccionar varios)</span></label>'+
     '<div style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;padding:4px 0" id="respsContainer">'+rO+'</div></div>'+
     '<div class="form-group"><label class="form-label">Meses activos</label>'+mO+'</div>',
@@ -1796,6 +1842,7 @@ async function saveAccion(objId){
   const formula=document.getElementById('f-formula')?.value.trim()||null;
   const evidencia=document.getElementById('f-evidencia')?.value.trim()||null;
   if(!nombre||isNaN(pond)||!meses.length){showToast('Completa nombre, ponderador y al menos un mes');return;}
+  if(!validarPonderador(pond, DB.acciones.filter(a=>a.objetivo_id===objId))) return;
   const{data:ac,error}=await sb.from('acciones').insert({objetivo_id:objId,nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses,meta:100}).select().single();
   if(error){showToast('Error: '+error.message);return;}
   DB.acciones.push(ac);
@@ -1805,7 +1852,39 @@ async function saveAccion(objId){
   }
   closeModal();renderCurrentPanel();showToast('Accion creada');
 }
-function editArea(id){showToast('Proximamente');}
+function editArea(id){
+  const area=DB.areas.find(a=>a.id===id); if(!area) return;
+  const usados = Math.round(DB.areas.filter(a=>a.id!==id).reduce((s,a)=>s+a.ponderador,0)*100);
+  openModal('Editar área',
+    '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+area.nombre+'"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Resto de áreas: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(area.ponderador*100)+'"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateArea('"+id+"')"}]);
+}
+async function updateArea(id){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
+  if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}
+  if(!validarPonderador(pond, DB.areas, id)) return;
+  const{error}=await sb.from('areas').update({nombre,ponderador:pond}).eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.areas.findIndex(a=>a.id===id);
+  if(i>=0) DB.areas[i]={...DB.areas[i],nombre,ponderador:pond};
+  closeModal();renderCurrentPanel();showToast('Área actualizada');
+}
+async function deleteArea(id, nombre){
+  if(!confirm('¿Eliminar el área "'+nombre+'"?\nSe eliminarán también todos sus objetivos, acciones y seguimiento asociado.\n\nEsta acción no se puede deshacer.')) return;
+  const{error}=await sb.from('areas').delete().eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  DB.areas=DB.areas.filter(a=>a.id!==id);
+  const objIds=DB.objetivos.filter(o=>o.area_id===id).map(o=>o.id);
+  DB.objetivos=DB.objetivos.filter(o=>o.area_id!==id);
+  const acIds=DB.acciones.filter(a=>objIds.includes(a.objetivo_id)).map(a=>a.id);
+  DB.acciones=DB.acciones.filter(a=>!objIds.includes(a.objetivo_id));
+  DB.accion_responsable=DB.accion_responsable.filter(ar=>!acIds.includes(ar.accion_id));
+  DB.seguimiento=DB.seguimiento.filter(s=>!acIds.includes(s.accion_id));
+  renderCurrentPanel();showToast('Área eliminada');
+}
 async function deleteAccion(id, nombre) {
   if(!confirm('¿Eliminar la acción "'+nombre+'"?\nTambién se eliminará su seguimiento y evidencias.')) return;
   const {error} = await sb.from('acciones').delete().eq('id',id);
@@ -1813,28 +1892,32 @@ async function deleteAccion(id, nombre) {
   DB.acciones = DB.acciones.filter(a=>a.id!==id);
   DB.accion_responsable = DB.accion_responsable.filter(ar=>ar.accion_id!==id);
   DB.seguimiento = DB.seguimiento.filter(s=>s.accion_id!==id);
-  renderCurrentPanel();
-  showToast('Acción eliminada');
+  renderCurrentPanel();showToast('Acción eliminada');
 }
-function editObjetivo(id){
   const obj=DB.objetivos.find(o=>o.id===id); if(!obj) return;
+  const usados = Math.round(DB.objetivos.filter(o=>o.area_id===obj.area_id&&o.id!==id).reduce((s,o)=>s+o.ponderador,0)*100);
   openModal('Editar objetivo',
     '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+obj.nombre+'"></div>'+
-    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(obj.ponderador*100)+'"></div>',
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Resto: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(obj.ponderador*100)+'"></div>',
     [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateObjetivo('"+id+"')"}]);
 }
 async function updateObjetivo(id){
   const nombre=document.getElementById('f-nombre')?.value.trim();
   const pond=parseFloat(document.getElementById('f-pond')?.value)/100;
   if(!nombre||isNaN(pond)){showToast('Completa los campos');return;}
+  const obj=DB.objetivos.find(o=>o.id===id);
+  if(!validarPonderador(pond, DB.objetivos.filter(o=>o.area_id===obj?.area_id), id)) return;
   const{error}=await sb.from('objetivos').update({nombre,ponderador:pond}).eq('id',id);
   if(error){showToast('Error: '+error.message);return;}
   const i=DB.objetivos.findIndex(o=>o.id===id);
   if(i>=0) DB.objetivos[i]={...DB.objetivos[i],nombre,ponderador:pond};
   closeModal();renderCurrentPanel();showToast('Objetivo actualizado');
 }
+
 function editAccion(id){
   const ac=DB.acciones.find(a=>a.id===id); if(!ac) return;
+  const usados = Math.round(DB.acciones.filter(a=>a.objetivo_id===ac.objetivo_id&&a.id!==id).reduce((s,a)=>s+a.ponderador,0)*100);
   const respActivos=DB.accion_responsable.filter(ar=>ar.accion_id===id).map(ar=>ar.responsable_id);
   const rO=DB.responsables.map(r=>'<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--surface)"><input type="checkbox" value="'+r.id+'" class="resp-check"'+(respActivos.includes(r.id)?' checked':'')+' style="accent-color:var(--accent);width:14px;height:14px"> '+r.nombre+' <span class="accion-cargo">'+r.cargo+'</span></label>').join('');
   const mO=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'].map(m=>'<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px"><input type="checkbox" value="'+m+'" class="mes-check"'+(ac.meses_activos.includes(m)?' checked':'')+' > '+fmtMes(m)+'</label>').join('');
@@ -1843,7 +1926,8 @@ function editAccion(id){
     '<div class="form-group"><label class="form-label">Descripcion</label><textarea class="form-textarea" id="f-desc" style="min-height:60px">'+(ac.descripcion||'')+'</textarea></div>'+
     '<div class="form-group"><label class="form-label">Formula de cumplimiento</label><input class="form-input" id="f-formula" value="'+(ac.formula_cumplimiento||'')+'"></div>'+
     '<div class="form-group"><label class="form-label">Evidencia esperada</label><input class="form-input" id="f-evidencia" value="'+(ac.evidencia_tipo||'')+'" placeholder="Ej: Acta firmada, Informe PDF..."></div>'+
-    '<div class="form-group"><label class="form-label">Ponderador (%)</label><input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(ac.ponderador*100)+'"></div>'+
+    '<div class="form-group"><label class="form-label">Ponderador (%)<span style="font-size:11px;color:var(--muted);margin-left:8px">Resto: '+usados+'% · Disponible: '+(100-usados)+'%</span></label>'+
+    '<input class="form-input" id="f-pond" type="number" min="1" max="100" value="'+Math.round(ac.ponderador*100)+'"></div>'+
     '<div class="form-group"><label class="form-label">Responsables <span style="font-weight:400;color:var(--muted)">(puede seleccionar varios)</span></label>'+
     '<div style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;padding:4px 0">'+rO+'</div></div>'+
     '<div class="form-group"><label class="form-label">Meses activos</label>'+mO+'</div>',
@@ -1858,11 +1942,12 @@ async function updateAccion(id){
   const formula=document.getElementById('f-formula')?.value.trim()||null;
   const evidencia=document.getElementById('f-evidencia')?.value.trim()||null;
   if(!nombre||isNaN(pond)||!meses.length){showToast('Completa nombre, ponderador y al menos un mes');return;}
+  const ac=DB.acciones.find(a=>a.id===id);
+  if(!validarPonderador(pond, DB.acciones.filter(a=>a.objetivo_id===ac?.objetivo_id), id)) return;
   const{error}=await sb.from('acciones').update({nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses}).eq('id',id);
   if(error){showToast('Error: '+error.message);return;}
   const i=DB.acciones.findIndex(a=>a.id===id);
   if(i>=0) DB.acciones[i]={...DB.acciones[i],nombre,descripcion:desc,formula_cumplimiento:formula,evidencia_tipo:evidencia,ponderador:pond,meses_activos:meses};
-  // Actualizar responsables
   await sb.from('accion_responsable').delete().eq('accion_id',id);
   DB.accion_responsable=DB.accion_responsable.filter(ar=>ar.accion_id!==id);
   for(const rId of respIds){
