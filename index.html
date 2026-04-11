@@ -1894,6 +1894,7 @@ async function deleteAccion(id, nombre) {
   DB.seguimiento = DB.seguimiento.filter(s=>s.accion_id!==id);
   renderCurrentPanel();showToast('Acción eliminada');
 }
+function editObjetivo(id){
   const obj=DB.objetivos.find(o=>o.id===id); if(!obj) return;
   const usados = Math.round(DB.objetivos.filter(o=>o.area_id===obj.area_id&&o.id!==id).reduce((s,o)=>s+o.ponderador,0)*100);
   openModal('Editar objetivo',
