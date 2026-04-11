@@ -1771,10 +1771,13 @@ async function ejecutarCarga(rows, idx) {
 
 function validarPonderador(pond, existentes, excludeId=null) {
   const total = Math.round((existentes.filter(x=>x.id!==excludeId).reduce((s,x)=>s+x.ponderador,0) + pond)*100);
-  if(total !== 100) {
+  if(total > 100) {
     const actual = Math.round(existentes.filter(x=>x.id!==excludeId).reduce((s,x)=>s+x.ponderador,0)*100);
-    showToast('⚠️ Los ponderadores deben sumar 100%. Actual: '+actual+'% + nuevo: '+Math.round(pond*100)+'% = '+total+'%');
+    showToast('⚠️ Los ponderadores superan el 100%. Actual: '+actual+'% + nuevo: '+Math.round(pond*100)+'% = '+total+'%');
     return false;
+  }
+  if(total < 100) {
+    showToast('ℹ️ Ponderadores suman '+total+'% — recuerda completar hasta 100%');
   }
   return true;
 }
