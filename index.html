@@ -4141,22 +4141,7 @@ async function denCrearCaso() {
   }
 }
 
-initFilters();
-renderCurrentPanel();
 
-async function doLogin() {
-  var email = document.getElementById('loginEmail').value.trim();
-  var pass  = document.getElementById('loginPassword').value;
-  var errEl = document.getElementById('loginError');
-  errEl.style.display = 'none';
-  if (!email || !pass) { errEl.textContent = 'Completa email y contraseña'; errEl.style.display = 'block'; return; }
-  try {
-    await geLogin(email, pass);
-  } catch(e) {
-    errEl.textContent = 'Credenciales incorrectas';
-    errEl.style.display = 'block';
-  }
-}
 
 </script>
 </body>
