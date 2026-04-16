@@ -947,11 +947,8 @@ function initDashboardCharts() {
 function renderSeguimiento() {
   const mes=filterMes;
   // Mostrar la reunion más reciente activa (independiente del mes filtrado)
-  // Buscar reunión que corresponda al mes filtrado
-  const reunion = DB.reuniones && DB.reuniones.length > 0
-    ? (mes
-        ? DB.reuniones.slice().reverse().find(r => (r.meses_evaluacion||[]).includes(mes) || r.mes === mes)
-        : DB.reuniones[DB.reuniones.length-1])
+  const reunion = DB.reuniones && DB.reuniones.length > 0 && mes
+    ? DB.reuniones.slice().reverse().find(r => (r.meses_evaluacion||[]).includes(mes) || r.mes === mes)
     : null;
   if(reunion) window._reunionActiva=reunion.id;
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
