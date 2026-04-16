@@ -3149,7 +3149,7 @@ function denCompletarAccion(accionId, denId) {
 
 // ── Enviar mensaje interno ────────────────────────────────────
 async function denEnviarMensaje(denId, texto) {
-  if (!SESSION.user) return;
+  if (!SESSION.user || !SESSION.colegioActivo) return;
   try {
     var _ms=JSON.parse(localStorage.getItem('den_msgs_'+denId)||'[]'); _ms.push({
       denuncia_id:    denId,
@@ -3164,7 +3164,7 @@ async function denEnviarMensaje(denId, texto) {
 
 // ── Log inmutable ─────────────────────────────────────────────
 async function _supaLogDenuncia(denId, evento, detalle) {
-  if (!SESSION.user) return;
+  if (!SESSION.user || !SESSION.colegioActivo) return;
   try {
     await sb.from('log_denuncia').insert({
       denuncia_id:    denId,
@@ -4035,16 +4035,14 @@ async function denShowAlertas() {
       portal.remove();
       denAbrirDetalle(item.getAttribute('data-alert-id'));
     }
-
-
-
-// ── Denuncias: funciones Supabase reales ─────────────────
+  });
+}
 // ── Denuncias: Supabase real (override stubs) ─────────────────
 async function denLoad() {
-  if (!_supaUser || !SESSION.colegioActivo) return;
+  if (!SESSION.user || !SESSION.colegioActivo) return;
   try {
     var { data } = await sb.from('denuncias').select('*')
-      .eq('colegio_id', _supaPerfil.colegio_id)
+      .eq('colegio_id', SESSION.colegioActivo)
       .order('fecha_creacion', { ascending: false });
     if (data) _denuncias = data;
     denRender();
@@ -4053,15 +4051,15 @@ async function denLoad() {
 }
 
 async function _supaLogDenuncia(denId, evento, detalle) {
-  if (!SESSION.user) return;
+  if (!SESSION.user || !SESSION.colegioActivo) return;
   try {
     await sb.from('log_denuncia').insert({
       denuncia_id:    denId,
       evento:         evento,
       detalle:        detalle || null,
-      usuario_id:     _supaUser.id,
+      usuario_id:     SESSION.user.id,
       usuario_nombre: SESSION.user?.nombre || 'Usuario',
-      colegio_id:     _supaPerfil.colegio_id,
+      colegio_id:     SESSION.colegioActivo,
     });
   } catch(e) {}
 }
@@ -4077,7 +4075,7 @@ async function denAbrirDetalleReal(denId) {
 }
 
 async function denCrearCaso() {
-  if (!_supaUser || !SESSION.colegioActivo) {
+  if (!SESSION.user || !SESSION.colegioActivo) {
     showToast('⚠️ Debes iniciar sesión para crear un caso');
     return;
   }
@@ -4100,8 +4098,8 @@ async function denCrearCaso() {
       estado: 'recibido',
       riesgo: _denWizardData.riesgo || 'normal',
       prioridad: prioridad,
-      colegio_id: _supaPerfil.colegio_id,
-      creado_por: _supaUser.id,
+      colegio_id: SESSION.colegioActivo,
+      creado_por: SESSION.user.id,
     });
 
     var fechaBase = new Date(_denWizardData.fecha_denuncia);
@@ -4126,7 +4124,7 @@ async function denCrearCaso() {
         responsable_nombre: _denWizardData.responsable_nombre,
         fecha_limite: fecha.toISOString().slice(0,10),
         estado: 'pendiente',
-        colegio_id: _supaPerfil.colegio_id,
+        colegio_id: SESSION.colegioActivo,
       };
     });
     await sb.from('acciones_denuncia').insert(accionesInsert);
