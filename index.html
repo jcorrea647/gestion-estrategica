@@ -4065,13 +4065,92 @@ async function _supaLogDenuncia(denId, evento, detalle) {
 }
 
 async function denAbrirDetalleReal(denId) {
+  var container = document.getElementById('denDetalleContainer');
+  if(!container) return;
+
   var den = _denuncias.find(function(d){ return d.id === denId; });
-  if (!den) return;
+  if(!den){ container.innerHTML = '<div class="card"><div class="empty-state">Caso no encontrado</div></div>'; return; }
+
   var r1 = await sb.from('acciones_denuncia').select('*').eq('denuncia_id', denId).order('etapa').order('numero');
-  var r2 = await sb.from('log_denuncia').select('*').eq('denuncia_id', denId).order('created_at', { ascending: false });
-  var r3 = await sb.from('mensajes_caso').select('*').eq('denuncia_id', denId).order('created_at');
-  var r4 = await sb.from('evidencias_denuncia').select('*').eq('denuncia_id', denId);
-  return { acciones: r1.data||[], logs: r2.data||[], mensajes: r3.data||[], evidencias: r4.data||[] };
+  var r2 = await sb.from('log_denuncia').select('*').eq('denuncia_id', denId).order('created_at', {ascending:false});
+  var acciones = r1.data||[], logs = r2.data||[];
+
+  var hoy = new Date();
+  var diasAbierto = Math.floor((hoy - new Date(den.fecha_creacion)) / 86400000);
+  var completadas = acciones.filter(function(a){ return a.estado === 'completado'; }).length;
+  var pct = acciones.length ? Math.round(completadas/acciones.length*100) : 0;
+  var color = DEN_RIESGO_COLOR[den.riesgo]||'#4ade80';
+
+  var html = '<div style="padding:0 4px">';
+
+  // Header
+  html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">';
+  html += '<div>';
+  html += '<button onclick="showPanel(\'denuncias\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0;margin-bottom:8px;font-family:\'DM Sans\',sans-serif">← Volver a denuncias</button>';
+  html += '<div class="page-title">' + den.nombre + '</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + (den.id) + ' · ' + (DEN_TIPO_LABEL[den.tipo]||den.tipo||'') + '</div>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  if(den.estado !== 'cerrado') html += '<button onclick="denEditarCaso(\'' + denId + '\')" class="btn btn-outline btn-sm">✏️ Editar</button>';
+  if(den.estado !== 'cerrado') html += '<button onclick="denCerrarCaso(\'' + denId + '\')" class="btn btn-outline btn-sm" style="border-color:#4ade8044;color:#4ade80">✅ Cerrar caso</button>';
+  html += '<button onclick="denGenerarInforme(\'' + denId + '\')" class="btn btn-primary btn-sm">📄 Informe</button>';
+  html += '</div></div>';
+
+  // Stats
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px">';
+  html += _denStatCard('Estado', DEN_ESTADO_LABEL[den.estado]||den.estado, 'var(--accent2)');
+  html += _denStatCard('Días abierto', diasAbierto + ' días', diasAbierto > 10 ? '#f87171' : 'var(--accent2)');
+  html += _denStatCard('Riesgo', (den.riesgo||'').charAt(0).toUpperCase()+(den.riesgo||'').slice(1), color);
+  html += _denStatCard('Cumplimiento', pct + '%', pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171');
+  html += '</div>';
+
+  // Barra de progreso
+  html += '<div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px"><span>Cumplimiento del protocolo</span><span>' + pct + '%</span></div>';
+  html += '<div class="progress-wrap"><div class="progress-bar ' + (pct>=90?'verde':pct>=70?'amarillo':'rojo') + '" style="width:' + pct + '%"></div></div></div>';
+
+  // Acciones
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title">Acciones del protocolo</div>';
+  if(!acciones.length) {
+    html += '<div class="empty-state" style="padding:20px">Sin acciones registradas</div>';
+  } else {
+    var etapaActual = 0;
+    var etapasLabel = ['','RECEPCIÓN Y CONTENCIÓN','INVESTIGACIÓN','ANÁLISIS Y RESOLUCIÓN','CIERRE Y SEGUIMIENTO'];
+    acciones.forEach(function(a) {
+      if(a.etapa !== etapaActual) {
+        if(etapaActual > 0) html += '</div>';
+        etapaActual = a.etapa;
+        html += '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:10px 0 6px">' + (etapasLabel[a.etapa]||'Etapa '+a.etapa) + '</div><div>';
+      }
+      var est = a.estado||'pendiente';
+      var estColor = est==='completado'?'var(--green)':est==='en_proceso'?'var(--gold)':'var(--muted)';
+      var atrasada = est !== 'completado' && a.fecha_limite && new Date(a.fecha_limite) < hoy;
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">';
+      html += '<div style="width:20px;height:20px;border-radius:50%;background:' + (est==='completado'?'var(--green)':atrasada?'#f87171':'var(--border)') + ';flex-shrink:0"></div>';
+      html += '<div style="flex:1"><div style="font-size:12px;font-weight:500">' + a.descripcion + '</div>';
+      if(a.fecha_limite) html += '<div style="font-size:10px;color:' + (atrasada?'#f87171':'var(--muted)') + '">Límite: ' + a.fecha_limite + (atrasada?' ⚠️ Atrasada':'') + '</div>';
+      html += '</div>';
+      if(est !== 'completado') html += '<button onclick="denCompletarAccion(\'' + a.id + '\',\'' + denId + '\')" class="btn btn-sm btn-outline" style="font-size:10px">Completar</button>';
+      else html += '<span style="font-size:10px;color:var(--green);font-weight:600">✓ Completada</span>';
+      html += '</div>';
+    });
+    if(etapaActual > 0) html += '</div>';
+  }
+  html += '</div>';
+
+  // Log
+  if(logs.length) {
+    html += '<div class="card"><div class="card-title">Historial del caso</div>';
+    logs.forEach(function(l) {
+      html += '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">';
+      html += '<div style="color:var(--muted);flex-shrink:0;font-size:10px">' + new Date(l.created_at).toLocaleDateString('es-CL') + '</div>';
+      html += '<div><span style="font-weight:500">' + l.evento + '</span>' + (l.detalle?' — <span style="color:var(--muted)">'+l.detalle+'</span>':'') + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 async function denCrearCaso() {
