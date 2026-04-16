@@ -762,11 +762,6 @@ function renderSidebar() {
     '</div>' +
     '<div class="nav-divider"></div>' +
     '<div class="nav-section">' +
-    '<div class="nav-label">Convivencia</div>' +
-    '<div class="nav-item" onclick="showPanel(\'denuncias\')" id="nav-denuncias"><span class="icon">⚖</span> Denuncias <span id="nav-denuncias-count" style="background:var(--red);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
-    '</div>' +
-    '<div class="nav-divider"></div>' +
-    '<div class="nav-section">' +
     '<div class="nav-label">Filtros</div>' +
     '<div style="padding:0 4px">' +
     '<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Cargo</div>' +
@@ -778,6 +773,11 @@ function renderSidebar() {
     '<option value="2026-06">Junio 2026</option><option value="2026-07">Julio 2026</option><option value="2026-08">Agosto 2026</option>' +
     '<option value="2026-09">Septiembre 2026</option><option value="2026-10">Octubre 2026</option><option value="2026-11">Noviembre 2026</option>' +
     '</select></div></div></div>' +
+    '<div class="nav-divider"></div>' +
+    '<div class="nav-section">' +
+    '<div class="nav-label">Convivencia</div>' +
+    '<div class="nav-item" onclick="showPanel(\'denuncias\')" id="nav-denuncias"><span class="icon">⚖</span> Denuncias <span id="nav-denuncias-count" style="background:var(--red);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
+    '</div>' +
     (cc ? '<div class="nav-divider"></div><div class="nav-section"><div class="nav-label">Configuracion</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-estructura\')" id="nav-admin-estructura"><span class="icon">s</span> Estructura</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-responsables\')" id="nav-admin-responsables"><span class="icon">r</span> Responsables</div>' +
@@ -3494,7 +3494,7 @@ function denWizardRender() {
     document.body.appendChild(portal);
   }
 
-  var steps = ['Nombre','Tipo de denuncia','Tipo de caso','Fecha','Descripción','Personas involucradas','Responsable'];
+  var steps = ['Nombre','Tipo de denuncia','Tipo de caso','Fecha','Descripción','Personas involucradas','Responsable','Evidencias'];
   var progressPct = Math.round((_denWizardStep-1) / steps.length * 100);
 
   var innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;padding:24px;box-shadow:0 24px 60px #00000088">' +
@@ -3557,6 +3557,25 @@ function denWizardRender() {
         var sel = _denWizardData.riesgo === r;
         return '<span data-wiz-riesgo="' + r + '" style="display:inline-block;padding:5px 14px;border-radius:20px;border:2px solid ' + (sel?DEN_RIESGO_COLOR[r]:'var(--border)') + ';cursor:pointer;font-size:11px;font-weight:' + (sel?'700':'400') + ';margin-right:6px;margin-bottom:6px;background:' + (sel?DEN_RIESGO_COLOR[r]+'22':'none') + '">' + labels[r] + '</span>';
       }).join('');
+  } else if (_denWizardStep === 8) {
+    var evids = _denWizardData.evidencias_archivos || [];
+    innerHTML += '<div style="font-size:11px;font-weight:700;margin-bottom:6px">EVIDENCIAS INICIALES</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Adjunta fotos, documentos o cualquier archivo relevante. Puedes agregar más evidencias después.</div>' +
+      '<label style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:24px;cursor:pointer;background:var(--surface2);margin-bottom:12px">' +
+        '<div style="font-size:28px">📎</div>' +
+        '<div style="font-size:13px;font-weight:600">Seleccionar archivos</div>' +
+        '<div style="font-size:11px;color:var(--muted)">Fotos, PDF, Word, Excel — máx. 10MB por archivo</div>' +
+        '<input type="file" id="wizEvidencias" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="denWizardEvidencias(this)">' +
+      '</label>' +
+      (evids.length ? '<div style="margin-bottom:8px">' + evids.map(function(e,i){
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px;font-size:12px">' +
+          '<span style="font-size:16px">' + (e.type.startsWith('image/')? '🖼' : '📄') + '</span>' +
+          '<span style="flex:1">' + e.name + '</span>' +
+          '<span style="color:var(--muted)">' + (e.size/1024).toFixed(0) + ' KB</span>' +
+          '<button onclick="denWizardQuitarEvidencia(' + i + ')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>' +
+        '</div>';
+      }).join('') + '</div>' : '') +
+      '<div style="font-size:11px;color:var(--muted)">También puedes omitir este paso y adjuntar evidencias después.</div>';
   }
 
   innerHTML += '<div style="display:flex;gap:8px;margin-top:16px">' +
@@ -3613,7 +3632,8 @@ function denWizardRender() {
       if (!v7) { showToast('Ingresa el responsable del caso'); return; }
       _denWizardData.responsable_nombre = v7;
       if (!_denWizardData.riesgo) _denWizardData.riesgo = 'normal';
-      // Create case
+    } else if (_denWizardStep === 8) {
+      // Paso evidencias — opcional, crear caso directamente
       denCrearCaso();
       portal.remove();
       return;
@@ -3624,6 +3644,24 @@ function denWizardRender() {
 
   // Focus first input
   setTimeout(function(){ document.getElementById('wizInput')?.focus(); }, 100);
+}
+
+function denWizardEvidencias(input) {
+  if(!input.files.length) return;
+  if(!_denWizardData.evidencias_archivos) _denWizardData.evidencias_archivos = [];
+  var archivos = Array.from(input.files);
+  archivos.forEach(function(f) {
+    if(f.size > 10*1024*1024){ showToast('⚠️ ' + f.name + ' supera 10MB'); return; }
+    _denWizardData.evidencias_archivos.push(f);
+  });
+  denWizardRender();
+}
+
+function denWizardQuitarEvidencia(idx) {
+  if(_denWizardData.evidencias_archivos) {
+    _denWizardData.evidencias_archivos.splice(idx, 1);
+  }
+  denWizardRender();
 }
 
 // ── Crear caso en Supabase ────────────────────────────────────
