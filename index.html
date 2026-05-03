@@ -993,8 +993,7 @@ function renderSeguimiento() {
   if(!reunion) {
     html+='<div class="banner-bloqueo warn">';
     html+='<div><div class="bb-title">⚠ No hay reunión creada para '+fmtMes(mes)+'</div>';
-    html+='<div class="bb-sub">Para registrar porcentajes, comentarios y evidencias debes crear una reunión que cubra este mes.</div></div>';
-    html+='<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()">+ Crear reunión</button>';
+    html+='<div class="bb-sub">Para registrar porcentajes, comentarios y evidencias debes crear una reunión que cubra este mes. Usa el botón <strong>"+ Crear Reunion"</strong> arriba a la derecha.</div></div>';
     html+='</div>';
   } else if(!reunionAbierta) {
     const fechaCierre = reunion.fecha_cierre ? new Date(reunion.fecha_cierre).toLocaleDateString('es-CL') : '';
