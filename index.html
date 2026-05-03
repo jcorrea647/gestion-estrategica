@@ -16,6 +16,8 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .screen{display:none}.screen.active{display:flex}
 #screenLogin{min-height:100vh;align-items:center;justify-content:center;background:var(--accent);background-image:radial-gradient(ellipse at 70% 20%,#2D5A42 0%,transparent 60%),radial-gradient(ellipse at 20% 80%,#0f2018 0%,transparent 50%)}
 .login-box{background:var(--surface);border-radius:16px;padding:48px 44px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,.3)}
+.recovery-link{display:block;text-align:center;margin-top:14px;font-size:12px;color:var(--accent);text-decoration:none;cursor:pointer;font-weight:500}
+.recovery-link:hover{text-decoration:underline;color:var(--gold)}
 .login-logo{font-family:'DM Serif Display',serif;font-size:28px;color:var(--accent);margin-bottom:4px}
 .login-sub{color:var(--muted);font-size:13px;margin-bottom:36px}
 .form-error{color:var(--red);font-size:12px;margin-top:6px;display:none}.form-error.show{display:block}
@@ -312,9 +314,30 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="loginEmail" type="email" placeholder="correo@ejemplo.cl" autocomplete="email"></div>
     <div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="loginPassword" type="password" placeholder="..." onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"><div class="form-error" id="loginError">Correo o contrasena incorrectos.</div></div>
     <button class="btn btn-primary btn-full" onclick="doLogin()" id="loginBtn">Ingresar</button>
+    <a class="recovery-link" onclick="abrirRecuperarClave()">¿Olvidaste tu contraseña?</a>
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);text-align:center;line-height:1.8"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5b3a3f3632351b363e3134293a3e283834373a29753837">[email&#160;protected]</a> / admin1234<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="097a667a7d6c676c6d667b496d686c64276a65">[email&#160;protected]</a> / sostenedor123<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f19598839492859e83b1958490838594df929d">[email&#160;protected]</a> / director123</div>
   </div>
 </div>
+
+<div id="screenRecovery" class="screen">
+  <div class="login-box">
+    <div class="login-logo">Gestión Estratégica</div>
+    <div class="login-sub" id="recoverySub">Crea una nueva contraseña</div>
+    <div id="recoveryForm">
+      <div class="form-group"><label class="form-label">Nueva contraseña</label><input class="form-input" id="recPass1" type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div>
+      <div class="form-group"><label class="form-label">Confirmar contraseña</label><input class="form-input" id="recPass2" type="password" placeholder="Repite la contraseña" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaClave()"><div class="form-error" id="recError"></div></div>
+      <button class="btn btn-primary btn-full" onclick="guardarNuevaClave()" id="recBtn">Guardar contraseña</button>
+    </div>
+    <div id="recoveryDone" style="display:none;text-align:center;padding:8px 0">
+      <div style="font-size:42px;margin-bottom:12px">✓</div>
+      <div style="font-size:15px;color:var(--text);margin-bottom:8px;font-weight:600">Contraseña actualizada</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Ya puedes ingresar con tu nueva contraseña.</div>
+      <button class="btn btn-primary btn-full" onclick="volverALogin()">Ir a inicio de sesión</button>
+    </div>
+  </div>
+</div>
+
+<div id="screenLoginWrapper" style="display:none"></div>
 
 <div id="screenMulti" class="screen">
   <div class="multi-topbar">
@@ -391,6 +414,8 @@ const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
 // INIT
 (async () => {
   hideLoading();
+  // Si el usuario llega desde un email de recuperación, mostrar pantalla de nueva clave
+  if(detectarRecovery()) return;
   showScreen('screenLogin');
 })();
 
@@ -432,6 +457,126 @@ async function doLogin() {
       denLoad();
     } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
   }
+}
+
+// ====== RECUPERACION DE CLAVE ======
+const RECOVERY_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/enviar-recovery';
+
+function abrirRecuperarClave() {
+  openModal('Recuperar contraseña',
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5">Ingresa el correo con el que te registraste. Te enviaremos un enlace para crear una nueva contraseña.</div>'+
+    '<div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="f-rec-email" type="email" placeholder="correo@ejemplo.cl" autocomplete="email" onkeydown="if(event.key===\'Enter\')enviarRecuperacion()"></div>'+
+    '<div id="rec-msg" style="font-size:12px;color:var(--green);margin-top:8px;display:none"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Enviar enlace',cls:'btn-primary',action:'enviarRecuperacion()'}]);
+  setTimeout(function(){
+    const i=document.getElementById('f-rec-email'); if(i) i.focus();
+  }, 100);
+}
+
+async function enviarRecuperacion() {
+  const email = document.getElementById('f-rec-email')?.value.trim();
+  if(!email){ showToast('Ingresa tu correo'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast('Correo no válido'); return; }
+
+  const btns = document.querySelectorAll('#modal .btn');
+  btns.forEach(function(b){ b.disabled = true; });
+  const btnPrim = Array.prototype.find.call(btns, function(b){ return b.classList.contains('btn-primary'); });
+  if(btnPrim){ btnPrim.textContent = 'Enviando...'; }
+
+  try {
+    const resp = await fetch(RECOVERY_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    });
+    const data = await resp.json().catch(function(){ return {}; });
+    if(!resp.ok){ throw new Error(data.error || 'Error enviando solicitud'); }
+
+    closeModal();
+    showToast('✉ Si el correo existe, recibirás un enlace en breve.');
+  } catch(e) {
+    btns.forEach(function(b){ b.disabled = false; });
+    if(btnPrim){ btnPrim.textContent = 'Enviar enlace'; }
+    showToast('Error: ' + e.message);
+  }
+}
+
+function detectarRecovery() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('recovery');
+  if(!token) return false;
+  window._recoveryToken = token;
+  showScreen('screenRecovery');
+  return true;
+}
+
+async function guardarNuevaClave() {
+  const p1 = document.getElementById('recPass1')?.value || '';
+  const p2 = document.getElementById('recPass2')?.value || '';
+  const errEl = document.getElementById('recError');
+  const btn = document.getElementById('recBtn');
+  errEl.classList.remove('show');
+  errEl.textContent = '';
+
+  if(p1.length < 6){ errEl.textContent='La contraseña debe tener al menos 6 caracteres'; errEl.classList.add('show'); return; }
+  if(p1 !== p2){ errEl.textContent='Las contraseñas no coinciden'; errEl.classList.add('show'); return; }
+
+  btn.textContent='Guardando...'; btn.disabled=true;
+
+  // 1) Buscar token válido (no usado, no expirado)
+  const ahora = new Date().toISOString();
+  const { data: reset, error: errReset } = await sb
+    .from('password_resets')
+    .select('id, usuario_id, expira_en, usado')
+    .eq('token', window._recoveryToken)
+    .maybeSingle();
+
+  if(errReset || !reset){
+    btn.textContent='Guardar contraseña'; btn.disabled=false;
+    errEl.textContent='Enlace inválido. Solicita uno nuevo.'; errEl.classList.add('show'); return;
+  }
+  if(reset.usado){
+    btn.textContent='Guardar contraseña'; btn.disabled=false;
+    errEl.textContent='Este enlace ya fue usado. Solicita uno nuevo.'; errEl.classList.add('show'); return;
+  }
+  if(reset.expira_en < ahora){
+    btn.textContent='Guardar contraseña'; btn.disabled=false;
+    errEl.textContent='El enlace expiró. Solicita uno nuevo.'; errEl.classList.add('show'); return;
+  }
+
+  // 2) Actualizar password del usuario
+  const { error: errUpd } = await sb.from('usuarios').update({ password_hash: p1 }).eq('id', reset.usuario_id);
+  if(errUpd){
+    btn.textContent='Guardar contraseña'; btn.disabled=false;
+    errEl.textContent='Error: '+errUpd.message; errEl.classList.add('show'); return;
+  }
+
+  // 3) Marcar token como usado
+  await sb.from('password_resets').update({ usado: true }).eq('id', reset.id);
+
+  // 4) Mostrar éxito
+  document.getElementById('recoveryForm').style.display = 'none';
+  document.getElementById('recoveryDone').style.display = 'block';
+  document.getElementById('recoverySub').textContent = 'Listo';
+}
+
+function volverALogin() {
+  // Limpiar la URL del parámetro ?recovery=
+  if(window.history && window.history.replaceState){
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+  window._recoveryToken = null;
+  // Resetear formulario
+  document.getElementById('recoveryForm').style.display = '';
+  document.getElementById('recoveryDone').style.display = 'none';
+  document.getElementById('recPass1').value = '';
+  document.getElementById('recPass2').value = '';
+  document.getElementById('recError').textContent = '';
+  document.getElementById('recError').classList.remove('show');
+  document.getElementById('recBtn').textContent = 'Guardar contraseña';
+  document.getElementById('recBtn').disabled = false;
+  showScreen('screenLogin');
 }
 
 function abrirCambioClave() {
