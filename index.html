@@ -857,7 +857,7 @@ function addColegio() {
 async function saveColegio() {
   const nombre=document.getElementById('f-nombre')?.value.trim(), rbd=document.getElementById('f-rbd')?.value.trim();
   if(!nombre||!rbd){showToast('Completa nombre y RBD');return;}
-  const {data,error} = await sb.from('colegios').insert({nombre,rbd}).select().single();
+  const {data,error} = await sb.from('colegios').insert({nombre,rbd,app:'gestion'}).select().single();
   if(error){showToast('Error: '+error.message);return;}
   SESSION.colegios.push(data); closeModal(); renderMultiPanel(); showToast('Colegio creado');
 }
