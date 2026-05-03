@@ -437,7 +437,7 @@ async function doLogin() {
 
   if (isMulti(user.rol)) {
     setLoading('Cargando colegios...');
-    let query = sb.from('colegios').select('*').order('nombre');
+    let query = sb.from('colegios').select('*').eq('app','gestion').order('nombre');
     // Sostenedor solo ve sus colegios asignados
     if (user.rol === 'sostenedor') query = query.eq('sostenedor_id', user.id);
     const {data:cols} = await query;
@@ -447,6 +447,14 @@ async function doLogin() {
     showScreen('screenMulti');
   } else {
     if (!user.colegio_id) { errEl.classList.add('show'); return; }
+    // Verificar que el colegio del usuario pertenezca a la app "gestion"
+    const {data: colCheck} = await sb.from('colegios').select('id, app').eq('id', user.colegio_id).maybeSingle();
+    if (!colCheck) { errEl.classList.add('show'); errEl.textContent='Colegio no encontrado.'; return; }
+    if (colCheck.app && colCheck.app !== 'gestion') {
+      errEl.classList.add('show');
+      errEl.textContent='Tu cuenta no tiene acceso a esta aplicación.';
+      return;
+    }
     setLoading('Cargando datos...');
     showScreen('screenColegio');
     try {
