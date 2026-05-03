@@ -1129,7 +1129,7 @@ function renderSeguimiento() {
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Ingresar seguimiento</div><div class="page-sub">'+(mes?'Mes: '+fmtMes(mes):'Selecciona un mes en el filtro lateral')+'</div></div>';
   html+='<div style="display:flex;gap:8px">';
-  html+='<button class="btn btn-primary btn-sm'+(alertaCrear?' btn-alerta-roja':'')+'" onclick="abrirCrearReunion()" title="'+(alertaCrear?'Hay una reunión abierta. Recuerda cerrarla antes de crear otra.':'Crear nueva reunión')+'">+ Crear Reunion'+(alertaCrear?' ⚠':'')+'</button>';
+  html+='<button class="btn btn-primary btn-sm'+(alertaCrear?' btn-alerta-roja':'')+'" onclick="abrirCrearReunion()" title="'+(alertaCrear?'Hay una reunión abierta. Recuerda cerrarla antes de crear otra.':'Crear nueva reunión')+'">'+(alertaCrear?'⚠ Reunión Creada':'+ Crear Reunion')+'</button>';
   html+='</div>';
   html+='</div></div>';
   if(!mes) return html+'<div class="card"><div class="empty-state">Selecciona un mes en el filtro lateral.</div></div>';
@@ -1400,7 +1400,7 @@ function renderInformes() {
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
   const alertaVer = hayReunionAbierta();
-  html+='<div class="export-group"><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-roja':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Recuerda cerrarla.':'Ver historial de reuniones')+'">📋 Ver Reuniones'+(alertaVer?' ⚠':'')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
+  html+='<div class="export-group"><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-roja':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Recuerda cerrarla.':'Ver historial de reuniones')+'">'+(alertaVer?'⚠ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
   html+='</div></div>';
   // BUSCADOR IA
   html+='<div class="card" style="margin-bottom:20px">';
@@ -2817,13 +2817,59 @@ async function guardarReunion() {
   window._reunionActiva=rId;
   closeModal();renderCurrentPanel();showToast('Reunion guardada');
 }
-async function abrirEnviarReunion() {
+function abrirEnviarReunion() {
   const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
   if(!reunion){ showToast('No hay reunión activa'); return; }
   const mes = filterMes || reunion.mes;
 
+  // Contar acciones con seguimiento ingresado en pantalla (incluye los aún no guardados)
+  let conDatos = 0, sinDatos = 0;
+  DB.areas.forEach(area => {
+    DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
+      DB.acciones.filter(a => a.objetivo_id === obj.id && a.meses_activos.includes(mes)).forEach(ac => {
+        const pctEl = document.getElementById('pct_'+ac.id);
+        const segGuardado = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === mes);
+        const tienePantalla = pctEl && pctEl.value !== '';
+        if(tienePantalla || segGuardado) conDatos++; else sinDatos++;
+      });
+    });
+  });
+
+  document.getElementById('modalTitle').textContent = 'Cerrar reunión';
+  document.getElementById('modalBody').innerHTML =
+    '<div style="background:#FDF6E3;border:1px solid var(--yellow);border-radius:8px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:flex-start;gap:12px">' +
+    '<div style="font-size:22px">⚠</div>' +
+    '<div><div style="font-weight:600;color:#7a5a0a;margin-bottom:4px;font-size:14px">¿Estás seguro de cerrar y enviar esta reunión?</div>' +
+    '<div style="font-size:12px;color:#7a5a0a;line-height:1.5">Una vez cerrada, <strong>no se podrán modificar</strong> los porcentajes, comentarios ni evidencias de '+fmtMes(mes)+' hasta que la reabras manualmente.</div></div></div>' +
+    '<div style="background:var(--surface2);border-radius:8px;padding:14px 16px;margin-bottom:14px">' +
+    '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Resumen</div>' +
+    '<div style="display:flex;gap:24px;font-size:12px">' +
+    '<div><div style="color:var(--muted)">Reunión</div><div style="font-weight:500">'+reunion.titulo+'</div></div>' +
+    '<div><div style="color:var(--muted)">Mes</div><div style="font-weight:500">'+fmtMes(mes)+'</div></div>' +
+    '<div><div style="color:var(--muted)">Acciones con datos</div><div style="font-weight:500">'+conDatos+' de '+(conDatos+sinDatos)+'</div></div>' +
+    '</div></div>' +
+    (sinDatos > 0 ? '<div style="font-size:12px;color:var(--muted);line-height:1.5">Hay <strong>'+sinDatos+' acciones sin seguimiento</strong> en este mes. Al cerrar la reunión, esas acciones quedarán sin registrar para '+fmtMes(mes)+'.</div>' : '');
+
+  document.getElementById('modalFooter').innerHTML =
+    '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>' +
+    '<button class="btn btn-primary" onclick="confirmarCierreReunion()">Sí, cerrar reunión</button>';
+
+  document.getElementById('modalOverlay').style.display = 'flex';
+  document.getElementById('modal').style.maxWidth = '520px';
+}
+
+async function confirmarCierreReunion() {
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
+  if(!reunion){ closeModal(); showToast('No hay reunión activa'); return; }
+  const mes = filterMes || reunion.mes;
+
+  // Bloquear botones del modal
+  const btns = document.querySelectorAll('#modalFooter .btn');
+  btns.forEach(b => b.disabled = true);
+  const btnPrim = document.querySelector('#modalFooter .btn-primary');
+  if(btnPrim) btnPrim.textContent = 'Cerrando...';
+
   // Paso 1: Guardar todos los seguimientos del mes que tengan valor ingresado
-  setLoading('Cerrando reunión...');
   const promesas = [];
   DB.areas.forEach(area => {
     DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
@@ -2856,13 +2902,17 @@ async function abrirEnviarReunion() {
   // Marcar reunión como cerrada en la BD
   const fechaCierre = new Date().toISOString();
   const {error: errCierre} = await sb.from('reuniones').update({cerrada:true, fecha_cierre:fechaCierre, updated_at:fechaCierre}).eq('id', reunion.id);
-  if(errCierre){ hideLoading(); showToast('Error al cerrar reunión: '+errCierre.message); return; }
+  if(errCierre){
+    btns.forEach(b => b.disabled = false);
+    if(btnPrim) btnPrim.textContent = 'Sí, cerrar reunión';
+    showToast('Error al cerrar reunión: '+errCierre.message);
+    return;
+  }
   const idxR = DB.reuniones.findIndex(r => r.id === reunion.id);
   if(idxR >= 0){ DB.reuniones[idxR] = {...DB.reuniones[idxR], cerrada:true, fecha_cierre:fechaCierre}; }
   reunion.cerrada = true;
   reunion.fecha_cierre = fechaCierre;
 
-  hideLoading();
   // Auto-backup Excel inmediato
   autoBackupReunion(reunion);
 
@@ -2890,7 +2940,6 @@ async function abrirEnviarReunion() {
     '<button class="btn btn-primary" style="background:#1F4E79" onclick="descargarWordReunion()">📄 Descargar Word</button>' +
     '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>';
 
-  document.getElementById('modalOverlay').style.display = 'flex';
   document.getElementById('modal').style.maxWidth = '560px';
 }
 
@@ -2996,54 +3045,106 @@ function generarPDFReunion() {
   var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion){showToast('No hay reunion activa');return;}
   closeModal();
-  var mes=reunion.mes, partes=reunion.reunion_participantes||[];
+  // Soporta múltiples meses de evaluación (no solo reunion.mes)
+  var mesesReunion = (reunion.meses_evaluacion && reunion.meses_evaluacion.length) ? reunion.meses_evaluacion.slice() : (reunion.mes ? [reunion.mes] : []);
+  mesesReunion.sort();
+  var mesPrincipal = reunion.mes || mesesReunion[0];
+  var partes=reunion.reunion_participantes||[];
   var mesesAll=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+
+  // Construye accionesConSeg para CADA mes de la reunión
   var accionesConSeg=[];
-  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id&&a.meses_activos.includes(mes);}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mes;});accionesConSeg.push({area:area,obj:obj,ac:ac,seg:seg});});});});
+  mesesReunion.forEach(function(mes){
+    DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id&&a.meses_activos.includes(mes);}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mes;});accionesConSeg.push({mes:mes,area:area,obj:obj,ac:ac,seg:seg});});});});
+  });
+
+  // Solo acciones que TIENEN comentario, agrupadas por mes y área
+  var soloComentarios = accionesConSeg.filter(function(it){ return it.seg && it.seg.comentario && it.seg.comentario.trim(); });
+
   var metasPorEvaluar=[];
-  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mes;});var pm=ac.meses_activos.filter(function(m){return m>=mes;});if(pm.length>0||(seg&&seg.pendiente))metasPorEvaluar.push({area:area,ac:ac,seg:seg,pm:pm});});});});
+  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){var seg=DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===mesPrincipal;});var pm=ac.meses_activos.filter(function(m){return m>=mesPrincipal;});if(pm.length>0||(seg&&seg.pendiente))metasPorEvaluar.push({area:area,ac:ac,seg:seg,pm:pm});});});});
+
   var W=window.open('','_blank');
   if(!W){showToast('Permite ventanas emergentes para generar el PDF');return;}
-  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:60px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:40px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:24px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:28px;color:#1E3A2F;margin-bottom:8px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:20px;color:#2D5A42;margin-bottom:24px}.cover .meta-row{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px}.cover .meta-item{font-size:11px;color:#7A7670}.cover .meta-item strong{color:#1A1916}.section{margin-bottom:32px}.section-title{font-family:"DM Serif Display",serif;font-size:16px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.section-sub{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.verde{color:#2E7D52;font-weight:600}.amarillo{color:#B8860B;font-weight:600}.rojo{color:#9B2335;font-weight:600}.sin_datos{color:#7A7670}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.pendiente{background:#FDF6E3;color:#C4962A}.comentario-box{font-size:10px;background:#F9F8F6;padding:6px 10px;border-left:3px solid #2D5A42;border-radius:3px;margin-top:4px}.participantes-r{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center}.participante-r{background:#F4F2EE;border:1px solid #E4E0D8;border-radius:16px;padding:3px 12px;font-size:10px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
+  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:60px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:40px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:24px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:28px;color:#1E3A2F;margin-bottom:8px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:20px;color:#2D5A42;margin-bottom:24px}.cover .meta-row{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px}.cover .meta-item{font-size:11px;color:#7A7670}.cover .meta-item strong{color:#1A1916}.section{margin-bottom:32px}.section-title{font-family:"DM Serif Display",serif;font-size:16px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.section-sub{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.verde{color:#2E7D52;font-weight:600}.amarillo{color:#B8860B;font-weight:600}.rojo{color:#9B2335;font-weight:600}.sin_datos{color:#7A7670}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.pendiente{background:#FDF6E3;color:#C4962A}.comentario-box{font-size:10px;background:#F9F8F6;padding:6px 10px;border-left:3px solid #2D5A42;border-radius:3px;margin-top:4px;white-space:pre-wrap}.com-card{background:#F9F8F6;border-left:4px solid #2D5A42;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid}.com-card .com-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;flex-wrap:wrap}.com-card .com-acc{font-weight:600;font-size:12px;color:#1E3A2F}.com-card .com-meta{font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5px}.com-card .com-text{font-size:11px;line-height:1.6;color:#1A1916;white-space:pre-wrap}.participantes-r{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center}.participante-r{background:#F4F2EE;border:1px solid #E4E0D8;border-radius:16px;padding:3px 12px;font-size:10px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+reunion.titulo+'</title><style>'+pdfCSS+'</style></head><body>';
   html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
+
   // PORTADA
+  var mesesLabel = mesesReunion.map(function(m){return fmtMes(m);}).join(', ');
   html+='<div class="cover"><div class="logo-r">Gestión Estratégica &mdash; Informe de Reunion</div>';
   html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
-  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes:</strong> '+fmtMes(mes)+'</div>';
+  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
   if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
   if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
   html+='</div>';
   if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
   html+='</div>';
+
   // COMENTARIOS GENERALES
   html+='<div class="section"><div class="section-title">Comentarios Generales</div>';
   html+=reunion.comentarios_generales?'<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>':'<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
   html+='</div>';
-  // COMENTARIOS POR ACCION
-  html+='<div class="section"><div class="section-title">Comentarios por Accion</div>';
-  if(accionesConSeg.length){
-    var areaActual='';
-    accionesConSeg.forEach(function(item){
-      var area=item.area,ac=item.ac,seg=item.seg;
-      if(area.nombre!==areaActual){
-        if(areaActual)html+='</tbody></table>';
-        html+='<div class="section-sub" style="margin-top:16px">'+area.nombre+'</div>';
-        html+='<table><thead><tr><th>Accion</th><th>Descripcion</th><th>Responsable</th><th style="text-align:center">%</th><th style="text-align:center">Estado</th><th>Comentario</th></tr></thead><tbody>';
-        areaActual=area.nombre;
-      }
-      var pct=seg?seg.porcentaje:null;
-      var est=seg?(seg.pendiente?'pendiente':getEstado(pct)):'sin_datos';
-      var estLabel=seg?(seg.pendiente?'Pendiente':pct>=90?'Completo':pct>=70?'En proceso':'Critico'):'Sin datos';
-      var resps=getResps(ac.id).map(function(r){return r.nombre;}).join(', ')||'-';
-      html+='<tr><td style="font-weight:500">'+ac.nombre+'</td><td style="color:#7A7670">'+(ac.descripcion||'-')+'</td><td>'+resps+'</td>';
-      html+='<td style="text-align:center;font-weight:600" class="'+(est==='pendiente'?'amarillo':est)+'">'+(pct!==null&&pct!==undefined?pct+'%':'-')+'</td>';
-      html+='<td style="text-align:center"><span class="badge '+(est==='pendiente'?'pendiente':est)+'">'+estLabel+'</span></td>';
-      html+='<td>'+(seg&&seg.comentario?'<div class="comentario-box" style="margin:0">'+seg.comentario+'</div>':'-')+'</td></tr>';
+
+  // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario)
+  html+='<div class="section"><div class="section-title">Comentarios Registrados</div>';
+  if(soloComentarios.length){
+    // Agrupar por mes
+    var porMes = {};
+    soloComentarios.forEach(function(it){ if(!porMes[it.mes]) porMes[it.mes]=[]; porMes[it.mes].push(it); });
+    Object.keys(porMes).sort().forEach(function(m){
+      if(mesesReunion.length > 1) html+='<div class="section-sub" style="margin-top:18px;color:#1E3A2F;font-size:11px">📅 '+fmtMes(m)+'</div>';
+      porMes[m].forEach(function(it){
+        var pct = it.seg.porcentaje;
+        var est = it.seg.pendiente?'pendiente':getEstado(pct);
+        var estLabel = it.seg.pendiente?'Pendiente':(pct>=90?'Completo':pct>=70?'En proceso':'Crítico');
+        var resps = getResps(it.ac.id).map(function(r){return r.nombre;}).join(', ')||'—';
+        html+='<div class="com-card">';
+        html+='<div class="com-head">';
+        html+='<div><div class="com-acc">'+it.ac.nombre+'</div>';
+        html+='<div class="com-meta">'+it.area.nombre+' • Responsable: '+resps+'</div></div>';
+        html+='<div style="text-align:right"><span class="badge '+est+'">'+(pct!==null&&pct!==undefined?pct+'%':'—')+'</span><div class="com-meta" style="margin-top:4px">'+estLabel+'</div></div>';
+        html+='</div>';
+        html+='<div class="com-text">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
+        html+='</div>';
+      });
     });
-    if(areaActual)html+='</tbody></table>';
-  } else {html+='<p style="color:#7A7670;font-style:italic">No hay acciones con seguimiento para este mes.</p>';}
+  } else {
+    html+='<p style="color:#7A7670;font-style:italic">No se registraron comentarios en las acciones de esta reunión.</p>';
+  }
   html+='</div>';
+
+  // TABLA DETALLE POR ACCION (todas, con o sin comentario)
+  html+='<div class="section"><div class="section-title">Detalle por Acción</div>';
+  if(accionesConSeg.length){
+    var grupo = '';
+    mesesReunion.forEach(function(m){
+      var items = accionesConSeg.filter(function(it){return it.mes===m;});
+      if(!items.length) return;
+      if(mesesReunion.length > 1) html+='<div class="section-sub" style="margin-top:14px;color:#1E3A2F;font-size:11px">📅 '+fmtMes(m)+'</div>';
+      var areaActual='';
+      items.forEach(function(item){
+        var area=item.area,ac=item.ac,seg=item.seg;
+        if(area.nombre!==areaActual){
+          if(areaActual)html+='</tbody></table>';
+          html+='<div class="section-sub" style="margin-top:12px">'+area.nombre+'</div>';
+          html+='<table><thead><tr><th>Acción</th><th>Responsable</th><th style="text-align:center">%</th><th style="text-align:center">Estado</th><th>Comentario</th></tr></thead><tbody>';
+          areaActual=area.nombre;
+        }
+        var pct=seg?seg.porcentaje:null;
+        var est=seg?(seg.pendiente?'pendiente':getEstado(pct)):'sin_datos';
+        var estLabel=seg?(seg.pendiente?'Pendiente':pct>=90?'Completo':pct>=70?'En proceso':'Critico'):'Sin datos';
+        var resps=getResps(ac.id).map(function(r){return r.nombre;}).join(', ')||'-';
+        html+='<tr><td style="font-weight:500">'+ac.nombre+'<div style="color:#7A7670;font-size:9px;font-weight:400">'+(ac.descripcion||'')+'</div></td><td>'+resps+'</td>';
+        html+='<td style="text-align:center;font-weight:600" class="'+(est==='pendiente'?'amarillo':est)+'">'+(pct!==null&&pct!==undefined?pct+'%':'-')+'</td>';
+        html+='<td style="text-align:center"><span class="badge '+(est==='pendiente'?'pendiente':est)+'">'+estLabel+'</span></td>';
+        html+='<td>'+(seg&&seg.comentario?'<div class="comentario-box" style="margin:0">'+seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>':'<span style="color:#bbb">—</span>')+'</td></tr>';
+      });
+      if(areaActual){html+='</tbody></table>';areaActual='';}
+    });
+  } else {html+='<p style="color:#7A7670;font-style:italic">No hay acciones con seguimiento para los meses evaluados.</p>';}
+  html+='</div>';
+
   // RESUMEN MENSUAL
   html+='<div class="section"><div class="section-title">Resumen Mensual por Area</div>';
   html+='<table><thead><tr><th>Area</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
@@ -3052,6 +3153,7 @@ function generarPDFReunion() {
   html+='<table><thead><tr><th>Accion</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
   DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){html+='<tr><td style="font-weight:500">'+ac.nombre+'</td>';mesesAll.forEach(function(m){var v=calcAccion(ac.id,m),e=getEstado(v),s=DB.seguimiento.find(function(x){return x.accion_id===ac.id&&x.mes===m;});var p=s&&s.pendiente;html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%'+(p?' P':''):'-')+'</span></td>';});html+='</tr>';});});});
   html+='</tbody></table></div>';
+
   // METAS POR EVALUAR
   html+='<div class="section"><div class="section-title">Metas por Evaluar</div>';
   html+='<table><thead><tr><th>Accion</th><th>Descripcion</th><th>Area</th><th>Meses de evaluacion</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
