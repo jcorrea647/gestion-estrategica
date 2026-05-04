@@ -404,7 +404,7 @@ const sb = createClient(
 
 // SESSION & STATE
 let SESSION = {user:null, colegios:[], colegioActivo:null};
-let DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[]};
+let DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[]};
 let currentPanel='dashboard', filterCargo='', filterMes='';
 let openAreas=new Set(), openObjs=new Set(), charts={};
 
@@ -880,7 +880,7 @@ async function loadColegio(colegioId) {
   SESSION.colegioActivo = colegioId;
   const [
     {data:colegio},{data:cargos},{data:responsables},{data:areas},{data:objetivos},
-    {data:acciones},{data:ar},{data:segs},{data:reuniones}
+    {data:acciones},{data:ar},{data:segs},{data:reuniones},{data:evidencias}
   ] = await Promise.all([
     sb.from('colegios').select('*').eq('id',colegioId).single(),
     sb.from('cargos').select('*').eq('colegio_id',colegioId).order('nombre'),
@@ -891,13 +891,15 @@ async function loadColegio(colegioId) {
     sb.from('accion_responsable').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('reuniones').select('*,reunion_participantes(*)').eq('colegio_id',colegioId).order('created_at'),
+    sb.from('evidencias').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId).order('created_at'),
   ]);
   DB = {
     colegio, cargos:cargos||[],
     responsables:(responsables||[]).map(r=>({...r,cargo:r.cargos?.nombre||''})),
     areas:areas||[], objetivos:objetivos||[], acciones:acciones||[],
     accion_responsable:ar||[], seguimiento:segs||[],
-    reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]}))
+    reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]})),
+    evidencias:evidencias||[]
   };
 }
 
@@ -957,7 +959,7 @@ function renderSidebar() {
 }
 
 function volverMulti() {
-  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[]};
+  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[]};
   SESSION.colegioActivo = null;
   renderMultiPanel(); showScreen('screenMulti');
 }
@@ -1203,8 +1205,12 @@ function renderSeguimiento() {
       html+=comVal?'<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">'+comVal+'</span>':'<span style="color:var(--muted)">+ Comentario</span>';
       html+='</button></td>';
       html+='<td style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap">';
-      const adjOnclick = bloqueado ? '' : 'onclick="openEvidenceModal(\''+ac.id+'\',\''+mes+'\')"';
-      html+='<button class="evidence-btn'+btnLock+'" '+adjOnclick+' title="'+(bloqueado?'Bloqueado: reunión cerrada o inexistente':'Adjuntar evidencia')+'">Adj</button>';
+      // Botón Adj: siempre clicable (puedes ver evidencias incluso con reunión cerrada).
+      // Si reunión está cerrada, el modal mostrará el listado pero no permitirá agregar/eliminar.
+      const evCount = (DB.evidencias || []).filter(function(e){ return e.accion_id===ac.id && e.mes===mes; }).length;
+      const adjLabel = evCount > 0 ? 'Adj ('+evCount+')' : 'Adj';
+      const adjStyle = evCount > 0 ? ' style="background:#E8F5EE;color:#155028;border-color:#A8D5B7"' : '';
+      html+='<button class="evidence-btn"'+adjStyle+' onclick="openEvidenceModal(\''+ac.id+'\',\''+mes+'\')" title="'+(bloqueado?'Ver evidencias (no editable: reunión cerrada)':'Ver / agregar evidencias')+'">'+adjLabel+'</button>';
       html+='<button class="periodo-btn" onclick="cambiarPeriodo(\''+ac.id+'\')">Per</button>';
       html+='</div></td></tr>';
     });
@@ -1369,21 +1375,89 @@ async function guardarSeg(accionId, mes, pendiente) {
   renderCurrentPanel();
 }
 
-function openEvidenceModal(accionId, mes) {
-  const ac=DB.acciones.find(a=>a.id===accionId);
-  openModal('Evidencias - '+(ac?.nombre||''),
-    '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..."></div>'+
-    '<div class="form-group"><label class="form-label">Descripcion</label><input class="form-input" id="evDesc"></div>',
-    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
-     {label:'Guardar',cls:'btn-primary',action:'saveEvidence(\''+accionId+'\',\''+mes+'\')'}]);
+function evidenciasDeAccionMes(accionId, mes) {
+  return (DB.evidencias || []).filter(function(e){ return e.accion_id === accionId && e.mes === mes; });
 }
+
+function openEvidenceModal(accionId, mes) {
+  const ac = DB.acciones.find(a => a.id === accionId);
+  const puedeEditar = puedeEditarSeguimientoMes(mes);
+  const evidencias = evidenciasDeAccionMes(accionId, mes);
+
+  let listaHTML = '';
+  if(evidencias.length) {
+    listaHTML = '<div style="margin-bottom:14px"><div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Evidencias cargadas ('+evidencias.length+')</div>';
+    evidencias.forEach(function(e){
+      const fecha = e.created_at ? new Date(e.created_at).toLocaleDateString('es-CL') : '';
+      const desc = (e.descripcion || '').trim() || '<span style="color:var(--muted);font-style:italic">Sin descripción</span>';
+      const urlSafe = (e.url || '').replace(/"/g, '&quot;');
+      listaHTML += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px">';
+      listaHTML += '<div style="flex:1;min-width:0">';
+      listaHTML += '<div style="font-size:13px;margin-bottom:4px"><a href="'+urlSafe+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;word-break:break-all">🔗 '+urlSafe+'</a></div>';
+      listaHTML += '<div style="font-size:12px;color:var(--text)">'+desc+'</div>';
+      if(fecha) listaHTML += '<div style="font-size:11px;color:var(--muted);margin-top:4px">Cargada el '+fecha+'</div>';
+      listaHTML += '</div>';
+      if(puedeEditar) {
+        listaHTML += '<button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red);flex-shrink:0" onclick="confirmarEliminarEvidencia(\''+e.id+'\',\''+accionId+'\',\''+mes+'\')" title="Eliminar evidencia">🗑</button>';
+      }
+      listaHTML += '</div>';
+    });
+    listaHTML += '</div>';
+  } else {
+    listaHTML = '<div style="background:var(--surface2);border-radius:6px;padding:14px;text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px;font-style:italic">No hay evidencias cargadas para este mes.</div>';
+  }
+
+  let formHTML = '';
+  if(puedeEditar) {
+    formHTML = '<div style="border-top:1px solid var(--border);padding-top:14px">'+
+      '<div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Agregar nueva evidencia</div>'+
+      '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..."></div>'+
+      '<div class="form-group" style="margin-bottom:0"><label class="form-label">Descripción (opcional)</label><input class="form-input" id="evDesc" placeholder="Ej: Acta de reunión 15-mayo"></div>'+
+      '</div>';
+  } else {
+    formHTML = '<div style="background:#FDF6E3;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;color:#8B6914">🔒 No hay reunión abierta para '+fmtMes(mes)+'. Solo puedes ver las evidencias; para agregar o eliminar abre una reunión.</div>';
+  }
+
+  const acciones = puedeEditar
+    ? [{label:'Cerrar',cls:'btn-outline',action:'closeModal()'},
+       {label:'Guardar nueva',cls:'btn-primary',action:'saveEvidence(\''+accionId+'\',\''+mes+'\')'}]
+    : [{label:'Cerrar',cls:'btn-primary',action:'closeModal()'}];
+
+  openModal('Evidencias - '+(ac?.nombre || ''),
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Mes: <strong>'+fmtMes(mes)+'</strong></div>'+
+    listaHTML + formHTML,
+    acciones);
+}
+
 async function saveEvidence(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
-  const url=document.getElementById('evUrl')?.value.trim();
-  if(!url){showToast('Ingresa el link');return;}
-  const {error}=await sb.from('evidencias').insert({accion_id:accionId,mes,url,descripcion:document.getElementById('evDesc')?.value||''});
-  if(error){showToast('Error: '+error.message);return;}
-  closeModal(); showToast('Evidencia guardada');
+  const url = document.getElementById('evUrl')?.value.trim();
+  if(!url){ showToast('Ingresa el link'); return; }
+  const desc = document.getElementById('evDesc')?.value || '';
+  const {error} = await sb.from('evidencias').insert({accion_id:accionId, mes, url, descripcion:desc});
+  if(error){ showToast('Error: '+error.message); return; }
+  // Recargar evidencias y refrescar el modal
+  const {data:nuevas} = await sb.from('evidencias').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id', DB.colegio.id).order('created_at');
+  DB.evidencias = nuevas || [];
+  showToast('✓ Evidencia guardada');
+  openEvidenceModal(accionId, mes);
+  // Refrescar tabla de seguimiento detrás (para actualizar el contador del botón Adj)
+  if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
+}
+
+function confirmarEliminarEvidencia(evId, accionId, mes) {
+  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta'); return; }
+  if(!confirm('¿Eliminar esta evidencia? Esta acción no se puede deshacer.')) return;
+  eliminarEvidencia(evId, accionId, mes);
+}
+
+async function eliminarEvidencia(evId, accionId, mes) {
+  const {error} = await sb.from('evidencias').delete().eq('id', evId);
+  if(error){ showToast('Error: '+error.message); return; }
+  DB.evidencias = (DB.evidencias || []).filter(function(e){ return e.id !== evId; });
+  showToast('✓ Evidencia eliminada');
+  openEvidenceModal(accionId, mes);
+  if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
 }
 
 function cambiarPeriodo(accionId) {
@@ -2880,6 +2954,10 @@ function calcularDatosResumen() {
     sinDatos: sinRegistro.length
   };
 
+  // Conteo de evidencias en el período evaluado
+  const evidsEnPeriodo = (DB.evidencias || []).filter(function(e){ return mesesEval.includes(e.mes); });
+  const accionesConEvidencia = new Set(evidsEnPeriodo.map(function(e){ return e.accion_id; })).size;
+
   return {
     alcance: alcance,
     mesesEval: mesesEval,
@@ -2890,7 +2968,9 @@ function calcularDatosResumen() {
     enProceso: enProceso,
     debilidades: debilidades,
     sinRegistro: sinRegistro,
-    distribucion: distribucion
+    distribucion: distribucion,
+    totalEvidencias: evidsEnPeriodo.length,
+    accionesConEvidencia: accionesConEvidencia
   };
 }
 
@@ -2945,7 +3025,12 @@ function generarNarrativaLocal(data) {
     fortDeb += 'En el otro extremo, hay <strong>' + data.debilidades.length + ' acciones que requieren intervención prioritaria</strong> (&lt;70%) y deben atenderse en las próximas reuniones de seguimiento. ';
   }
   if(data.sinRegistro.length) {
-    fortDeb += 'Adicionalmente, <strong>' + data.sinRegistro.length + ' acciones permanecen sin registrar</strong> en el período, lo que limita la completitud del análisis y debe corregirse para tener una visión integral.';
+    fortDeb += 'Adicionalmente, <strong>' + data.sinRegistro.length + ' acciones permanecen sin registrar</strong> en el período, lo que limita la completitud del análisis y debe corregirse para tener una visión integral. ';
+  }
+  if(data.totalEvidencias > 0) {
+    fortDeb += 'En cuanto al respaldo documental, se han adjuntado <strong>' + data.totalEvidencias + ' evidencias</strong> en ' + data.accionesConEvidencia + ' acciones, fortaleciendo la trazabilidad del seguimiento.';
+  } else if(data.acciones.length) {
+    fortDeb += 'Cabe destacar que <strong>no se han adjuntado evidencias</strong> a ninguna acción en este período, lo que constituye una oportunidad de mejora para fortalecer la trazabilidad del proceso.';
   }
   if(!fortDeb) fortDeb = 'No hay datos suficientes para identificar fortalezas o debilidades específicas.';
 
@@ -4052,6 +4137,17 @@ function generarPDFReunion() {
         html+='<div style="text-align:right"><span class="badge '+est+'">'+(pct!==null&&pct!==undefined?pct+'%':'—')+'</span><div class="com-meta" style="margin-top:4px">'+estLabel+'</div></div>';
         html+='</div>';
         html+='<div class="com-text">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
+        // Evidencias adjuntas a esta acción/mes
+        var evCard = (DB.evidencias || []).filter(function(e){ return e.accion_id===it.ac.id && e.mes===m; });
+        if(evCard.length) {
+          html+='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #C9C5BB"><div style="font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#7A7670;font-weight:600;margin-bottom:5px">📎 Evidencias ('+evCard.length+')</div>';
+          evCard.forEach(function(ev){
+            var safeUrl = (ev.url||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var safeDesc = ((ev.descripcion||'').trim() || 'Sin descripción').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            html+='<div style="font-size:10px;line-height:1.5;margin-bottom:3px">• <a href="'+safeUrl+'" target="_blank" style="color:#2D5A42;text-decoration:underline">'+safeUrl+'</a> — <span style="color:#555">'+safeDesc+'</span></div>';
+          });
+          html+='</div>';
+        }
         html+='</div>';
       });
     });
