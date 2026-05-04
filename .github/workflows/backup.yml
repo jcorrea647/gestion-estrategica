@@ -1,28 +1,23 @@
 name: Backup Diario Gestión Estratégica
-
 on:
   schedule:
     - cron: '0 5 * * *'
   workflow_dispatch:
-
 jobs:
   backup:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Instalar dependencias
         run: npm install @supabase/supabase-js nodemailer
-
       - name: Ejecutar backup
         env:
           SUPABASE_URL: https://tykbytaymysxgvyvlgah.supabase.co
@@ -31,11 +26,11 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         run: node .github/scripts/backup.js
-
       - name: Commit backup al repo
         run: |
           git config --local user.email "backup@gestion-estrategica"
           git config --local user.name "Backup Automatico"
+          git pull --rebase origin main
           git add backups/
           git diff --staged --quiet || git commit -m "Backup automatico $(date '+%Y-%m-%d')"
           git push
