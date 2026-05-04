@@ -2396,22 +2396,73 @@ async function loadUsuariosPanel(){
 function descargarBackup() {
   const fecha = new Date().toISOString().split('T')[0];
   const hora  = new Date().toTimeString().slice(0,5).replace(':','-');
+
+  // Aplanar reunion_participantes (vienen anidados en reuniones desde loadColegio)
+  const participantes = [];
+  (DB.reuniones || []).forEach(function(r){
+    (r.reunion_participantes || []).forEach(function(p){ participantes.push(p); });
+  });
+  // Quitar reunion_participantes del objeto reuniones (van separadas)
+  const reunionesLimpias = (DB.reuniones || []).map(function(r){
+    const copy = Object.assign({}, r);
+    delete copy.reunion_participantes;
+    return copy;
+  });
+
+  // Estructura compatible con backup nocturno v2.1 — solo el colegio activo
   const backup = {
     meta: {
-      colegio: DB.colegio.nombre,
-      rbd: DB.colegio.rbd,
       fecha_backup: new Date().toISOString(),
-      version: '1.0'
+      version: '2.1',
+      plataforma: 'Gestión Estratégica',
+      total_colegios: 1,
+      tipo: 'manual',
+      nota_seguridad: 'Backup descargado manualmente. No incluye contraseñas.'
     },
-    areas:              DB.areas,
-    objetivos:          DB.objetivos,
-    acciones:           DB.acciones,
-    accion_responsable: DB.accion_responsable,
-    cargos:             DB.cargos,
-    responsables:       DB.responsables,
-    seguimiento:        DB.seguimiento,
-    reuniones:          DB.reuniones,
+    usuarios: [],  // No incluimos usuarios en backup manual
+    colegios: {}
   };
+  backup.colegios[DB.colegio.id] = {
+    colegio:               DB.colegio,
+    cargos:                DB.cargos || [],
+    responsables:          (DB.responsables || []).map(function(r){
+      // Quitar el join 'cargos' que agregamos en loadColegio (no está en BD)
+      const copy = Object.assign({}, r);
+      delete copy.cargos;
+      delete copy.cargo;
+      return copy;
+    }),
+    areas:                 DB.areas || [],
+    objetivos:             (DB.objetivos || []).map(function(o){
+      const copy = Object.assign({}, o);
+      delete copy.areas;
+      return copy;
+    }),
+    acciones:              (DB.acciones || []).map(function(a){
+      const copy = Object.assign({}, a);
+      delete copy.objetivos;
+      return copy;
+    }),
+    accion_responsable:    (DB.accion_responsable || []).map(function(ar){
+      const copy = Object.assign({}, ar);
+      delete copy.acciones;
+      return copy;
+    }),
+    seguimiento:           (DB.seguimiento || []).map(function(s){
+      const copy = Object.assign({}, s);
+      delete copy.acciones;
+      return copy;
+    }),
+    evidencias:            DB.evidencias || [],
+    reuniones:             reunionesLimpias,
+    reunion_participantes: participantes,
+    denuncias:             [],
+    acciones_denuncia:     [],
+    log_denuncia:          [],
+    mensajes_caso:         [],
+    evidencias_denuncia:   []
+  };
+
   const json = JSON.stringify(backup, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -2420,7 +2471,7 @@ function descargarBackup() {
   a.download = `backup_${DB.colegio.rbd}_${fecha}_${hora}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('✅ Backup descargado correctamente');
+  showToast('✅ Backup descargado correctamente (v2.1)');
 }
 
 // =================== RESTAURAR BACKUP ===================
@@ -2461,12 +2512,19 @@ async function analizarBackup() {
 
   // Validar estructura mínima
   if(!backup.meta || !backup.colegios) {
-    errEl.textContent='Estructura inválida: el archivo no parece un backup de Gestión Estratégica.';
+    // Detectar específicamente si es un backup v1.0 (formato viejo)
+    if(backup.meta && backup.meta.version === '1.0') {
+      errEl.innerHTML = '<strong>Versión antigua no soportada (v1.0).</strong><br>Este archivo fue descargado antes de la actualización del 04-05-2026. Descarga un nuevo backup con el botón "⬇ Descargar Backup" y úsalo en su lugar.';
+    } else if(backup.areas && backup.acciones && !backup.colegios) {
+      errEl.innerHTML = '<strong>Formato antiguo (v1.0) detectado.</strong><br>Este backup tiene un formato anterior que no es compatible con el restaurador. Descarga un nuevo backup desde el botón "⬇ Descargar Backup" para obtener la versión actual.';
+    } else {
+      errEl.textContent='Estructura inválida: el archivo no parece un backup de Gestión Estratégica.';
+    }
     errEl.style.display='block';
     return;
   }
   if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
-    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1.';
+    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1. Descarga un backup nuevo.';
     errEl.style.display='block';
     return;
   }
