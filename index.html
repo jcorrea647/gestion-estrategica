@@ -1523,6 +1523,21 @@ function renderAdminEstructura() {
   html += '<label class="btn btn-sm btn-primary" style="cursor:pointer">Cargar archivo <input type="file" id="inputFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="cargarArchivo(this)"></label>';
   html += '</div></div></div><div>';
 
+  // Sección de Backup (solo superadmin)
+  const esSuperadmin = SESSION.user?.rol === 'superadmin';
+  if(esSuperadmin) {
+    html += '<div class="card" style="margin-bottom:20px;border:1px solid var(--gold);background:#FBF7EE">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+    html += '<div>';
+    html += '<div style="font-weight:600;font-size:14px;margin-bottom:2px">💾 Respaldo de datos del colegio</div>';
+    html += '<div style="font-size:12px;color:var(--muted)">Descarga o restaura la información del colegio en formato JSON. Solo afecta a <strong>'+DB.colegio.nombre+'</strong> (RBD '+DB.colegio.rbd+').</div>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    html += '<button class="btn btn-primary btn-sm" style="background:var(--gold);border-color:var(--gold)" onclick="descargarBackup()">⬇ Descargar Backup</button>';
+    html += '<button class="btn btn-primary btn-sm" style="background:#9B2335;border-color:#9B2335" onclick="abrirRestaurarBackup()">⬆ Restaurar Backup</button>';
+    html += '</div></div></div>';
+  }
+
   let hayAcciones = false;
   DB.areas.forEach(area=>{
     // Filtrar acciones según mes y cargo
@@ -2276,19 +2291,7 @@ async function deleteCargo(id){if(!confirm('Eliminar?'))return;const{error}=awai
 
 // ADMIN USUARIOS
 function renderAdminUsuarios(){
-  const esSuperadmin = SESSION.user?.rol === 'superadmin';
-  const backupSection = esSuperadmin ? `
-    <div class="card" style="margin-bottom:20px;border:1px solid var(--gold)">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-        <div>
-          <div style="font-weight:600;font-size:14px;margin-bottom:2px">💾 Respaldo de datos</div>
-          <div style="font-size:12px;color:var(--muted)">Descarga una copia completa de todos los datos del colegio en formato JSON.</div>
-        </div>
-        <button class="btn btn-primary" style="background:var(--gold)" onclick="descargarBackup()">⬇ Descargar Backup</button>
-      </div>
-    </div>` : '';
-  return backupSection +
-    '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Usuarios</div><div class="page-sub">Accesos al colegio '+DB.colegio.nombre+'</div></div><button class="btn btn-primary" onclick="openAddUsuario()">+ Nuevo usuario</button></div></div>'+
+  return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Usuarios</div><div class="page-sub">Accesos al colegio '+DB.colegio.nombre+'</div></div><button class="btn btn-primary" onclick="openAddUsuario()">+ Nuevo usuario</button></div></div>'+
     '<div class="card" id="usuariosTableWrap"><div class="empty-state"><div class="loading-spinner" style="margin:0 auto"></div></div></div>';
 }
 async function loadUsuariosPanel(){
@@ -2335,6 +2338,355 @@ function descargarBackup() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('✅ Backup descargado correctamente');
+}
+
+// =================== RESTAURAR BACKUP ===================
+function abrirRestaurarBackup() {
+  if(SESSION.user?.rol !== 'superadmin'){ showToast('Solo superadmin puede restaurar backups'); return; }
+  openModal('⬆ Restaurar Backup',
+    '<div style="background:#FCEEED;border:1px solid var(--red);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:#7d1a2a;line-height:1.5">'+
+    '<div style="font-weight:600;margin-bottom:4px">⚠ Operación delicada</div>'+
+    'Sube un archivo de backup (.json) generado por esta plataforma. La restauración aplicará un <strong>merge inteligente</strong>: solo se agregarán los registros que no existan en el colegio actual; nada se sobrescribe ni se elimina.'+
+    '</div>'+
+    '<div style="font-size:13px;line-height:1.7;margin-bottom:14px">'+
+    '<div><strong>Colegio destino:</strong> '+DB.colegio.nombre+'</div>'+
+    '<div><strong>RBD:</strong> '+DB.colegio.rbd+'</div>'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">Archivo de backup (.json)</label>'+
+    '<input type="file" id="restoreFile" accept=".json" class="form-input" style="padding:8px"></div>'+
+    '<div id="restoreError" style="font-size:12px;color:var(--red);display:none;margin-top:8px"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Analizar archivo',cls:'btn-primary',action:'analizarBackup()'}]);
+}
+
+async function analizarBackup() {
+  const fileInput = document.getElementById('restoreFile');
+  const errEl = document.getElementById('restoreError');
+  errEl.style.display = 'none'; errEl.textContent = '';
+  if(!fileInput || !fileInput.files || !fileInput.files[0]){ errEl.textContent='Selecciona un archivo .json'; errEl.style.display='block'; return; }
+
+  const file = fileInput.files[0];
+  let backup;
+  try {
+    const text = await file.text();
+    backup = JSON.parse(text);
+  } catch(e) {
+    errEl.textContent='Error: el archivo no es un JSON válido. ('+e.message+')';
+    errEl.style.display='block';
+    return;
+  }
+
+  // Validar estructura mínima
+  if(!backup.meta || !backup.colegios) {
+    errEl.textContent='Estructura inválida: el archivo no parece un backup de Gestión Estratégica.';
+    errEl.style.display='block';
+    return;
+  }
+  if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
+    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1.';
+    errEl.style.display='block';
+    return;
+  }
+
+  // Buscar el colegio activo en el backup por RBD
+  const colegiosBackup = backup.colegios;
+  let datosColegio = null;
+  for(const cid in colegiosBackup) {
+    const c = colegiosBackup[cid];
+    if(c.colegio && c.colegio.rbd === DB.colegio.rbd) {
+      datosColegio = c;
+      break;
+    }
+  }
+
+  if(!datosColegio) {
+    errEl.innerHTML = 'No se encontró el colegio actual (<strong>RBD '+DB.colegio.rbd+'</strong>) en el archivo de backup. Solo puedes restaurar un backup que contenga el mismo colegio.';
+    errEl.style.display='block';
+    return;
+  }
+
+  // Guardar para el siguiente paso
+  window._backupRestaurar = datosColegio;
+
+  // Calcular el diff por tabla
+  const diff = calcularDiffRestauracion(datosColegio);
+
+  // Mostrar pantalla de previsualización
+  mostrarPreviewRestauracion(diff, datosColegio);
+}
+
+function calcularDiffRestauracion(datosBackup) {
+  // Helpers para detectar duplicados según las claves acordadas
+  const claves = {
+    cargos: function(b, db){ return db.find(x => x.nombre === b.nombre); },
+    responsables: function(b, db){ return db.find(x => x.nombre === b.nombre && x.cargo_id === b.cargo_id); },
+    areas: function(b, db){ return db.find(x => x.nombre === b.nombre); },
+    objetivos: function(b, db){ return db.find(x => x.area_id === b.area_id && x.nombre === b.nombre); },
+    acciones: function(b, db){ return db.find(x => x.objetivo_id === b.objetivo_id && x.nombre === b.nombre); },
+    accion_responsable: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.responsable_id === b.responsable_id); },
+    seguimiento: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes); },
+    reuniones: function(b, db){ return db.find(x => x.fecha === b.fecha && x.titulo === b.titulo); },
+    reunion_participantes: function(b, db){ return db.find(x => x.reunion_id === b.reunion_id && x.nombre === b.nombre); },
+    evidencias: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes && x.url === b.url); },
+    denuncias: function(b, db){ return db.find(x => x.id === b.id); },
+  };
+
+  const tablas = ['cargos','responsables','areas','objetivos','acciones','accion_responsable','seguimiento','reuniones','reunion_participantes','evidencias','denuncias'];
+  const resultado = {};
+
+  // Datos actuales en BD para comparar
+  const dbData = {
+    cargos: DB.cargos || [],
+    responsables: DB.responsables || [],
+    areas: DB.areas || [],
+    objetivos: DB.objetivos || [],
+    acciones: DB.acciones || [],
+    accion_responsable: DB.accion_responsable || [],
+    seguimiento: DB.seguimiento || [],
+    reuniones: DB.reuniones || [],
+    reunion_participantes: [],  // se calculará desde reuniones
+    evidencias: [],  // no está en DB en memoria, lo asumimos vacío para preview
+    denuncias: [],   // idem
+  };
+  // Aplanar reunion_participantes de DB.reuniones
+  (DB.reuniones || []).forEach(function(r){
+    (r.reunion_participantes || []).forEach(function(p){ dbData.reunion_participantes.push(p); });
+  });
+
+  tablas.forEach(function(tabla){
+    const desdeBackup = datosBackup[tabla] || [];
+    const enDB = dbData[tabla];
+    const fnClave = claves[tabla];
+    let nuevos = 0, existentes = 0;
+    const itemsNuevos = [];
+    desdeBackup.forEach(function(item){
+      if(fnClave(item, enDB)) {
+        existentes++;
+      } else {
+        nuevos++;
+        itemsNuevos.push(item);
+      }
+    });
+    resultado[tabla] = { total: desdeBackup.length, nuevos: nuevos, existentes: existentes, itemsNuevos: itemsNuevos };
+  });
+
+  return resultado;
+}
+
+function mostrarPreviewRestauracion(diff, datosColegio) {
+  const totalNuevos = Object.values(diff).reduce(function(a, b){ return a + b.nuevos; }, 0);
+  const totalExistentes = Object.values(diff).reduce(function(a, b){ return a + b.existentes; }, 0);
+
+  const filas = [
+    ['Cargos', diff.cargos],
+    ['Responsables', diff.responsables],
+    ['Áreas', diff.areas],
+    ['Objetivos', diff.objetivos],
+    ['Acciones', diff.acciones],
+    ['Asignaciones acción-responsable', diff.accion_responsable],
+    ['Seguimientos', diff.seguimiento],
+    ['Reuniones', diff.reuniones],
+    ['Participantes de reuniones', diff.reunion_participantes],
+    ['Evidencias', diff.evidencias],
+    ['Denuncias', diff.denuncias],
+  ];
+
+  let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
+  tablaHTML += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">En backup</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--green)">Nuevos a agregar</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Ya existen</th></tr></thead><tbody>';
+  filas.forEach(function(f){
+    const nombre = f[0], d = f[1];
+    const colorNuevos = d.nuevos > 0 ? 'var(--green)' : 'var(--muted)';
+    tablaHTML += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+nombre+'</td>';
+    tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee">'+d.total+'</td>';
+    tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;font-weight:600;color:'+colorNuevos+'">'+(d.nuevos > 0 ? '+'+d.nuevos : '0')+'</td>';
+    tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:var(--muted)">'+d.existentes+'</td></tr>';
+  });
+  tablaHTML += '</tbody></table>';
+
+  let resumen;
+  if(totalNuevos === 0) {
+    resumen = '<div style="background:var(--surface2);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--muted);text-align:center">Todos los registros del backup ya existen en el colegio actual. <strong>No hay nada que restaurar.</strong></div>';
+  } else {
+    resumen = '<div style="background:#E8F5EE;border:1px solid var(--green);border-radius:8px;padding:12px 14px;font-size:13px;color:#155028;margin-bottom:14px">Se agregarán <strong>'+totalNuevos+' registros nuevos</strong>. '+totalExistentes+' registros ya existentes serán <strong>omitidos</strong> (no se sobrescribe nada).</div>';
+  }
+
+  let confirmacionHTML = '';
+  if(totalNuevos > 0) {
+    confirmacionHTML =
+      '<div class="form-group"><label class="form-label" style="color:var(--red)">Para confirmar, escribe el RBD del colegio (<strong>'+DB.colegio.rbd+'</strong>):</label>'+
+      '<input type="text" id="confirmRBD" class="form-input" placeholder="RBD" style="font-family:monospace"></div>'+
+      '<div id="restoreError2" style="font-size:12px;color:var(--red);display:none;margin-top:8px"></div>';
+  }
+
+  document.getElementById('modalTitle').textContent = '⬆ Análisis del Backup';
+  document.getElementById('modalBody').innerHTML =
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup del <strong>'+(datosColegio.colegio.nombre)+'</strong> · Fecha del backup: '+(window._backupMetaFecha || '—')+'</div>'+
+    resumen + tablaHTML + confirmacionHTML;
+
+  const acciones = totalNuevos > 0
+    ? '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>' +
+      '<button class="btn btn-primary" style="background:#9B2335;border-color:#9B2335" onclick="ejecutarRestauracion()">Restaurar '+totalNuevos+' registros</button>'
+    : '<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('modalFooter').innerHTML = acciones;
+  document.getElementById('modal').style.maxWidth = '720px';
+
+  // Guardar el diff para usar en la ejecución
+  window._backupDiff = diff;
+}
+
+async function ejecutarRestauracion() {
+  const rbdInput = document.getElementById('confirmRBD');
+  const errEl = document.getElementById('restoreError2');
+  errEl.style.display = 'none'; errEl.textContent = '';
+  if(!rbdInput || rbdInput.value.trim() !== DB.colegio.rbd) {
+    errEl.textContent = 'El RBD no coincide. Escribe exactamente: '+DB.colegio.rbd;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const diff = window._backupDiff;
+  if(!diff) { showToast('Error: no hay análisis previo'); return; }
+
+  // Bloquear botones
+  const btns = document.querySelectorAll('#modalFooter .btn');
+  btns.forEach(b => b.disabled = true);
+  const btnPrim = document.querySelector('#modalFooter .btn-primary');
+  if(btnPrim) btnPrim.textContent = '⏳ Restaurando...';
+
+  // Orden importa: primero las tablas padre, después las hijas
+  const ordenInsercion = [
+    'cargos',          // sin dependencias internas
+    'responsables',    // depende de cargos
+    'areas',           // sin dependencias internas
+    'objetivos',       // depende de areas
+    'acciones',        // depende de objetivos
+    'accion_responsable', // depende de acciones + responsables
+    'reuniones',       // sin dependencias
+    'reunion_participantes', // depende de reuniones
+    'seguimiento',     // depende de acciones
+    'evidencias',      // depende de acciones
+    'denuncias',       // sin dependencias
+  ];
+
+  const reporte = { agregados: 0, errores: [], porTabla: {} };
+  const idMaps = {};  // mapeo de IDs viejos → IDs nuevos cuando insertamos algo con UUID nuevo
+
+  for(const tabla of ordenInsercion) {
+    const data = diff[tabla];
+    if(!data || !data.itemsNuevos.length) continue;
+    let agregadosTabla = 0;
+    for(const item of data.itemsNuevos) {
+      try {
+        // Limpiar el item: quitar created_at, updated_at (la BD los regenera) y poner colegio_id correcto
+        const payload = Object.assign({}, item);
+        delete payload.created_at;
+        delete payload.updated_at;
+        // Forzar colegio_id al colegio activo cuando aplica
+        if('colegio_id' in payload && payload.colegio_id !== undefined) {
+          payload.colegio_id = DB.colegio.id;
+        }
+        // Remapear IDs si la tabla padre se reinsertó con ID nuevo
+        if(tabla === 'objetivos' && idMaps.areas && idMaps.areas[payload.area_id]) {
+          payload.area_id = idMaps.areas[payload.area_id];
+        }
+        if(tabla === 'acciones' && idMaps.objetivos && idMaps.objetivos[payload.objetivo_id]) {
+          payload.objetivo_id = idMaps.objetivos[payload.objetivo_id];
+        }
+        if(tabla === 'responsables' && idMaps.cargos && idMaps.cargos[payload.cargo_id]) {
+          payload.cargo_id = idMaps.cargos[payload.cargo_id];
+        }
+        if(tabla === 'accion_responsable') {
+          if(idMaps.acciones && idMaps.acciones[payload.accion_id]) payload.accion_id = idMaps.acciones[payload.accion_id];
+          if(idMaps.responsables && idMaps.responsables[payload.responsable_id]) payload.responsable_id = idMaps.responsables[payload.responsable_id];
+        }
+        if(tabla === 'reunion_participantes' && idMaps.reuniones && idMaps.reuniones[payload.reunion_id]) {
+          payload.reunion_id = idMaps.reuniones[payload.reunion_id];
+        }
+        if(tabla === 'seguimiento' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
+          payload.accion_id = idMaps.acciones[payload.accion_id];
+        }
+        if(tabla === 'evidencias' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
+          payload.accion_id = idMaps.acciones[payload.accion_id];
+        }
+        // Para tablas que tienen ID, conservamos el ID original si no choca; si hay choque, dejamos que la BD genere uno nuevo
+        const idOriginal = payload.id;
+        // Quitar id para que la BD genere uno nuevo (más seguro para evitar choques)
+        if('id' in payload && tabla !== 'accion_responsable') {
+          delete payload.id;
+        }
+
+        const { data: inserted, error } = await sb.from(tabla).insert(payload).select().maybeSingle();
+        if(error) {
+          reporte.errores.push({tabla: tabla, error: error.message, item: idOriginal || '(sin id)'});
+          continue;
+        }
+        // Guardar mapeo de IDs si aplica
+        if(idOriginal && inserted && inserted.id) {
+          if(!idMaps[tabla]) idMaps[tabla] = {};
+          idMaps[tabla][idOriginal] = inserted.id;
+        }
+        agregadosTabla++;
+        reporte.agregados++;
+      } catch(e) {
+        reporte.errores.push({tabla: tabla, error: e.message, item: '(error inesperado)'});
+      }
+    }
+    reporte.porTabla[tabla] = agregadosTabla;
+  }
+
+  // Recargar datos en memoria
+  await loadColegio(DB.colegio.id);
+
+  // Mostrar reporte final
+  mostrarReporteRestauracion(reporte);
+}
+
+function mostrarReporteRestauracion(reporte) {
+  const filas = [
+    ['Cargos', reporte.porTabla.cargos || 0],
+    ['Responsables', reporte.porTabla.responsables || 0],
+    ['Áreas', reporte.porTabla.areas || 0],
+    ['Objetivos', reporte.porTabla.objetivos || 0],
+    ['Acciones', reporte.porTabla.acciones || 0],
+    ['Asignaciones acción-responsable', reporte.porTabla.accion_responsable || 0],
+    ['Seguimientos', reporte.porTabla.seguimiento || 0],
+    ['Reuniones', reporte.porTabla.reuniones || 0],
+    ['Participantes de reuniones', reporte.porTabla.reunion_participantes || 0],
+    ['Evidencias', reporte.porTabla.evidencias || 0],
+    ['Denuncias', reporte.porTabla.denuncias || 0],
+  ];
+
+  let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
+  tablaHTML += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">Agregados</th></tr></thead><tbody>';
+  filas.forEach(function(f){
+    if(f[1] > 0) {
+      tablaHTML += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+f[0]+'</td><td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:var(--green);font-weight:600">+'+f[1]+'</td></tr>';
+    }
+  });
+  tablaHTML += '</tbody></table>';
+
+  let erroresHTML = '';
+  if(reporte.errores.length) {
+    erroresHTML = '<div style="background:#FCEEED;border:1px solid var(--red);border-radius:8px;padding:12px 14px;margin-top:12px">';
+    erroresHTML += '<div style="font-weight:600;color:var(--red);font-size:13px;margin-bottom:6px">⚠ '+reporte.errores.length+' errores</div>';
+    erroresHTML += '<div style="font-size:11px;color:#7d1a2a;max-height:140px;overflow-y:auto">';
+    reporte.errores.slice(0,10).forEach(function(e){
+      erroresHTML += '<div style="margin-bottom:4px">• <strong>'+e.tabla+'</strong>: '+e.error+'</div>';
+    });
+    if(reporte.errores.length > 10) erroresHTML += '<div style="margin-top:6px;font-style:italic">+'+(reporte.errores.length-10)+' errores más</div>';
+    erroresHTML += '</div></div>';
+  }
+
+  document.getElementById('modalTitle').textContent = '✅ Restauración completada';
+  document.getElementById('modalBody').innerHTML =
+    '<div style="background:#E8F5EE;border:1px solid var(--green);border-radius:8px;padding:14px 16px;margin-bottom:14px">'+
+    '<div style="font-weight:600;color:#155028;font-size:14px;margin-bottom:4px">Se agregaron '+reporte.agregados+' registros</div>'+
+    '<div style="font-size:12px;color:#155028">Los datos se han actualizado en la base de datos del colegio '+DB.colegio.nombre+'.</div>'+
+    '</div>' + tablaHTML + erroresHTML;
+
+  document.getElementById('modalFooter').innerHTML =
+    '<button class="btn btn-primary" onclick="closeModal();renderCurrentPanel()">Cerrar</button>';
+  showToast('✅ Restauración completada: '+reporte.agregados+' registros agregados');
 }
 
 function autoBackupReunion(reunion) {
