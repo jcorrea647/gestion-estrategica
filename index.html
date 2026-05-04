@@ -1032,6 +1032,7 @@ function renderCurrentPanel() {
     case 'seguimiento':        main.innerHTML = renderSeguimiento(); break;
     case 'informes':           main.innerHTML = renderInformes(); break;
     case 'ver-reuniones':      main.innerHTML = renderVerReuniones(); break;
+    case 'resumen-ejecutivo':  main.innerHTML = renderResumenEjecutivo(); break;
     case 'admin-estructura':   main.innerHTML = renderAdminEstructura(); break;
     case 'admin-responsables': main.innerHTML = renderAdminResponsables(); break;
     case 'admin-cargos':       main.innerHTML = renderAdminCargos(); break;
@@ -1414,7 +1415,7 @@ function renderInformes() {
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
   const alertaVer = hayReunionAbierta();
-  html+='<div class="export-group"><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-verde':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Puedes verla en el historial.':'Ver historial de reuniones')+'">'+(alertaVer?'✓ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
+  html+='<div class="export-group"><button class="btn btn-primary btn-sm" style="background:#1F4E79;border-color:#1F4E79" onclick="showPanel(\'resumen-ejecutivo\')" title="Resumen ejecutivo del establecimiento">📊 Resumen Ejecutivo</button><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-verde':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Puedes verla en el historial.':'Ver historial de reuniones')+'">'+(alertaVer?'✓ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
   html+='</div></div>';
   // BUSCADOR IA
   html+='<div class="card" style="margin-bottom:20px">';
@@ -2420,6 +2421,462 @@ async function toggleUsuario(id,activo){
   loadUsuariosPanel();showToast('Usuario '+(activo?'desactivado':'activado'));
 }
 
+
+// ============ RESUMEN EJECUTIVO ============
+let _resumenAlcance = 'mes'; // 'mes' o 'acumulado'
+let _resumenNarrativaIA = ''; // texto generado por IA, si existe
+
+const RESUMEN_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-resumen-ejecutivo';
+
+function calcularDatosResumen() {
+  const alcance = _resumenAlcance;
+  const mesActual = filterMes;
+  const mesesAll = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+
+  // Determinar meses a evaluar
+  let mesesEval = [];
+  if(alcance === 'mes' && mesActual) {
+    mesesEval = [mesActual];
+  } else if(alcance === 'acumulado') {
+    // Acumulado = todos los meses con al menos un dato registrado
+    mesesEval = mesesAll.filter(function(m){
+      return DB.seguimiento.some(function(s){ return s.mes === m; });
+    });
+    if(!mesesEval.length) mesesEval = [mesesAll[0]];
+  } else {
+    mesesEval = [mesesAll[0]];
+  }
+
+  // Avance por área (promedio de las acciones del área en los meses evaluados)
+  const areasData = DB.areas.map(function(area){
+    const acciones = DB.acciones.filter(function(a){
+      const objIds = DB.objetivos.filter(function(o){return o.area_id===area.id;}).map(function(o){return o.id;});
+      return objIds.includes(a.objetivo_id);
+    });
+    const valores = [];
+    acciones.forEach(function(ac){
+      mesesEval.forEach(function(m){
+        if(!ac.meses_activos.includes(m)) return;
+        const seg = DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===m;});
+        if(seg && typeof seg.porcentaje === 'number') valores.push(seg.porcentaje);
+      });
+    });
+    const prom = valores.length ? Math.round(valores.reduce(function(a,b){return a+b;},0) / valores.length) : null;
+    return { id: area.id, nombre: area.nombre, promedio: prom, registros: valores.length, totalAcciones: acciones.length };
+  });
+
+  // Avance por acción
+  const accionesData = [];
+  DB.areas.forEach(function(area){
+    DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){
+      DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){
+        const valores = [];
+        const comentarios = [];
+        mesesEval.forEach(function(m){
+          if(!ac.meses_activos.includes(m)) return;
+          const seg = DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===m;});
+          if(seg && typeof seg.porcentaje === 'number') {
+            valores.push(seg.porcentaje);
+            if(seg.comentario && seg.comentario.trim()) comentarios.push({mes:m, texto:seg.comentario});
+          }
+        });
+        if(valores.length) {
+          const prom = Math.round(valores.reduce(function(a,b){return a+b;},0) / valores.length);
+          accionesData.push({
+            accion: ac.nombre,
+            descripcion: ac.descripcion || '',
+            area: area.nombre,
+            promedio: prom,
+            registros: valores.length,
+            comentarios: comentarios
+          });
+        }
+      });
+    });
+  });
+
+  // Avance global
+  const todosValores = accionesData.map(function(a){return a.promedio;});
+  const avanceGlobal = todosValores.length ? Math.round(todosValores.reduce(function(a,b){return a+b;},0) / todosValores.length) : null;
+
+  // Fortalezas: acciones >= 90%
+  const fortalezas = accionesData.filter(function(a){return a.promedio >= 90;}).sort(function(a,b){return b.promedio-a.promedio;});
+  // Por mejorar (entre 70-89): en proceso destacable
+  const enProceso = accionesData.filter(function(a){return a.promedio >= 70 && a.promedio < 90;}).sort(function(a,b){return b.promedio-a.promedio;});
+  // Debilidades: < 70%
+  const debilidades = accionesData.filter(function(a){return a.promedio < 70;}).sort(function(a,b){return a.promedio-b.promedio;});
+  // Sin registro: acciones que no se han evaluado en absoluto en los meses elegidos
+  const sinRegistro = [];
+  DB.areas.forEach(function(area){
+    DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){
+      DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){
+        // ¿Tiene meses activos en los meses evaluados?
+        const aplica = mesesEval.some(function(m){return ac.meses_activos.includes(m);});
+        if(!aplica) return;
+        const tieneDato = mesesEval.some(function(m){
+          const seg = DB.seguimiento.find(function(s){return s.accion_id===ac.id&&s.mes===m;});
+          return seg && typeof seg.porcentaje === 'number';
+        });
+        if(!tieneDato) sinRegistro.push({ accion: ac.nombre, area: area.nombre });
+      });
+    });
+  });
+
+  // Distribución
+  const distribucion = {
+    verde: accionesData.filter(function(a){return a.promedio >= 90;}).length,
+    amarillo: accionesData.filter(function(a){return a.promedio >= 70 && a.promedio < 90;}).length,
+    rojo: accionesData.filter(function(a){return a.promedio < 70;}).length,
+    sinDatos: sinRegistro.length
+  };
+
+  return {
+    alcance: alcance,
+    mesesEval: mesesEval,
+    avanceGlobal: avanceGlobal,
+    areas: areasData,
+    acciones: accionesData,
+    fortalezas: fortalezas,
+    enProceso: enProceso,
+    debilidades: debilidades,
+    sinRegistro: sinRegistro,
+    distribucion: distribucion
+  };
+}
+
+function generarNarrativaLocal(data) {
+  // Texto narrativo simple por reglas, fallback si no hay IA
+  const colegio = DB.colegio.nombre;
+  const periodo = data.alcance === 'mes'
+    ? 'durante ' + (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'el período evaluado')
+    : 'en el período acumulado del año (' + data.mesesEval.map(function(m){return fmtMes(m,true);}).join(', ') + ')';
+  const av = data.avanceGlobal;
+  let estado, calificacion;
+  if(av === null) { estado = 'no presenta registros suficientes'; calificacion = 'sin información'; }
+  else if(av >= 90) { estado = 'muestra un nivel de cumplimiento excelente'; calificacion = 'alto'; }
+  else if(av >= 70) { estado = 'presenta un avance satisfactorio'; calificacion = 'aceptable'; }
+  else if(av >= 50) { estado = 'muestra un avance parcial que requiere atención'; calificacion = 'medio-bajo'; }
+  else { estado = 'evidencia un nivel de cumplimiento crítico'; calificacion = 'bajo'; }
+
+  let narrativa = colegio + ' ' + estado + ' ' + periodo + (av !== null ? ', con un avance global del <strong>' + av + '%</strong>' : '') + '. ';
+
+  // Áreas destacadas
+  const areasOrdenadas = data.areas.filter(function(a){return a.promedio !== null;}).sort(function(a,b){return b.promedio-a.promedio;});
+  if(areasOrdenadas.length) {
+    const top = areasOrdenadas[0];
+    const bottom = areasOrdenadas[areasOrdenadas.length-1];
+    if(top.id !== bottom.id) {
+      narrativa += 'El área con mejor desempeño es <strong>' + top.nombre + '</strong> (' + top.promedio + '%), mientras que <strong>' + bottom.nombre + '</strong> presenta el menor avance (' + bottom.promedio + '%). ';
+    } else {
+      narrativa += 'Solo se cuenta con datos del área <strong>' + top.nombre + '</strong> (' + top.promedio + '%). ';
+    }
+  }
+
+  if(data.fortalezas.length) {
+    narrativa += 'Se identifican <strong>' + data.fortalezas.length + ' acciones con cumplimiento sobresaliente</strong> (≥90%). ';
+  }
+  if(data.debilidades.length) {
+    narrativa += 'Hay <strong>' + data.debilidades.length + ' acciones que requieren intervención prioritaria</strong> (&lt;70%). ';
+  }
+  if(data.sinRegistro.length) {
+    narrativa += 'Quedan <strong>' + data.sinRegistro.length + ' acciones sin evaluar</strong> en este período, lo que limita la completitud del análisis. ';
+  }
+
+  narrativa += '<br><br><em>Esta es una narrativa generada automáticamente. Para un análisis enriquecido por IA, configura la integración con Anthropic API.</em>';
+  return narrativa;
+}
+
+function generarRecomendaciones(data) {
+  const recs = [];
+  if(data.debilidades.length >= 3) {
+    recs.push('Concentrar esfuerzos en las ' + Math.min(3, data.debilidades.length) + ' acciones con menor cumplimiento: ' + data.debilidades.slice(0,3).map(function(d){return '"' + d.accion + '"';}).join(', ') + '.');
+  }
+  if(data.sinRegistro.length > 0) {
+    recs.push('Completar el registro de las ' + data.sinRegistro.length + ' acciones que aún no tienen datos en el período evaluado, para tener una visión completa del avance.');
+  }
+  if(data.fortalezas.length > 0) {
+    recs.push('Mantener y replicar las prácticas de las ' + data.fortalezas.length + ' acciones de alto desempeño en otras áreas con menor avance.');
+  }
+  // Por área débil
+  const areasDebiles = data.areas.filter(function(a){return a.promedio !== null && a.promedio < 70;}).sort(function(a,b){return a.promedio-b.promedio;});
+  if(areasDebiles.length) {
+    recs.push('Reforzar el área de <strong>' + areasDebiles[0].nombre + '</strong> (' + areasDebiles[0].promedio + '%) con sesiones de seguimiento focalizadas y revisión de los responsables asignados.');
+  }
+  if(data.avanceGlobal !== null && data.avanceGlobal >= 90) {
+    recs.push('Documentar las prácticas exitosas para sistematizarlas en el plan de gestión del próximo año.');
+  } else if(data.avanceGlobal !== null && data.avanceGlobal < 50) {
+    recs.push('Convocar reunión extraordinaria del equipo directivo para revisar el plan de gestión y ajustar metas u responsables.');
+  }
+  if(!recs.length) recs.push('Continuar con el plan establecido y mantener el ritmo de seguimiento.');
+  return recs;
+}
+
+function renderResumenEjecutivo() {
+  const data = calcularDatosResumen();
+  const colegio = DB.colegio.nombre;
+  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const recs = generarRecomendaciones(data);
+  const av = data.avanceGlobal;
+
+  let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+'</div></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver a Informes</button>';
+  html += '<button class="btn btn-export btn-sm" style="background:#1F4E79" onclick="descargarResumenWord()">📄 Word</button>';
+  html += '<button class="btn btn-export btn-sm" style="background:#9B2335" onclick="descargarResumenPDF()">🖨 PDF</button>';
+  html += '</div></div></div>';
+
+  // Selector de alcance
+  html += '<div class="card" style="margin-bottom:16px;padding:14px 18px"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">';
+  html += '<div style="font-size:13px;font-weight:600">Alcance:</div>';
+  html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="alcance" value="mes"'+(_resumenAlcance==='mes'?' checked':'')+' onchange="cambiarAlcanceResumen(\'mes\')"> Mes filtrado'+(filterMes?' ('+fmtMes(filterMes)+')':'')+'</label>';
+  html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="alcance" value="acumulado"'+(_resumenAlcance==='acumulado'?' checked':'')+' onchange="cambiarAlcanceResumen(\'acumulado\')"> Acumulado del año</label>';
+  html += '<button class="btn btn-primary btn-sm" style="margin-left:auto;background:#5B3FB5;border-color:#5B3FB5" onclick="generarResumenIA()" id="btnIA" title="Generar narrativa enriquecida con IA">✨ Enriquecer con IA</button>';
+  html += '</div>';
+  if(data.alcance === 'mes' && !filterMes) {
+    html += '<div style="font-size:12px;color:var(--yellow);margin-top:8px">⚠ No has seleccionado un mes en el filtro lateral. Selecciona uno o cambia a "Acumulado".</div>';
+  }
+  html += '</div>';
+
+  // Resumen narrativo
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📝 Resumen narrativo</div>';
+  html += '<div id="narrativaBox" style="font-size:14px;line-height:1.7;color:var(--text)">'+narrativa+'</div>';
+  html += '</div>';
+
+  // Indicadores clave
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">';
+  const avColor = av === null ? 'var(--muted)' : (av >= 90 ? 'var(--green)' : av >= 70 ? 'var(--yellow)' : 'var(--red)');
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Avance global</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:'+avColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟢 Fortalezas</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--green);line-height:1">'+data.distribucion.verde+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones ≥ 90%</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟡 En proceso</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--yellow);line-height:1">'+data.distribucion.amarillo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones 70-89%</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🔴 Debilidades</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--red);line-height:1">'+data.distribucion.rojo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones &lt; 70%</div></div>';
+  html += '</div>';
+
+  // Avance por área
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
+  html += '<table class="accion-table"><thead><tr><th>Área</th><th style="text-align:center">% Avance</th><th style="text-align:center">Estado</th><th style="text-align:center">Acciones evaluadas</th></tr></thead><tbody>';
+  data.areas.forEach(function(area){
+    const est = area.promedio === null ? 'sin_datos' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
+    const estLabel = area.promedio === null ? 'Sin datos' : (area.promedio >= 90 ? 'Excelente' : area.promedio >= 70 ? 'En proceso' : 'Crítico');
+    html += '<tr><td style="font-weight:500">'+area.nombre+'</td>';
+    html += '<td style="text-align:center;font-weight:600">'+(area.promedio!==null?area.promedio+'%':'—')+'</td>';
+    html += '<td style="text-align:center"><span class="seguimiento-pill '+est+'">'+estLabel+'</span></td>';
+    html += '<td style="text-align:center;color:var(--muted)">'+area.registros+' / '+area.totalAcciones+'</td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  // Fortalezas
+  if(data.fortalezas.length) {
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
+    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
+    data.fortalezas.slice(0,10).forEach(function(f){
+      html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+f.area+'</span></li>';
+    });
+    html += '</ul>';
+    if(data.fortalezas.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.fortalezas.length-10)+' más</div>';
+    html += '</div>';
+  }
+
+  // Debilidades
+  if(data.debilidades.length) {
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
+    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
+    data.debilidades.slice(0,10).forEach(function(d){
+      html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+d.area+'</span></li>';
+    });
+    html += '</ul>';
+    if(data.debilidades.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.debilidades.length-10)+' más</div>';
+    html += '</div>';
+  }
+
+  // Sin registro
+  if(data.sinRegistro.length) {
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
+    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--muted)">';
+    data.sinRegistro.slice(0,10).forEach(function(s){
+      html += '<li>'+s.accion+' <span style="font-size:11px">— '+s.area+'</span></li>';
+    });
+    html += '</ul>';
+    if(data.sinRegistro.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.sinRegistro.length-10)+' más</div>';
+    html += '</div>';
+  }
+
+  // Recomendaciones
+  html += '<div class="card" style="margin-bottom:16px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
+  html += '<ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.8">';
+  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
+  html += '</ol></div>';
+
+  return html;
+}
+
+function cambiarAlcanceResumen(alc) {
+  _resumenAlcance = alc;
+  _resumenNarrativaIA = ''; // limpiar narrativa anterior porque cambia el alcance
+  renderCurrentPanel();
+}
+
+async function generarResumenIA() {
+  const btn = document.getElementById('btnIA');
+  if(!btn) return;
+  const data = calcularDatosResumen();
+  btn.disabled = true; btn.textContent = '⏳ Generando...';
+  try {
+    const resp = await fetch(RESUMEN_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ colegio: DB.colegio.nombre, datos: data })
+    });
+    const result = await resp.json().catch(function(){return {};});
+    if(!resp.ok) throw new Error(result.error || 'Error en el servicio de IA');
+    if(!result.narrativa) throw new Error('Respuesta vacía de la IA');
+    _resumenNarrativaIA = result.narrativa;
+    renderCurrentPanel();
+    showToast('✨ Narrativa generada con IA');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '✨ Enriquecer con IA';
+    if(e.message && e.message.indexOf('Failed to fetch') >= 0) {
+      showToast('⚠ La función de IA aún no está configurada. Ver instrucciones.');
+    } else {
+      showToast('Error: ' + e.message);
+    }
+  }
+}
+
+function descargarResumenPDF() {
+  const data = calcularDatosResumen();
+  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const recs = generarRecomendaciones(data);
+  const colegio = DB.colegio.nombre;
+  const av = data.avanceGlobal;
+  const fechaHoy = new Date().toLocaleDateString('es-CL');
+  const periodoTxt = data.alcance === 'mes' ? fmtMes(data.mesesEval[0]) : 'Acumulado del año';
+
+  const W = window.open('','_blank');
+  if(!W){ showToast('Permite ventanas emergentes'); return; }
+  const css = '@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:50px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:36px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:18px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:30px;color:#1E3A2F;margin-bottom:6px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:22px;color:#2D5A42;margin-bottom:16px}.cover .meta-row{display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:11px;color:#7A7670}.section{margin-bottom:30px;page-break-inside:avoid}.section-title{font-family:"DM Serif Display",serif;font-size:17px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.kpi-card{background:#F9F8F6;border-radius:6px;padding:14px;text-align:center}.kpi-label{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:4px}.kpi-value{font-family:"DM Serif Display",serif;font-size:28px;line-height:1}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.muted{background:#F4F2EE;color:#7A7670}.narrativa{font-size:13px;line-height:1.8;color:#1A1916;background:#F9F8F6;padding:18px 22px;border-left:4px solid #2D5A42;border-radius:4px}ul,ol{margin:8px 0 0;padding-left:20px}li{margin-bottom:6px;font-size:11px;line-height:1.5}.recs{background:#FDF6E3;border-left:4px solid #C18B2A;padding:18px 22px;border-radius:4px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
+  let html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Resumen Ejecutivo - '+colegio+'</title><style>'+css+'</style></head><body><button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
+  // Portada
+  html += '<div class="cover"><div class="logo-r">Gestión Estratégica · Resumen Ejecutivo</div><div class="colegio-r">'+colegio+'</div><div class="rtitulo">Análisis de Avance</div><div class="meta-row"><div>📆 '+periodoTxt+'</div><div>📅 '+fechaHoy+'</div></div></div>';
+
+  // Narrativa
+  html += '<div class="section"><div class="section-title">Resumen Narrativo</div><div class="narrativa">'+narrativa.replace(/<em>.*?<\/em>/g,'').replace(/<br>\s*<br>/g,'<br>')+'</div></div>';
+
+  // KPIs
+  const avC = av === null ? 'muted' : (av >= 90 ? 'verde' : av >= 70 ? 'amarillo' : 'rojo');
+  html += '<div class="section"><div class="section-title">Indicadores Clave</div><div class="kpi-grid">';
+  html += '<div class="kpi-card"><div class="kpi-label">Avance global</div><div class="kpi-value '+avC+'">'+(av!==null?av+'%':'—')+'</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-label">Fortalezas</div><div class="kpi-value verde">'+data.distribucion.verde+'</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-label">En proceso</div><div class="kpi-value amarillo">'+data.distribucion.amarillo+'</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-label">Debilidades</div><div class="kpi-value rojo">'+data.distribucion.rojo+'</div></div>';
+  html += '</div></div>';
+
+  // Avance por área
+  html += '<div class="section"><div class="section-title">Avance por Área</div><table><thead><tr><th>Área</th><th style="text-align:center">% Avance</th><th style="text-align:center">Estado</th><th style="text-align:center">Acciones</th></tr></thead><tbody>';
+  data.areas.forEach(function(area){
+    const est = area.promedio === null ? 'muted' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
+    const estLabel = area.promedio === null ? 'Sin datos' : (area.promedio >= 90 ? 'Excelente' : area.promedio >= 70 ? 'En proceso' : 'Crítico');
+    html += '<tr><td><strong>'+area.nombre+'</strong></td><td style="text-align:center" class="'+est+'"><strong>'+(area.promedio!==null?area.promedio+'%':'—')+'</strong></td><td style="text-align:center"><span class="badge '+est+'">'+estLabel+'</span></td><td style="text-align:center;color:#7A7670">'+area.registros+' / '+area.totalAcciones+'</td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  // Fortalezas
+  if(data.fortalezas.length) {
+    html += '<div class="section"><div class="section-title" style="color:#2E7D52">Fortalezas</div><ul>';
+    data.fortalezas.forEach(function(f){ html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) — <span class="muted">'+f.area+'</span></li>'; });
+    html += '</ul></div>';
+  }
+
+  // Debilidades
+  if(data.debilidades.length) {
+    html += '<div class="section"><div class="section-title" style="color:#9B2335">Debilidades</div><ul>';
+    data.debilidades.forEach(function(d){ html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) — <span class="muted">'+d.area+'</span></li>'; });
+    html += '</ul></div>';
+  }
+
+  // Sin registro
+  if(data.sinRegistro.length) {
+    html += '<div class="section"><div class="section-title" style="color:#7A7670">Acciones sin registro</div><ul style="color:#7A7670">';
+    data.sinRegistro.forEach(function(s){ html += '<li>'+s.accion+' — '+s.area+'</li>'; });
+    html += '</ul></div>';
+  }
+
+  // Recomendaciones
+  html += '<div class="section"><div class="section-title" style="color:#C18B2A">Recomendaciones</div><div class="recs"><ol>';
+  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
+  html += '</ol></div></div>';
+
+  html += '</div></body></html>';
+  W.document.write(html); W.document.close();
+  showToast('Resumen generado. Usa Imprimir para guardar como PDF.');
+}
+
+function descargarResumenWord() {
+  const data = calcularDatosResumen();
+  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const recs = generarRecomendaciones(data);
+  const colegio = DB.colegio.nombre;
+  const av = data.avanceGlobal;
+  const fechaHoy = new Date().toLocaleDateString('es-CL');
+  const periodoTxt = data.alcance === 'mes' ? fmtMes(data.mesesEval[0]) : 'Acumulado del año';
+
+  // Word usando HTML con MIME para Microsoft Word
+  let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
+  html += '<head><meta charset="UTF-8"><title>Resumen Ejecutivo</title><style>';
+  html += 'body{font-family:Calibri,Arial,sans-serif;color:#1A1916;font-size:11pt;line-height:1.6}h1{font-family:Georgia,serif;color:#1E3A2F;font-size:22pt;border-bottom:2px solid #1E3A2F;padding-bottom:6px}h2{font-family:Georgia,serif;color:#1E3A2F;font-size:14pt;border-bottom:1px solid #E4E0D8;padding-bottom:4px;margin-top:18pt}h3{font-size:12pt;color:#2D5A42;margin-top:12pt}p{margin-bottom:8pt}.meta{color:#7A7670;font-size:10pt;margin-bottom:18pt}.narrativa{background:#F9F8F6;padding:14pt;border-left:4px solid #2D5A42}.kpi{display:inline-block;background:#F9F8F6;padding:10pt 14pt;margin:4pt;border-radius:4px;text-align:center;width:140pt}.kpi-label{font-size:9pt;color:#7A7670;text-transform:uppercase}.kpi-value{font-size:22pt;font-family:Georgia,serif}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{border-collapse:collapse;width:100%;margin-bottom:12pt;font-size:10pt}th{background:#1E3A2F;color:#fff;padding:6pt 8pt;text-align:left}td{padding:6pt 8pt;border-bottom:1px solid #E4E0D8}.recs{background:#FDF6E3;padding:14pt;border-left:4px solid #C18B2A}ul,ol{margin-left:18pt}li{margin-bottom:4pt}';
+  html += '</style></head><body>';
+  html += '<h1>Resumen Ejecutivo</h1>';
+  html += '<div class="meta"><strong>Establecimiento:</strong> '+colegio+' &nbsp;|&nbsp; <strong>Período:</strong> '+periodoTxt+' &nbsp;|&nbsp; <strong>Fecha:</strong> '+fechaHoy+'</div>';
+
+  html += '<h2>Resumen Narrativo</h2><div class="narrativa">'+narrativa.replace(/<em>.*?<\/em>/g,'')+'</div>';
+
+  const avC = av === null ? 'muted' : (av >= 90 ? 'verde' : av >= 70 ? 'amarillo' : 'rojo');
+  html += '<h2>Indicadores Clave</h2><div>';
+  html += '<div class="kpi"><div class="kpi-label">Avance global</div><div class="kpi-value '+avC+'">'+(av!==null?av+'%':'—')+'</div></div>';
+  html += '<div class="kpi"><div class="kpi-label">Fortalezas</div><div class="kpi-value verde">'+data.distribucion.verde+'</div></div>';
+  html += '<div class="kpi"><div class="kpi-label">En proceso</div><div class="kpi-value amarillo">'+data.distribucion.amarillo+'</div></div>';
+  html += '<div class="kpi"><div class="kpi-label">Debilidades</div><div class="kpi-value rojo">'+data.distribucion.rojo+'</div></div>';
+  html += '</div>';
+
+  html += '<h2>Avance por Área</h2><table><thead><tr><th>Área</th><th>% Avance</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>';
+  data.areas.forEach(function(area){
+    const est = area.promedio === null ? 'muted' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
+    const estLabel = area.promedio === null ? 'Sin datos' : (area.promedio >= 90 ? 'Excelente' : area.promedio >= 70 ? 'En proceso' : 'Crítico');
+    html += '<tr><td><strong>'+area.nombre+'</strong></td><td class="'+est+'"><strong>'+(area.promedio!==null?area.promedio+'%':'—')+'</strong></td><td>'+estLabel+'</td><td>'+area.registros+' / '+area.totalAcciones+'</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  if(data.fortalezas.length) {
+    html += '<h2 style="color:#2E7D52">Fortalezas</h2><ul>';
+    data.fortalezas.forEach(function(f){ html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) — '+f.area+'</li>'; });
+    html += '</ul>';
+  }
+  if(data.debilidades.length) {
+    html += '<h2 style="color:#9B2335">Debilidades</h2><ul>';
+    data.debilidades.forEach(function(d){ html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) — '+d.area+'</li>'; });
+    html += '</ul>';
+  }
+  if(data.sinRegistro.length) {
+    html += '<h2 style="color:#7A7670">Acciones sin registro</h2><ul>';
+    data.sinRegistro.forEach(function(s){ html += '<li>'+s.accion+' — '+s.area+'</li>'; });
+    html += '</ul>';
+  }
+
+  html += '<h2 style="color:#C18B2A">Recomendaciones</h2><div class="recs"><ol>';
+  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
+  html += '</ol></div>';
+
+  html += '</body></html>';
+
+  const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Resumen_Ejecutivo_' + colegio.replace(/\s+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.doc';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Word descargado');
+}
 
 // VER REUNIONES (historial de solo lectura)
 function renderVerReuniones() {
