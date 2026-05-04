@@ -21,15 +21,22 @@ async function fetchAll(tabla, filtros = {}) {
   return data || [];
 }
 
+// Quita campos sensibles de un usuario antes de guardarlo en el backup
+function sanitizeUsuario(u) {
+  const { password_hash, ...resto } = u;
+  return resto;
+}
+
 async function main() {
   const fecha = new Date().toISOString().split('T')[0];
-  const hora  = new Date().toISOString().replace('T', '_').slice(0, 16).replace(':', '-');
   console.log(`\n🗄  Iniciando backup: ${fecha}\n`);
 
   // ── 1. Tablas globales ────────────────────────────────────────
-  const colegios  = await fetchAll('colegios');
-  const usuarios  = await fetchAll('usuarios');
-  console.log(`✅  Colegios: ${colegios.length} | Usuarios: ${usuarios.length}`);
+  const colegios       = await fetchAll('colegios');
+  const usuariosRaw    = await fetchAll('usuarios');
+  // ⚠ NUNCA incluir password_hash en backup público
+  const usuarios       = usuariosRaw.map(sanitizeUsuario);
+  console.log(`✅  Colegios: ${colegios.length} | Usuarios: ${usuarios.length} (sin password_hash)`);
 
   // ── 2. Datos por colegio ──────────────────────────────────────
   const porColegio = {};
@@ -39,34 +46,33 @@ async function main() {
     const cid = colegio.id;
 
     // Estructura del plan
-    const areas      = await fetchAll('areas',      { colegio_id: cid });
-    const cargos     = await fetchAll('cargos',     { colegio_id: cid });
+    const areas        = await fetchAll('areas',        { colegio_id: cid });
+    const cargos       = await fetchAll('cargos',       { colegio_id: cid });
     const responsables = await fetchAll('responsables', { colegio_id: cid });
 
-    const objIds = [];
     const objetivos = [];
     for (const area of areas) {
       const obs = await fetchAll('objetivos', { area_id: area.id });
       objetivos.push(...obs);
-      objIds.push(...obs.map(o => o.id));
     }
 
-    const acIds = [];
     const acciones = [];
     for (const obj of objetivos) {
       const acs = await fetchAll('acciones', { objetivo_id: obj.id });
       acciones.push(...acs);
-      acIds.push(...acs.map(a => a.id));
     }
 
-    // Seguimiento y responsables asignados
+    // Seguimiento, responsables asignados y evidencias
     const seguimiento = [];
     const accionResp  = [];
+    const evidencias  = [];
     for (const ac of acciones) {
       const segs = await fetchAll('seguimiento', { accion_id: ac.id });
       seguimiento.push(...segs);
       const ars = await fetchAll('accion_responsable', { accion_id: ac.id });
       accionResp.push(...ars);
+      const evs = await fetchAll('evidencias', { accion_id: ac.id });
+      evidencias.push(...evs);
     }
 
     // Reuniones y participantes
@@ -78,20 +84,20 @@ async function main() {
     }
 
     // Módulo Denuncias
-    const denuncias         = await fetchAll('denuncias',         { colegio_id: cid });
-    const accionesDenuncia  = [];
-    const logDenuncia       = [];
-    const mensajesCaso      = [];
+    const denuncias          = await fetchAll('denuncias', { colegio_id: cid });
+    const accionesDenuncia   = [];
+    const logDenuncia        = [];
+    const mensajesCaso       = [];
     const evidenciasDenuncia = [];
     for (const d of denuncias) {
-      accionesDenuncia.push( ...(await fetchAll('acciones_denuncia',   { denuncia_id: d.id })));
-      logDenuncia.push(      ...(await fetchAll('log_denuncia',         { denuncia_id: d.id })));
-      mensajesCaso.push(     ...(await fetchAll('mensajes_caso',        { denuncia_id: d.id })));
-      evidenciasDenuncia.push(...(await fetchAll('evidencias_denuncia', { denuncia_id: d.id })));
+      accionesDenuncia.push(   ...(await fetchAll('acciones_denuncia',   { denuncia_id: d.id })));
+      logDenuncia.push(        ...(await fetchAll('log_denuncia',         { denuncia_id: d.id })));
+      mensajesCaso.push(       ...(await fetchAll('mensajes_caso',        { denuncia_id: d.id })));
+      evidenciasDenuncia.push( ...(await fetchAll('evidencias_denuncia', { denuncia_id: d.id })));
     }
 
     console.log(`   Áreas: ${areas.length} | Objetivos: ${objetivos.length} | Acciones: ${acciones.length}`);
-    console.log(`   Seguimiento: ${seguimiento.length} | Reuniones: ${reuniones.length}`);
+    console.log(`   Seguimiento: ${seguimiento.length} | Evidencias: ${evidencias.length} | Reuniones: ${reuniones.length}`);
     console.log(`   Denuncias: ${denuncias.length}`);
 
     porColegio[cid] = {
@@ -101,8 +107,9 @@ async function main() {
       areas,
       objetivos,
       acciones,
-      accion_responsable: accionResp,
+      accion_responsable:  accionResp,
       seguimiento,
+      evidencias,
       reuniones,
       reunion_participantes: participantes,
       denuncias,
@@ -116,11 +123,12 @@ async function main() {
   // ── 3. Construir backup completo ──────────────────────────────
   const backup = {
     meta: {
-      fecha_backup:  new Date().toISOString(),
-      version:       '2.0',
-      plataforma:    'Gestión Estratégica',
-      total_colegios: colegios.length,
+      fecha_backup:    new Date().toISOString(),
+      version:         '2.1',
+      plataforma:      'Gestión Estratégica',
+      total_colegios:  colegios.length,
       supabase_project: 'tykbytaymysxgvyvlgah',
+      nota_seguridad:  'Este backup NO incluye password_hash ni password_resets por seguridad.',
     },
     usuarios,
     colegios: porColegio,
@@ -157,7 +165,7 @@ async function main() {
         from: `"Gestión Estratégica Backup" <${process.env.EMAIL_USER}>`,
         to:   process.env.EMAIL_TO,
         subject: `✅ Backup Gestión Estratégica — ${fecha}`,
-        text: `Backup completado exitosamente.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\n\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups`,
+        text: `Backup completado exitosamente.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\n\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups\n\nNota: el backup excluye contraseñas y tokens por seguridad.`,
       });
 
       console.log(`📧  Email enviado a ${process.env.EMAIL_TO}`);
