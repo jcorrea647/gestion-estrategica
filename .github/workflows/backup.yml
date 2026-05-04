@@ -18,7 +18,11 @@ jobs:
         with:
           node-version: '20'
       - name: Instalar dependencias
-        run: npm install @supabase/supabase-js nodemailer
+        run: |
+          mkdir -p .backup-deps
+          cd .backup-deps
+          npm init -y
+          npm install @supabase/supabase-js nodemailer
       - name: Ejecutar backup
         env:
           SUPABASE_URL: https://tykbytaymysxgvyvlgah.supabase.co
@@ -26,17 +30,23 @@ jobs:
           EMAIL_TO: jcorrea@estrategica.cl
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          NODE_PATH: .backup-deps/node_modules
         run: node .github/scripts/backup.js
       - name: Commit backup al repo
         run: |
           git config --local user.email "backup@gestion-estrategica"
           git config --local user.name "Backup Automatico"
+          # Limpiar archivos sucios fuera de backups/ (node_modules, package-lock, etc.)
+          git checkout -- . 2>/dev/null || true
+          git clean -fd .backup-deps node_modules package*.json 2>/dev/null || true
+          # Agregar el backup nuevo
           git add backups/
           if git diff --staged --quiet; then
             echo "Sin cambios para commitear"
             exit 0
           fi
           git commit -m "Backup automatico $(date '+%Y-%m-%d')"
+          # Push con reintentos
           for i in 1 2 3; do
             git fetch origin main
             if git rebase origin/main; then
