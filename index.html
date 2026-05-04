@@ -409,8 +409,9 @@ let currentPanel='dashboard', filterCargo='', filterMes='';
 let openAreas=new Set(), openObjs=new Set(), charts={};
 
 const ROL_LABELS = {superadmin:'Superadmin',sostenedor:'Sostenedor',director:'Director',equipo_gestion:'Equipo Gestion'};
-const canConfig = rol => ['superadmin','director'].includes(rol);
+const canConfig = rol => rol === 'superadmin';
 const canUsers  = rol => rol === 'superadmin';
+const canEditSeguimiento = rol => rol === 'superadmin';
 const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
 
 // INIT
@@ -985,6 +986,8 @@ function hayReunionAbierta() {
   return (DB.reuniones||[]).some(function(r){ return !r.cerrada; });
 }
 function puedeEditarSeguimientoMes(mes) {
+  // Solo superadmin puede editar (Propuesta A)
+  if(!canEditSeguimiento(SESSION.user?.rol)) return false;
   return !!reunionAbiertaDelMes(mes);
 }
 
@@ -1142,20 +1145,31 @@ function renderSeguimiento() {
   const mes=filterMes;
   const reunion = reunionDelMes(mes);
   const reunionAbierta = reunion && !reunion.cerrada;
-  const bloqueado = !reunionAbierta;
+  const esSuperadmin = SESSION.user?.rol === 'superadmin';
+  const bloqueado = !reunionAbierta || !esSuperadmin;
   if(reunion) window._reunionActiva=reunion.id;
   const alertaCrear = hayReunionAbierta();
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Ingresar seguimiento</div><div class="page-sub">'+(mes?'Mes: '+fmtMes(mes):'Selecciona un mes en el filtro lateral')+'</div></div>';
   html+='<div style="display:flex;gap:8px">';
-  if(alertaCrear){
-    html+='<button class="btn btn-primary btn-sm btn-alerta-verde" onclick="avisoReunionAbierta()" title="Hay una reunión abierta. Ciérrala antes de crear otra.">✓ Reunión Activa</button>';
-  } else {
-    html+='<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()" title="Crear nueva reunión">+ Crear Reunion</button>';
+  if(esSuperadmin) {
+    if(alertaCrear){
+      html+='<button class="btn btn-primary btn-sm btn-alerta-verde" onclick="avisoReunionAbierta()" title="Hay una reunión abierta. Ciérrala antes de crear otra.">✓ Reunión Activa</button>';
+    } else {
+      html+='<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()" title="Crear nueva reunión">+ Crear Reunion</button>';
+    }
   }
   html+='</div>';
   html+='</div></div>';
   if(!mes) return html+'<div class="card"><div class="empty-state">Selecciona un mes en el filtro lateral.</div></div>';
+
+  // Banner de solo lectura para roles no superadmin
+  if(!esSuperadmin) {
+    html+='<div class="banner-bloqueo info" style="background:#E8F0FB;border-color:#1F4E79;color:#1F4E79">';
+    html+='<div><div class="bb-title">👁 Modo solo lectura</div>';
+    html+='<div class="bb-sub">Tu rol ('+ROL_LABELS[SESSION.user.rol]+') te permite consultar la información, pero no editarla. Para registrar avances o cargar evidencias, contacta al administrador.</div></div>';
+    html+='</div>';
+  }
 
   // Banner según estado de la reunión del mes
   if(!reunion) {
@@ -3726,6 +3740,7 @@ async function consultarIA() {
 }
 
 async function reabrirReunion(id) {
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede reabrir reuniones'); return; }
   const r = DB.reuniones && DB.reuniones.find(x => x.id === id);
   if(!r){ showToast('Reunión no encontrada'); return; }
   if(!r.cerrada){ showToast('La reunión ya está abierta'); return; }
@@ -3775,6 +3790,7 @@ function avisoReunionAbierta() {
 }
 
 function abrirCrearReunion() {
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede crear reuniones'); return; }
   if(hayReunionAbierta()){ avisoReunionAbierta(); return; }
   window._editReunionId=null;
   const hoy=new Date().toISOString().split('T')[0];
@@ -3782,6 +3798,7 @@ function abrirCrearReunion() {
   openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
 }
 function abrirEditarReunion() {
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
   const reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion)return;
   if(reunion.cerrada){ showToast('🔒 La reunión está cerrada. Reábrela para editarla.'); return; }
@@ -3957,6 +3974,7 @@ function abrirEnviarReunion() {
 }
 
 async function confirmarCierreReunion() {
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede cerrar reuniones'); return; }
   const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
   if(!reunion){ closeModal(); showToast('No hay reunión activa'); return; }
   const mes = filterMes || reunion.mes;
