@@ -291,6 +291,8 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 /* Estado de reunión: bloqueos visuales */
 .btn-alerta-roja{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important;animation:pulseRed 1.8s ease-in-out infinite}
 .btn-alerta-roja:hover{background:#7d1a2a!important;border-color:#7d1a2a!important}
+.btn-alerta-verde{background:#1E6B3C!important;color:#fff!important;border-color:#1E6B3C!important}
+.btn-alerta-verde:hover{background:#155028!important;border-color:#155028!important}
 @keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(155,35,53,.5)}50%{box-shadow:0 0 0 6px rgba(155,35,53,0)}}
 .banner-bloqueo{border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .banner-bloqueo.warn{background:#FDF6E3;border:1px solid var(--yellow);color:#7a5a0a}
@@ -1137,7 +1139,11 @@ function renderSeguimiento() {
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Ingresar seguimiento</div><div class="page-sub">'+(mes?'Mes: '+fmtMes(mes):'Selecciona un mes en el filtro lateral')+'</div></div>';
   html+='<div style="display:flex;gap:8px">';
-  html+='<button class="btn btn-primary btn-sm'+(alertaCrear?' btn-alerta-roja':'')+'" onclick="abrirCrearReunion()" title="'+(alertaCrear?'Hay una reunión abierta. Recuerda cerrarla antes de crear otra.':'Crear nueva reunión')+'">'+(alertaCrear?'⚠ Reunión Creada':'+ Crear Reunion')+'</button>';
+  if(alertaCrear){
+    html+='<button class="btn btn-primary btn-sm btn-alerta-verde" onclick="avisoReunionAbierta()" title="Hay una reunión abierta. Ciérrala antes de crear otra.">✓ Reunión Activa</button>';
+  } else {
+    html+='<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()" title="Crear nueva reunión">+ Crear Reunion</button>';
+  }
   html+='</div>';
   html+='</div></div>';
   if(!mes) return html+'<div class="card"><div class="empty-state">Selecciona un mes en el filtro lateral.</div></div>';
@@ -1408,7 +1414,7 @@ function renderInformes() {
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
   const alertaVer = hayReunionAbierta();
-  html+='<div class="export-group"><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-roja':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Recuerda cerrarla.':'Ver historial de reuniones')+'">'+(alertaVer?'⚠ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
+  html+='<div class="export-group"><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-verde':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Puedes verla en el historial.':'Ver historial de reuniones')+'">'+(alertaVer?'✓ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
   html+='</div></div>';
   // BUSCADOR IA
   html+='<div class="card" style="margin-bottom:20px">';
@@ -2685,7 +2691,25 @@ function generarPDFReunionById(reunionId) {
 }
 
 // REUNIONES
+function avisoReunionAbierta() {
+  const r = (DB.reuniones||[]).find(function(x){ return !x.cerrada; });
+  const titulo = r ? r.titulo : '';
+  const mesesTxt = r && r.meses_evaluacion && r.meses_evaluacion.length
+    ? r.meses_evaluacion.map(function(m){return fmtMes(m);}).join(', ')
+    : (r && r.mes ? fmtMes(r.mes) : '');
+  openModal('Reunión activa',
+    '<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0">'+
+    '<div style="font-size:32px">✓</div>'+
+    '<div><div style="font-weight:600;margin-bottom:6px;color:#1E6B3C;font-size:14px">Ya hay una reunión abierta</div>'+
+    '<div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:8px">'+
+    (titulo ? '<strong>'+titulo+'</strong>'+(mesesTxt?' — '+mesesTxt:'')+'<br>' : '')+
+    'Antes de crear una nueva, debes <strong>cerrar la reunión activa</strong>.</div>'+
+    '<div style="font-size:12px;color:var(--muted);line-height:1.5">Puedes cerrarla desde el botón <em>"Cerrar y enviar reunión"</em> en el panel de seguimiento del mes correspondiente.</div></div></div>',
+    [{label:'Entendido',cls:'btn-primary',action:'closeModal()'}]);
+}
+
 function abrirCrearReunion() {
+  if(hayReunionAbierta()){ avisoReunionAbierta(); return; }
   window._editReunionId=null;
   const hoy=new Date().toISOString().split('T')[0];
   const mesActual=filterMes||new Date().toISOString().slice(0,7);
