@@ -880,7 +880,7 @@ async function loadColegio(colegioId) {
   SESSION.colegioActivo = colegioId;
   const [
     {data:colegio},{data:cargos},{data:responsables},{data:areas},{data:objetivos},
-    {data:acciones},{data:ar},{data:segs},{data:reuniones},{data:evidencias}
+    {data:acciones},{data:ar},{data:segs},{data:reuniones}
   ] = await Promise.all([
     sb.from('colegios').select('*').eq('id',colegioId).single(),
     sb.from('cargos').select('*').eq('colegio_id',colegioId).order('nombre'),
@@ -891,15 +891,21 @@ async function loadColegio(colegioId) {
     sb.from('accion_responsable').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('reuniones').select('*,reunion_participantes(*)').eq('colegio_id',colegioId).order('created_at'),
-    sb.from('evidencias').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId).order('created_at'),
   ]);
+  // Cargar evidencias filtrando por las acciones del colegio (más confiable que JOIN)
+  let evidencias = [];
+  const accionIds = (acciones || []).map(function(a){ return a.id; });
+  if(accionIds.length) {
+    const { data: evs } = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
+    evidencias = evs || [];
+  }
   DB = {
     colegio, cargos:cargos||[],
     responsables:(responsables||[]).map(r=>({...r,cargo:r.cargos?.nombre||''})),
     areas:areas||[], objetivos:objetivos||[], acciones:acciones||[],
     accion_responsable:ar||[], seguimiento:segs||[],
     reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]})),
-    evidencias:evidencias||[]
+    evidencias: evidencias
   };
 }
 
@@ -1437,8 +1443,11 @@ async function saveEvidence(accionId, mes) {
   const {error} = await sb.from('evidencias').insert({accion_id:accionId, mes, url, descripcion:desc});
   if(error){ showToast('Error: '+error.message); return; }
   // Recargar evidencias y refrescar el modal
-  const {data:nuevas} = await sb.from('evidencias').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id', DB.colegio.id).order('created_at');
-  DB.evidencias = nuevas || [];
+  const accionIds = (DB.acciones || []).map(function(a){ return a.id; });
+  if(accionIds.length) {
+    const {data:nuevas} = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
+    DB.evidencias = nuevas || [];
+  }
   showToast('✓ Evidencia guardada');
   openEvidenceModal(accionId, mes);
   // Refrescar tabla de seguimiento detrás (para actualizar el contador del botón Adj)
