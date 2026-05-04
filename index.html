@@ -2442,9 +2442,7 @@ function calcularDatosResumen() {
     mesesEval = mesesAll.filter(function(m){
       return DB.seguimiento.some(function(s){ return s.mes === m; });
     });
-    if(!mesesEval.length) mesesEval = [mesesAll[0]];
-  } else {
-    mesesEval = [mesesAll[0]];
+    // Si no hay datos en ningún mes, no inventar — dejar lista vacía para que se reporte como "sin datos"
   }
 
   // Avance por área (promedio de las acciones del área en los meses evaluados)
@@ -2545,45 +2543,121 @@ function calcularDatosResumen() {
 }
 
 function generarNarrativaLocal(data) {
-  // Texto narrativo simple por reglas, fallback si no hay IA
+  // Devuelve un objeto con 4 secciones tituladas
   const colegio = DB.colegio.nombre;
   const periodo = data.alcance === 'mes'
-    ? 'durante ' + (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'el período evaluado')
-    : 'en el período acumulado del año (' + data.mesesEval.map(function(m){return fmtMes(m,true);}).join(', ') + ')';
+    ? (data.mesesEval[0] ? 'durante ' + fmtMes(data.mesesEval[0]) : 'durante el período evaluado')
+    : (data.mesesEval.length ? 'en el período acumulado (' + data.mesesEval.map(function(m){return fmtMes(m,true);}).join(', ') + ')' : 'en el período evaluado');
   const av = data.avanceGlobal;
-  let estado, calificacion;
-  if(av === null) { estado = 'no presenta registros suficientes'; calificacion = 'sin información'; }
-  else if(av >= 90) { estado = 'muestra un nivel de cumplimiento excelente'; calificacion = 'alto'; }
-  else if(av >= 70) { estado = 'presenta un avance satisfactorio'; calificacion = 'aceptable'; }
-  else if(av >= 50) { estado = 'muestra un avance parcial que requiere atención'; calificacion = 'medio-bajo'; }
-  else { estado = 'evidencia un nivel de cumplimiento crítico'; calificacion = 'bajo'; }
 
-  let narrativa = colegio + ' ' + estado + ' ' + periodo + (av !== null ? ', con un avance global del <strong>' + av + '%</strong>' : '') + '. ';
+  let estado;
+  if(av === null) estado = 'no presenta registros suficientes para evaluar su desempeño';
+  else if(av >= 90) estado = 'muestra un nivel de cumplimiento excelente';
+  else if(av >= 70) estado = 'presenta un avance satisfactorio';
+  else if(av >= 50) estado = 'muestra un avance parcial que requiere atención';
+  else estado = 'evidencia un nivel de cumplimiento crítico';
 
-  // Áreas destacadas
+  // SECCIÓN 1: Visión General
+  let visionGeneral = colegio + ' ' + estado + ' ' + periodo +
+    (av !== null ? ', con un avance global del <strong>' + av + '%</strong>' : '') + '. ';
+  if(av === null) {
+    visionGeneral += 'La ausencia de datos registrados impide hacer una evaluación cuantitativa y constituye una señal de alerta que requiere atención inmediata por parte del equipo directivo.';
+  } else {
+    visionGeneral += 'Este resultado se construye a partir de ' + data.acciones.length + ' acciones evaluadas a lo largo del establecimiento.';
+  }
+
+  // SECCIÓN 2: Análisis por Área
+  let analisisAreas;
   const areasOrdenadas = data.areas.filter(function(a){return a.promedio !== null;}).sort(function(a,b){return b.promedio-a.promedio;});
-  if(areasOrdenadas.length) {
+  if(!areasOrdenadas.length) {
+    analisisAreas = 'No hay datos disponibles para realizar un análisis por área en el período seleccionado.';
+  } else {
     const top = areasOrdenadas[0];
     const bottom = areasOrdenadas[areasOrdenadas.length-1];
-    if(top.id !== bottom.id) {
-      narrativa += 'El área con mejor desempeño es <strong>' + top.nombre + '</strong> (' + top.promedio + '%), mientras que <strong>' + bottom.nombre + '</strong> presenta el menor avance (' + bottom.promedio + '%). ';
+    if(areasOrdenadas.length > 1 && top.id !== bottom.id) {
+      analisisAreas = 'El área de mejor desempeño es <strong>' + top.nombre + '</strong> con un ' + top.promedio + '% de avance, lo que refleja un buen alineamiento entre la planificación y la ejecución. ' +
+        'En contraste, <strong>' + bottom.nombre + '</strong> presenta el menor cumplimiento (' + bottom.promedio + '%), por lo que requiere una revisión específica de las acciones planificadas y de los responsables involucrados.';
     } else {
-      narrativa += 'Solo se cuenta con datos del área <strong>' + top.nombre + '</strong> (' + top.promedio + '%). ';
+      analisisAreas = 'Solo se cuenta con datos en el área <strong>' + top.nombre + '</strong> (' + top.promedio + '%), lo que limita la posibilidad de hacer comparaciones entre áreas.';
     }
   }
 
+  // SECCIÓN 3: Fortalezas y Debilidades
+  let fortDeb = '';
   if(data.fortalezas.length) {
-    narrativa += 'Se identifican <strong>' + data.fortalezas.length + ' acciones con cumplimiento sobresaliente</strong> (≥90%). ';
+    fortDeb += 'Se identifican <strong>' + data.fortalezas.length + ' acciones con cumplimiento sobresaliente</strong> (≥90%) que pueden servir como referente de buenas prácticas. ';
+  } else {
+    fortDeb += 'En este período no se registran acciones con cumplimiento sobresaliente (≥90%). ';
   }
   if(data.debilidades.length) {
-    narrativa += 'Hay <strong>' + data.debilidades.length + ' acciones que requieren intervención prioritaria</strong> (&lt;70%). ';
+    fortDeb += 'En el otro extremo, hay <strong>' + data.debilidades.length + ' acciones que requieren intervención prioritaria</strong> (&lt;70%) y deben atenderse en las próximas reuniones de seguimiento. ';
   }
   if(data.sinRegistro.length) {
-    narrativa += 'Quedan <strong>' + data.sinRegistro.length + ' acciones sin evaluar</strong> en este período, lo que limita la completitud del análisis. ';
+    fortDeb += 'Adicionalmente, <strong>' + data.sinRegistro.length + ' acciones permanecen sin registrar</strong> en el período, lo que limita la completitud del análisis y debe corregirse para tener una visión integral.';
+  }
+  if(!fortDeb) fortDeb = 'No hay datos suficientes para identificar fortalezas o debilidades específicas.';
+
+  // SECCIÓN 4: Mirada Prospectiva
+  let prospectiva;
+  if(av === null) {
+    prospectiva = 'La prioridad inmediata es retomar el registro sistemático de los avances en cada acción del plan de gestión. Sin esta información, no es posible orientar decisiones basadas en evidencia.';
+  } else if(av >= 90) {
+    prospectiva = 'El establecimiento se encuentra en muy buen camino. La recomendación es documentar las prácticas exitosas para sistematizarlas y replicarlas hacia el siguiente ciclo.';
+  } else if(av >= 70) {
+    prospectiva = 'El próximo paso es consolidar los avances logrados y focalizar el trabajo en las acciones que se encuentran rezagadas, asegurando que cuenten con responsables y plazos claros.';
+  } else if(av >= 50) {
+    prospectiva = 'Se sugiere realizar una sesión extraordinaria de equipo directivo para revisar las acciones críticas, identificar barreras de implementación y ajustar el plan donde sea necesario.';
+  } else {
+    prospectiva = 'La situación amerita una revisión integral del plan de gestión. Se recomienda evaluar si las metas siguen siendo realistas, si los responsables tienen los recursos necesarios y si el sistema de seguimiento está funcionando.';
   }
 
-  narrativa += '<br><br><em>Esta es una narrativa generada automáticamente. Para un análisis enriquecido por IA, configura la integración con Anthropic API.</em>';
-  return narrativa;
+  return {
+    visionGeneral: visionGeneral,
+    analisisAreas: analisisAreas,
+    fortalezasDebilidades: fortDeb,
+    prospectiva: prospectiva
+  };
+}
+
+// Convierte una narrativa generada por IA (texto en HTML con <br><br>) en las 4 secciones
+function parsearNarrativaIA(narrativaHTML) {
+  if(!narrativaHTML) return null;
+  // Si la IA devolvió secciones tituladas con encabezados o marcadores, intentar parsear
+  const limpio = narrativaHTML.replace(/<\/?p>/g, '').trim();
+  // Primero intentar dividir por <br><br>
+  const partes = limpio.split(/<br\s*\/?>\s*<br\s*\/?>/i).map(function(p){return p.trim();}).filter(Boolean);
+  if(partes.length >= 4) {
+    return {
+      visionGeneral: partes[0],
+      analisisAreas: partes[1],
+      fortalezasDebilidades: partes[2],
+      prospectiva: partes.slice(3).join(' ')
+    };
+  }
+  if(partes.length === 3) {
+    return {
+      visionGeneral: partes[0],
+      analisisAreas: partes[1],
+      fortalezasDebilidades: partes[2],
+      prospectiva: ''
+    };
+  }
+  // Fallback: poner todo en visionGeneral
+  return {
+    visionGeneral: limpio,
+    analisisAreas: '',
+    fortalezasDebilidades: '',
+    prospectiva: ''
+  };
+}
+
+function obtenerSeccionesNarrativa(data) {
+  // Si hay narrativa de IA, parsearla; si no, usar la local
+  if(_resumenNarrativaIA) {
+    const parseada = parsearNarrativaIA(_resumenNarrativaIA);
+    if(parseada) return parseada;
+  }
+  return generarNarrativaLocal(data);
 }
 
 function generarRecomendaciones(data) {
@@ -2614,7 +2688,7 @@ function generarRecomendaciones(data) {
 function renderResumenEjecutivo() {
   const data = calcularDatosResumen();
   const colegio = DB.colegio.nombre;
-  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const secs = obtenerSeccionesNarrativa(data);
   const recs = generarRecomendaciones(data);
   const av = data.avanceGlobal;
 
@@ -2636,11 +2710,28 @@ function renderResumenEjecutivo() {
   if(data.alcance === 'mes' && !filterMes) {
     html += '<div style="font-size:12px;color:var(--yellow);margin-top:8px">⚠ No has seleccionado un mes en el filtro lateral. Selecciona uno o cambia a "Acumulado".</div>';
   }
+  if(data.alcance === 'acumulado' && !data.mesesEval.length) {
+    html += '<div style="font-size:12px;color:var(--yellow);margin-top:8px">⚠ No hay datos de seguimiento registrados aún para este establecimiento.</div>';
+  }
   html += '</div>';
 
-  // Resumen narrativo
-  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📝 Resumen narrativo</div>';
-  html += '<div id="narrativaBox" style="font-size:14px;line-height:1.7;color:var(--text)">'+narrativa+'</div>';
+  // Resumen narrativo dividido en secciones
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
+  if(secs.visionGeneral) {
+    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Visión general</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.visionGeneral+'</div></div>';
+  }
+  if(secs.analisisAreas) {
+    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Análisis por área</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.analisisAreas+'</div></div>';
+  }
+  if(secs.fortalezasDebilidades) {
+    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Fortalezas y debilidades</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.fortalezasDebilidades+'</div></div>';
+  }
+  if(secs.prospectiva) {
+    html += '<div style="margin-bottom:0"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Mirada prospectiva</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.prospectiva+'</div></div>';
+  }
+  if(!_resumenNarrativaIA) {
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:14px;font-style:italic;border-top:1px solid var(--border);padding-top:10px">Narrativa generada automáticamente. Usa el botón "✨ Enriquecer con IA" para obtener un análisis más detallado.</div>';
+  }
   html += '</div>';
 
   // Indicadores clave
@@ -2745,22 +2836,29 @@ async function generarResumenIA() {
 
 function descargarResumenPDF() {
   const data = calcularDatosResumen();
-  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const secs = obtenerSeccionesNarrativa(data);
   const recs = generarRecomendaciones(data);
   const colegio = DB.colegio.nombre;
   const av = data.avanceGlobal;
   const fechaHoy = new Date().toLocaleDateString('es-CL');
-  const periodoTxt = data.alcance === 'mes' ? fmtMes(data.mesesEval[0]) : 'Acumulado del año';
+  const periodoTxt = data.alcance === 'mes'
+    ? (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado')
+    : (data.mesesEval.length ? 'Acumulado: ' + data.mesesEval.map(function(m){return fmtMes(m,true);}).join(', ') : 'Sin datos registrados');
 
   const W = window.open('','_blank');
   if(!W){ showToast('Permite ventanas emergentes'); return; }
-  const css = '@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:50px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:36px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:18px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:30px;color:#1E3A2F;margin-bottom:6px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:22px;color:#2D5A42;margin-bottom:16px}.cover .meta-row{display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:11px;color:#7A7670}.section{margin-bottom:30px;page-break-inside:avoid}.section-title{font-family:"DM Serif Display",serif;font-size:17px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.kpi-card{background:#F9F8F6;border-radius:6px;padding:14px;text-align:center}.kpi-label{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:4px}.kpi-value{font-family:"DM Serif Display",serif;font-size:28px;line-height:1}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.muted{background:#F4F2EE;color:#7A7670}.narrativa{font-size:13px;line-height:1.8;color:#1A1916;background:#F9F8F6;padding:18px 22px;border-left:4px solid #2D5A42;border-radius:4px}ul,ol{margin:8px 0 0;padding-left:20px}li{margin-bottom:6px;font-size:11px;line-height:1.5}.recs{background:#FDF6E3;border-left:4px solid #C18B2A;padding:18px 22px;border-radius:4px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
+  const css = '@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:50px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:36px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:18px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:30px;color:#1E3A2F;margin-bottom:6px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:22px;color:#2D5A42;margin-bottom:16px}.cover .meta-row{display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:11px;color:#7A7670}.section{margin-bottom:30px;page-break-inside:avoid}.section-title{font-family:"DM Serif Display",serif;font-size:17px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.subsection{margin-bottom:18px;page-break-inside:avoid}.subsection-title{font-family:"DM Serif Display",serif;font-size:13px;color:#2D5A42;margin-bottom:6px;font-weight:normal}.subsection-body{font-size:12px;line-height:1.7;color:#1A1916;padding-left:14px;border-left:3px solid #E4E0D8}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.kpi-card{background:#F9F8F6;border-radius:6px;padding:14px;text-align:center}.kpi-label{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:4px}.kpi-value{font-family:"DM Serif Display",serif;font-size:28px;line-height:1}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.muted{background:#F4F2EE;color:#7A7670}ul,ol{margin:8px 0 0;padding-left:20px}li{margin-bottom:6px;font-size:11px;line-height:1.5}.recs{background:#FDF6E3;border-left:4px solid #C18B2A;padding:18px 22px;border-radius:4px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
   let html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Resumen Ejecutivo - '+colegio+'</title><style>'+css+'</style></head><body><button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
   // Portada
   html += '<div class="cover"><div class="logo-r">Gestión Estratégica · Resumen Ejecutivo</div><div class="colegio-r">'+colegio+'</div><div class="rtitulo">Análisis de Avance</div><div class="meta-row"><div>📆 '+periodoTxt+'</div><div>📅 '+fechaHoy+'</div></div></div>';
 
-  // Narrativa
-  html += '<div class="section"><div class="section-title">Resumen Narrativo</div><div class="narrativa">'+narrativa.replace(/<em>.*?<\/em>/g,'').replace(/<br>\s*<br>/g,'<br>')+'</div></div>';
+  // Resumen Narrativo (con secciones)
+  html += '<div class="section"><div class="section-title">Resumen Narrativo</div>';
+  if(secs.visionGeneral) html += '<div class="subsection"><div class="subsection-title">Visión general</div><div class="subsection-body">'+secs.visionGeneral+'</div></div>';
+  if(secs.analisisAreas) html += '<div class="subsection"><div class="subsection-title">Análisis por área</div><div class="subsection-body">'+secs.analisisAreas+'</div></div>';
+  if(secs.fortalezasDebilidades) html += '<div class="subsection"><div class="subsection-title">Fortalezas y debilidades</div><div class="subsection-body">'+secs.fortalezasDebilidades+'</div></div>';
+  if(secs.prospectiva) html += '<div class="subsection"><div class="subsection-title">Mirada prospectiva</div><div class="subsection-body">'+secs.prospectiva+'</div></div>';
+  html += '</div>';
 
   // KPIs
   const avC = av === null ? 'muted' : (av >= 90 ? 'verde' : av >= 70 ? 'amarillo' : 'rojo');
@@ -2813,22 +2911,29 @@ function descargarResumenPDF() {
 
 function descargarResumenWord() {
   const data = calcularDatosResumen();
-  const narrativa = _resumenNarrativaIA || generarNarrativaLocal(data);
+  const secs = obtenerSeccionesNarrativa(data);
   const recs = generarRecomendaciones(data);
   const colegio = DB.colegio.nombre;
   const av = data.avanceGlobal;
   const fechaHoy = new Date().toLocaleDateString('es-CL');
-  const periodoTxt = data.alcance === 'mes' ? fmtMes(data.mesesEval[0]) : 'Acumulado del año';
+  const periodoTxt = data.alcance === 'mes'
+    ? (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado')
+    : (data.mesesEval.length ? 'Acumulado: ' + data.mesesEval.map(function(m){return fmtMes(m,true);}).join(', ') : 'Sin datos registrados');
 
   // Word usando HTML con MIME para Microsoft Word
   let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
   html += '<head><meta charset="UTF-8"><title>Resumen Ejecutivo</title><style>';
-  html += 'body{font-family:Calibri,Arial,sans-serif;color:#1A1916;font-size:11pt;line-height:1.6}h1{font-family:Georgia,serif;color:#1E3A2F;font-size:22pt;border-bottom:2px solid #1E3A2F;padding-bottom:6px}h2{font-family:Georgia,serif;color:#1E3A2F;font-size:14pt;border-bottom:1px solid #E4E0D8;padding-bottom:4px;margin-top:18pt}h3{font-size:12pt;color:#2D5A42;margin-top:12pt}p{margin-bottom:8pt}.meta{color:#7A7670;font-size:10pt;margin-bottom:18pt}.narrativa{background:#F9F8F6;padding:14pt;border-left:4px solid #2D5A42}.kpi{display:inline-block;background:#F9F8F6;padding:10pt 14pt;margin:4pt;border-radius:4px;text-align:center;width:140pt}.kpi-label{font-size:9pt;color:#7A7670;text-transform:uppercase}.kpi-value{font-size:22pt;font-family:Georgia,serif}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{border-collapse:collapse;width:100%;margin-bottom:12pt;font-size:10pt}th{background:#1E3A2F;color:#fff;padding:6pt 8pt;text-align:left}td{padding:6pt 8pt;border-bottom:1px solid #E4E0D8}.recs{background:#FDF6E3;padding:14pt;border-left:4px solid #C18B2A}ul,ol{margin-left:18pt}li{margin-bottom:4pt}';
+  html += 'body{font-family:Calibri,Arial,sans-serif;color:#1A1916;font-size:11pt;line-height:1.6}h1{font-family:Georgia,serif;color:#1E3A2F;font-size:22pt;border-bottom:2px solid #1E3A2F;padding-bottom:6px}h2{font-family:Georgia,serif;color:#1E3A2F;font-size:14pt;border-bottom:1px solid #E4E0D8;padding-bottom:4px;margin-top:18pt}h3{font-family:Georgia,serif;font-size:12pt;color:#2D5A42;margin-top:14pt;margin-bottom:6pt;font-weight:normal}p{margin-bottom:8pt}.meta{color:#7A7670;font-size:10pt;margin-bottom:18pt}.subseccion{margin-left:14pt;margin-bottom:10pt;padding-left:10pt;border-left:3px solid #E4E0D8;font-size:11pt;line-height:1.7}.kpi{display:inline-block;background:#F9F8F6;padding:10pt 14pt;margin:4pt;border-radius:4px;text-align:center;width:140pt}.kpi-label{font-size:9pt;color:#7A7670;text-transform:uppercase}.kpi-value{font-size:22pt;font-family:Georgia,serif}.verde{color:#2E7D52}.amarillo{color:#B8860B}.rojo{color:#9B2335}.muted{color:#7A7670}table{border-collapse:collapse;width:100%;margin-bottom:12pt;font-size:10pt}th{background:#1E3A2F;color:#fff;padding:6pt 8pt;text-align:left}td{padding:6pt 8pt;border-bottom:1px solid #E4E0D8}.recs{background:#FDF6E3;padding:14pt;border-left:4px solid #C18B2A}ul,ol{margin-left:18pt}li{margin-bottom:4pt}';
   html += '</style></head><body>';
   html += '<h1>Resumen Ejecutivo</h1>';
   html += '<div class="meta"><strong>Establecimiento:</strong> '+colegio+' &nbsp;|&nbsp; <strong>Período:</strong> '+periodoTxt+' &nbsp;|&nbsp; <strong>Fecha:</strong> '+fechaHoy+'</div>';
 
-  html += '<h2>Resumen Narrativo</h2><div class="narrativa">'+narrativa.replace(/<em>.*?<\/em>/g,'')+'</div>';
+  // Resumen Narrativo (con secciones)
+  html += '<h2>Resumen Narrativo</h2>';
+  if(secs.visionGeneral) html += '<h3>Visión general</h3><div class="subseccion">'+secs.visionGeneral+'</div>';
+  if(secs.analisisAreas) html += '<h3>Análisis por área</h3><div class="subseccion">'+secs.analisisAreas+'</div>';
+  if(secs.fortalezasDebilidades) html += '<h3>Fortalezas y debilidades</h3><div class="subseccion">'+secs.fortalezasDebilidades+'</div>';
+  if(secs.prospectiva) html += '<h3>Mirada prospectiva</h3><div class="subseccion">'+secs.prospectiva+'</div>';
 
   const avC = av === null ? 'muted' : (av >= 90 ? 'verde' : av >= 70 ? 'amarillo' : 'rojo');
   html += '<h2>Indicadores Clave</h2><div>';
