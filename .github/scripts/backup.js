@@ -96,9 +96,18 @@ async function main() {
       evidenciasDenuncia.push( ...(await fetchAll('evidencias_denuncia', { denuncia_id: d.id })));
     }
 
+    // ── Módulo Plan (microacciones) ─────────────────────────────
+    const microacciones = await fetchAll('microacciones', { colegio_id: cid });
+    const microaccionesPasos = [];
+    for (const ma of microacciones) {
+      const pasos = await fetchAll('microacciones_pasos', { microaccion_id: ma.id });
+      microaccionesPasos.push(...pasos);
+    }
+
     console.log(`   Áreas: ${areas.length} | Objetivos: ${objetivos.length} | Acciones: ${acciones.length}`);
     console.log(`   Seguimiento: ${seguimiento.length} | Evidencias: ${evidencias.length} | Reuniones: ${reuniones.length}`);
     console.log(`   Denuncias: ${denuncias.length}`);
+    console.log(`   Microacciones: ${microacciones.length} | Pasos: ${microaccionesPasos.length}`);
 
     porColegio[cid] = {
       colegio,
@@ -117,6 +126,8 @@ async function main() {
       log_denuncia:        logDenuncia,
       mensajes_caso:       mensajesCaso,
       evidencias_denuncia: evidenciasDenuncia,
+      microacciones,
+      microacciones_pasos: microaccionesPasos,
     };
   }
 
@@ -124,11 +135,12 @@ async function main() {
   const backup = {
     meta: {
       fecha_backup:    new Date().toISOString(),
-      version:         '2.1',
+      version:         '2.2',
       plataforma:      'Gestión Estratégica',
       total_colegios:  colegios.length,
       supabase_project: 'tykbytaymysxgvyvlgah',
       nota_seguridad:  'Este backup NO incluye password_hash ni password_resets por seguridad.',
+      modulos:         ['estructura_plan','seguimiento','evidencias','reuniones','denuncias','plan_microacciones'],
     },
     usuarios,
     colegios: porColegio,
@@ -158,7 +170,7 @@ async function main() {
 
       const resumen = colegios.map(c => {
         const d = porColegio[c.id];
-        return `• ${c.nombre} (RBD ${c.rbd}): ${d.acciones.length} acciones, ${d.seguimiento.length} seguimientos, ${d.reuniones.length} reuniones, ${d.denuncias.length} denuncias`;
+        return `• ${c.nombre} (RBD ${c.rbd}): ${d.acciones.length} acciones, ${d.seguimiento.length} seguimientos, ${d.reuniones.length} reuniones, ${d.denuncias.length} denuncias, ${d.microacciones.length} microacciones (${d.microacciones_pasos.length} pasos)`;
       }).join('\n');
 
       await transporter.sendMail({
