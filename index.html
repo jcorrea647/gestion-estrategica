@@ -6037,6 +6037,7 @@ const PLAN_CSS = `
 
 /* ====================== CONFIG ====================== */
 const PLAN_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-microacciones';
+const PLAN_FN_URL_V2 = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-plan-avanzado';
 const PLAN_BRECHA_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-brecha-avanzado';
 const PLAN_AUTOSAVE_DEBOUNCE = 1500; // ms
 const PLAN_LS_PREFIX = 'plan_borrador_v2_';
@@ -6776,35 +6777,64 @@ async function planGenerarPropuestas(){
   document.getElementById('planBody').innerHTML = `
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
-      <p>Analizando tu diagnóstico y generando propuestas...</p>
+      <p>Analizando contexto institucional y generando plan personalizado…</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Cruzando PEI · Reporte PME · Estándar EID · Diagnóstico</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
+  let llmExitoso = false;
   try {
     const payload = {
-      accion: {nombre: s.accion.nombre, descripcion: s.accion.descripcion||''},
-      pct: s.pct, banda: s.banda,
-      causas: s.causas.map(c=>c.etiqueta),
+      colegio_id: DB.colegio.id,
+      accion_id: s.accionId,
+      mes: s.mes,
+      pct: s.pct,
+      banda: s.banda,
+      causas: s.causas,
       causas_otros: s.causasOtros,
       comentario: s.comentario,
       consolidacion_modos: s.consolidacionModos
     };
-    const resp = await fetch(PLAN_FN_URL, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
+
+    const resp = await fetch(PLAN_FN_URL_V2, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sb.supabaseKey || '')
+      },
+      body: JSON.stringify(payload)
     });
-    if(!resp.ok) throw new Error('Servicio LLM no disponible');
+
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    if(!data.lineas_de_accion) throw new Error('Respuesta inválida');
-    s.propuestas = data.lineas_de_accion;
+    if(!data.ok || !data.lineas_de_accion || !data.lineas_de_accion.length) {
+      throw new Error('Respuesta inválida del servicio');
+    }
+
+    // Adaptar formato del LLM al formato interno del módulo
+    s.propuestas = data.lineas_de_accion.map((linea, i) => ({
+      id: linea.id || ('linea_' + (i+1)),
+      titulo: linea.titulo || ('Línea ' + (i+1)),
+      foco: linea.foco || '',
+      descripcion_corta: linea.foco || '',
+      causa_atacada: linea.foco || '',
+      pasos: (linea.pasos || []).map(p => ({
+        descripcion: p.descripcion || '',
+        responsable_sugerido: p.responsable_sugerido || '',
+        plazo_dias: p.plazo_dias || 14,
+        esfuerzo: p.esfuerzo || 'MEDIO'
+      }))
+    }));
+    llmExitoso = true;
   } catch(e) {
+    console.warn('Edge Function plan-avanzado falló:', e.message);
     s.propuestas = generarPropuestasFallback(s);
-    showToast('Generando propuestas con plantilla local');
+    showToast('No se pudo generar plan personalizado. Usando plantilla local.');
   }
+
   s.paso = 4;
   planMarcarCambio();
-  await planSyncSupabase(); // Forzar sync inmediato post-LLM (operación cara)
+  await planSyncSupabase();
   renderPlanPaso();
 }
 
