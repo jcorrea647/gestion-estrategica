@@ -6026,6 +6026,19 @@ const PLAN_CSS = `
 
 .plan-brecha-error{padding:14px;background:#FFF0F0;border-left:3px solid var(--red);
   border-radius:0 6px 6px 0;color:#8A1F1F;font-size:13px}
+
+.plan-accion-evaluada{background:#1E3A2F;color:#fff;padding:16px 18px;
+  border-radius:8px;margin:0 0 18px 0}
+.plan-accion-evaluada-label{font-size:10px;font-weight:700;letter-spacing:1.2px;
+  opacity:.7;margin-bottom:6px}
+.plan-accion-evaluada-nombre{font-size:16px;font-weight:700;line-height:1.3;
+  margin-bottom:6px;font-family:var(--serif,Georgia,serif)}
+.plan-accion-evaluada-desc{font-size:12px;line-height:1.5;opacity:.85;margin-top:4px}
+
+.plan-brecha-explicacion{font-size:12.5px;line-height:1.55;color:var(--muted);
+  margin:0 0 14px 0;padding:10px 14px;background:#FAF7F2;border-radius:6px;
+  border-left:3px solid var(--accent)}
+.plan-brecha-explicacion strong{color:#1E3A2F;font-weight:700}
 `;
 
 // Inyectar CSS al cargar
@@ -6534,7 +6547,14 @@ async function renderPaso1Contexto(){
   document.getElementById('planBody').innerHTML = `
     ${banner}
     <div class="plan-orient">Lo que verás aquí es un análisis automatizado para orientar tu decisión.</div>
-    <h3>Estado de la acción</h3>
+
+    <div class="plan-accion-evaluada">
+      <div class="plan-accion-evaluada-label">ACCIÓN PME EVALUADA</div>
+      <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(s.accion?.nombre || '')}</div>
+      ${s.accion?.descripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(s.accion.descripcion)+'</div>' : ''}
+    </div>
+
+    <h3>Estado de la acción este mes</h3>
     <p class="lead">Antes de diagnosticar, mira el panorama.</p>
     <div class="plan-ctx-card">
       <div class="plan-ctx-row">
@@ -6550,8 +6570,10 @@ async function renderPaso1Contexto(){
         <span class="value">${nivelEID}</span>
       </div>
     </div>
+
     <div class="plan-brecha">
-      <h4>Brecha al nivel Avanzado</h4>
+      <h4>Las 3 brechas críticas para alcanzar el nivel Avanzado</h4>
+      <p class="plan-brecha-explicacion">Para que esta acción llegue al nivel <strong>Desarrollo Avanzado</strong> según el Estándar EID oficial del Mineduc, tu colegio debe cerrar las 3 brechas más relevantes que aparecen abajo. Fueron generadas considerando tu PEI, Reporte PME oficial, contexto institucional y cumplimiento histórico.</p>
       <div id="planBrechasContenedor">
         <div class="plan-loading-inline">
           <div class="plan-loading-spin-sm"></div>
@@ -6559,6 +6581,7 @@ async function renderPaso1Contexto(){
         </div>
       </div>
     </div>
+
     ${cargaTexto||saludArea ? `<div class="plan-brecha"><h4>Lectura sistémica</h4><ul>
       ${cargaTexto?'<li>'+cargaTexto+'</li>':''}
       ${saludArea?'<li>'+saludArea+'</li>':''}
@@ -6818,7 +6841,8 @@ async function planGenerarPropuestas(){
       foco: linea.foco || '',
       descripcion_corta: linea.foco || '',
       causa_atacada: linea.foco || '',
-      pasos: (linea.pasos || []).map(p => ({
+      pasos: (linea.pasos || []).map((p, pIdx) => ({
+        id: p.id || ('paso_' + (i+1) + '_' + (pIdx+1)),
         descripcion: p.descripcion || '',
         responsable_sugerido: p.responsable_sugerido || '',
         plazo_dias: p.plazo_dias || 14,
