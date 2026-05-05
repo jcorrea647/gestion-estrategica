@@ -6039,6 +6039,20 @@ const PLAN_CSS = `
   margin:0 0 14px 0;padding:10px 14px;background:#FAF7F2;border-radius:6px;
   border-left:3px solid var(--accent)}
 .plan-brecha-explicacion strong{color:#1E3A2F;font-weight:700}
+
+.plan-fuentes-banner{background:#1E3A2F;color:#fff;padding:14px 16px;
+  border-radius:8px;margin-bottom:18px}
+.plan-fuentes-banner-titulo{font-size:11px;font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;opacity:.85;margin-bottom:10px}
+.plan-fuentes-banner-lista{display:flex;flex-wrap:wrap;gap:6px}
+.plan-fuentes-chip{display:inline-block;background:rgba(255,255,255,0.12);
+  padding:4px 10px;border-radius:12px;font-size:11px;font-weight:500;
+  border:1px solid rgba(255,255,255,0.18);line-height:1.4}
+
+.plan-paso-cuerpo{flex:1;min-width:0}
+.plan-paso-fuente{font-size:10.5px;color:var(--muted);margin-top:5px;
+  font-style:italic;letter-spacing:.2px;font-weight:500}
+.plan-paso.selected .plan-paso-fuente{color:#5E5848}
 `;
 
 // Inyectar CSS al cargar
@@ -6535,7 +6549,7 @@ async function renderPaso1Contexto(){
     }
   }
 
-  const pregunta = banda==='CRITICO'?'¿Qué está bloqueando estructuralmente esta acción?':
+  const pregunta = banda==='CRITICO'?'¿Qué podría estar bloqueando estructuralmente esta acción?':
     banda==='MEJORA'?'¿Qué pequeño ajuste puede llevarte al estándar?':
     '¿Cómo sostienes esto y lo escalas?';
 
@@ -6680,7 +6694,7 @@ function renderPaso2Diagnostico(){
   ).join('');
 
   document.getElementById('planBody').innerHTML = `
-    <h3>¿Qué bloqueó esta acción?</h3>
+    <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
     <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
     ${grupoHtml('Causas estructurales y técnicas', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
     ${grupoHtml('Causas relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
@@ -6846,9 +6860,12 @@ async function planGenerarPropuestas(){
         descripcion: p.descripcion || '',
         responsable_sugerido: p.responsable_sugerido || '',
         plazo_dias: p.plazo_dias || 14,
-        esfuerzo: p.esfuerzo || 'MEDIO'
+        esfuerzo: p.esfuerzo || 'MEDIO',
+        fuente: p.fuente || ''
       }))
     }));
+    // Guardar fuentes globales para mostrar banner
+    s.fuentesGlobales = data.fuentes_globales || [];
     llmExitoso = true;
   } catch(e) {
     console.warn('Edge Function plan-avanzado falló:', e.message);
@@ -6886,9 +6903,15 @@ function renderPaso4Constructor(){
     const pasos = ln.pasos.map((p,pi)=>{
       const key = ln.id+'_'+p.id;
       const sel = s.pasosSeleccionados.some(x=>x.key===key);
+      const fuenteHtml = p.fuente
+        ? `<div class="plan-paso-fuente">${escapeHtmlPlan(p.fuente)}</div>`
+        : '';
       return `<div class="plan-paso${sel?' selected':''}" onclick="planTogglePaso('${key}','${ln.id}',${pi})">
         <div class="plan-paso-check">${sel?'✓':''}</div>
-        <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
+        <div class="plan-paso-cuerpo">
+          <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
+          ${fuenteHtml}
+        </div>
       </div>`;
     }).join('');
     const otros = (s.pasosOtrosLinea[ln.id]||[]).map((p,oi)=>
@@ -6935,8 +6958,19 @@ function renderPaso4Constructor(){
   });
   s.pasosFocoPropio.forEach(p=>resumen.push({desc:p.descripcion, src:'foco propio'}));
 
+  // Construir banner de fuentes globales si existen
+  const fuentesGlob = s.fuentesGlobales || [];
+  const bannerFuentes = fuentesGlob.length > 0
+    ? '<div class="plan-fuentes-banner">' +
+        '<div class="plan-fuentes-banner-titulo">Plan generado cruzando estas fuentes oficiales y académicas:</div>' +
+        '<div class="plan-fuentes-banner-lista">' +
+          fuentesGlob.map(f => '<span class="plan-fuentes-chip">' + escapeHtmlPlan(f) + '</span>').join('') +
+        '</div>' +
+      '</div>'
+    : '<div class="plan-orient">Estas líneas son sugerencias generadas con IA. Revísalas y ajústalas según tu contexto.</div>';
+
   document.getElementById('planBody').innerHTML = `
-    <div class="plan-orient">Estas líneas son sugerencias generadas con IA. Revísalas y ajústalas según tu contexto.</div>
+    ${bannerFuentes}
     <h3>Construye tu plan</h3>
     <p class="lead">Selecciona pasos de las líneas, agrega tus propios pasos en Otros, o crea una línea entera con Foco propio.</p>
     <div class="plan-lineas">${lineas}</div>
