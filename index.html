@@ -6040,6 +6040,21 @@ const PLAN_CSS = `
   border-left:3px solid var(--accent)}
 .plan-brecha-explicacion strong{color:#1E3A2F;font-weight:700}
 
+.plan-brecha-meta{display:flex;flex-direction:column;gap:10px;margin:14px 0;
+  padding:14px 16px;background:#FFFFFF;border:1px solid var(--border);
+  border-radius:6px}
+.plan-brecha-meta-row{display:flex;flex-direction:column;gap:3px}
+.plan-brecha-meta-label{font-size:10px;font-weight:700;letter-spacing:.8px;
+  color:var(--accent);text-transform:uppercase}
+.plan-brecha-meta-value{font-size:13px;line-height:1.5;color:#2A2622}
+.plan-brecha-meta-vacio{color:var(--muted);font-style:italic;font-size:12.5px}
+.plan-brecha-meta-extra{color:var(--muted);font-size:11.5px;font-style:italic;
+  margin-top:2px;line-height:1.4}
+
+.plan-brecha-fuentes{display:flex;flex-direction:column;gap:3px;margin-top:8px}
+.plan-brecha-fuente-item{font-size:11px;color:var(--muted);font-style:italic;
+  padding-left:10px;border-left:2px solid var(--border);line-height:1.4}
+
 .plan-fuentes-banner{background:#1E3A2F;color:#fff;padding:14px 16px;
   border-radius:8px;margin-bottom:18px}
 .plan-fuentes-banner-titulo{font-size:11px;font-weight:700;letter-spacing:.8px;
@@ -6636,15 +6651,67 @@ async function renderPaso1Contexto(){
     ? '<div class="plan-brecha-estandar-tag">Estándar ' + escapeHtmlPlan(brechasResp.estandar_numero) + ' EID · ' + escapeHtmlPlan(brechasResp.estandar_titulo || '') + '</div>'
     : '';
 
-  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
-    '<div class="plan-brecha-item">' +
+  // Bloque de metadata: acción evaluada + relación PME oficial + relación PEI
+  const accionEvaluadaNombre = s.accion?.nombre || '';
+  const pmeRel = brechasResp.pme_oficial_relacion;
+  const peiRel = brechasResp.pei_relacion;
+
+  const pmeBloque = (pmeRel && pmeRel.encontrada)
+    ? '<div class="plan-brecha-meta-value">' +
+        escapeHtmlPlan(pmeRel.accion_pme || '(sin nombre de acción)') +
+        (pmeRel.dimension ? '<div class="plan-brecha-meta-extra">Dimensión: ' + escapeHtmlPlan(pmeRel.dimension) + '</div>' : '') +
+        (pmeRel.justificacion ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(pmeRel.justificacion) + '</div>' : '') +
+      '</div>'
+    : '<div class="plan-brecha-meta-value plan-brecha-meta-vacio">Esta acción no aparece en el PME oficial 2025 del Mineduc para tu colegio.</div>';
+
+  const peiBloque = (peiRel && peiRel.encontrada)
+    ? '<div class="plan-brecha-meta-value">' +
+        escapeHtmlPlan(peiRel.parte || '(sin sección identificada)') +
+        (peiRel.contenido ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(peiRel.contenido) + '</div>' : '') +
+        (peiRel.justificacion ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(peiRel.justificacion) + '</div>' : '') +
+      '</div>'
+    : '<div class="plan-brecha-meta-value plan-brecha-meta-vacio">No se identifica una relación directa con el PEI del establecimiento.</div>';
+
+  const metaBloque = (accionEvaluadaNombre || pmeRel || peiRel)
+    ? '<div class="plan-brecha-meta">' +
+        '<div class="plan-brecha-meta-row">' +
+          '<div class="plan-brecha-meta-label">Acción evaluada</div>' +
+          '<div class="plan-brecha-meta-value">' + escapeHtmlPlan(accionEvaluadaNombre) + '</div>' +
+        '</div>' +
+        '<div class="plan-brecha-meta-row">' +
+          '<div class="plan-brecha-meta-label">En el PME oficial 2025 Mineduc</div>' +
+          pmeBloque +
+        '</div>' +
+        '<div class="plan-brecha-meta-row">' +
+          '<div class="plan-brecha-meta-label">En el PEI del establecimiento</div>' +
+          peiBloque +
+        '</div>' +
+      '</div>'
+    : '';
+
+  const brechasHtml = (brechasResp.brechas || []).map((b, i) => {
+    let fuentesArr = [];
+    if (Array.isArray(b.fuentes)) {
+      fuentesArr = b.fuentes.filter(Boolean);
+    } else if (b.fuente) {
+      const partes = String(b.fuente).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+      fuentesArr = partes;
+    }
+
+    const fuentesHtml = fuentesArr.length > 0
+      ? '<div class="plan-brecha-fuentes">' +
+          fuentesArr.map(f => '<div class="plan-brecha-fuente-item">' + escapeHtmlPlan(f) + '</div>').join('') +
+        '</div>'
+      : '';
+
+    return '<div class="plan-brecha-item">' +
       '<div class="plan-brecha-num">' + (i + 1) + '</div>' +
       '<div class="plan-brecha-cuerpo">' +
         '<div class="plan-brecha-texto">' + escapeHtmlPlan(b.texto || '') + '</div>' +
-        '<div class="plan-brecha-fuente">' + escapeHtmlPlan(b.fuente || '') + '</div>' +
+        fuentesHtml +
       '</div>' +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
 
   const fuentes = brechasResp.fuentes_consultadas || [];
   const fuentesHtml = fuentes.length > 0
@@ -6653,7 +6720,7 @@ async function renderPaso1Contexto(){
       '</ul></details>'
     : '';
 
-  cont.innerHTML = estandarHeader + '<div class="plan-brecha-list-personalizada">' + brechasHtml + '</div>' + fuentesHtml;
+  cont.innerHTML = estandarHeader + metaBloque + '<div class="plan-brecha-list-personalizada">' + brechasHtml + '</div>' + fuentesHtml;
 }
 
 async function planEliminarBorrador(){
