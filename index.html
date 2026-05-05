@@ -5987,6 +5987,45 @@ const PLAN_CSS = `
 .plan-borrador-banner button{margin-left:auto;background:transparent;border:1px solid #C18B2A;
   color:#8A5C00;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit}
 .plan-borrador-banner button:hover{background:#C18B2A;color:#fff}
+
+.plan-loading-inline{display:flex;align-items:center;gap:10px;padding:18px;
+  background:#FAF7F2;border-radius:6px;color:var(--muted);font-size:13px}
+.plan-loading-spin-sm{width:18px;height:18px;border:2px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:planSpin 1s linear infinite}
+
+.plan-brecha-estandar-tag{display:inline-block;background:#1E3A2F;color:#fff;
+  padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;
+  letter-spacing:.3px;margin-bottom:14px;line-height:1.4}
+
+.plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:14px}
+
+.plan-brecha-item{display:flex;gap:14px;padding:14px;background:#FAF7F2;
+  border-left:3px solid var(--gold);border-radius:0 6px 6px 0}
+.plan-brecha-num{flex-shrink:0;width:24px;height:24px;background:var(--gold);
+  color:#fff;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:12px;font-weight:700}
+.plan-brecha-cuerpo{flex:1}
+.plan-brecha-texto{font-size:13.5px;line-height:1.55;color:#2A2622}
+.plan-brecha-fuente{font-size:11px;color:var(--muted);margin-top:6px;
+  font-style:italic}
+
+.plan-brecha-fuentes-detalle{margin-top:14px;font-size:11px;color:var(--muted)}
+.plan-brecha-fuentes-detalle summary{cursor:pointer;padding:6px 0;
+  font-weight:600;color:#1E3A2F}
+.plan-brecha-fuentes-detalle ul{margin:6px 0 0 18px;padding:0}
+.plan-brecha-fuentes-detalle li{padding:2px 0}
+
+.plan-brecha-fallback{background:#FFF8E6;border-left:3px solid #C18B2A;
+  padding:14px;border-radius:0 6px 6px 0}
+.plan-brecha-fallback-titulo{font-weight:700;color:#8A5C00;font-size:12px;
+  margin-bottom:8px}
+.plan-brecha-fallback-msg{font-size:12.5px;color:#5C3F00;margin-bottom:12px;
+  line-height:1.5}
+.plan-brecha-list-generica{margin:8px 0 0 18px;padding:0;font-size:12.5px}
+.plan-brecha-list-generica li{padding:4px 0;color:#3A3631}
+
+.plan-brecha-error{padding:14px;background:#FFF0F0;border-left:3px solid var(--red);
+  border-radius:0 6px 6px 0;color:#8A1F1F;font-size:13px}
 `;
 
 // Inyectar CSS al cargar
@@ -5998,6 +6037,7 @@ const PLAN_CSS = `
 
 /* ====================== CONFIG ====================== */
 const PLAN_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-microacciones';
+const PLAN_BRECHA_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/generar-brecha-avanzado';
 const PLAN_AUTOSAVE_DEBOUNCE = 1500; // ms
 const PLAN_LS_PREFIX = 'plan_borrador_v2_';
 
@@ -6026,6 +6066,40 @@ const CAUSAS_TAXONOMIA = {
 let PLAN_STATE = null;
 let PLAN_AUTOSAVE_TIMER = null;
 let PLAN_LAST_SAVED_HASH = null;
+let PLAN_BRECHAS_CACHE = {};
+let PLAN_BRECHAS_LOADING = false;
+
+async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
+  const cacheKey = colegioId + '_' + accionId + '_' + mes;
+  if (PLAN_BRECHAS_CACHE[cacheKey]) return PLAN_BRECHAS_CACHE[cacheKey];
+
+  PLAN_BRECHAS_LOADING = true;
+  try {
+    const resp = await fetch(PLAN_BRECHA_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sb.supabaseKey || '')
+      },
+      body: JSON.stringify({
+        colegio_id: colegioId,
+        accion_id: accionId,
+        mes: mes,
+        pct: pct,
+        banda: banda
+      })
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    PLAN_BRECHAS_CACHE[cacheKey] = data;
+    return data;
+  } catch(e) {
+    console.warn('planCargarBrechas error:', e.message);
+    return null;
+  } finally {
+    PLAN_BRECHAS_LOADING = false;
+  }
+}
 
 function planLSKey(colegioId, accionId, mes){
   return PLAN_LS_PREFIX + colegioId + '_' + accionId + '_' + mes;
@@ -6407,7 +6481,7 @@ function renderPlanPaso(){
 }
 
 /* ====================== PASO 1: CONTEXTO ====================== */
-function renderPaso1Contexto(){
+async function renderPaso1Contexto(){
   const s = PLAN_STATE;
   const banda = s.banda;
   const bandaLabel = banda==='CRITICO'?'Crítico':banda==='MEJORA'?'Mejora':'Consolidación';
@@ -6455,6 +6529,7 @@ function renderPaso1Contexto(){
     ? '<div class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
     : '';
 
+  // Render inicial con loading mientras se cargan las brechas dinámicas
   document.getElementById('planBody').innerHTML = `
     ${banner}
     <div class="plan-orient">Lo que verás aquí es un análisis automatizado para orientar tu decisión.</div>
@@ -6476,11 +6551,12 @@ function renderPaso1Contexto(){
     </div>
     <div class="plan-brecha">
       <h4>Brecha al nivel Avanzado</h4>
-      <ul>
-        <li>Cerrar el ciclo de retroalimentación a 100% en plazo definido.</li>
-        <li>Documentar evidencia de mejora medible entre dos aplicaciones.</li>
-        <li>Implementar planes remediales sistemáticos en áreas priorizadas.</li>
-      </ul>
+      <div id="planBrechasContenedor">
+        <div class="plan-loading-inline">
+          <div class="plan-loading-spin-sm"></div>
+          <span>Analizando contexto institucional…</span>
+        </div>
+      </div>
     </div>
     ${cargaTexto||saludArea ? `<div class="plan-brecha"><h4>Lectura sistémica</h4><ul>
       ${cargaTexto?'<li>'+cargaTexto+'</li>':''}
@@ -6495,6 +6571,51 @@ function renderPaso1Contexto(){
       <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
       <button class="plan-btn-next" onclick="planNext()">${banda==='CONSOLIDACION'?'Definir consolidación':'Diagnosticar'} →</button>
     </div>`;
+
+  // Cargar brechas dinámicas en background (no bloquea la pantalla)
+  const brechasResp = await planCargarBrechas(DB.colegio.id, s.accionId, s.mes, s.pct, banda);
+  const cont = document.getElementById('planBrechasContenedor');
+  if (!cont) return; // Drawer ya cerrado
+
+  if (!brechasResp) {
+    cont.innerHTML = '<div class="plan-brecha-error">No se pudo generar el análisis personalizado. Continúa con el flujo o intenta nuevamente.</div>';
+    return;
+  }
+
+  if (brechasResp.modo === 'FALLBACK_SIN_CONTEXTO') {
+    const items = (brechasResp.brechas || []).map(b => '<li>' + escapeHtmlPlan(b.texto || b) + '</li>').join('');
+    cont.innerHTML =
+      '<div class="plan-brecha-fallback">' +
+        '<div class="plan-brecha-fallback-titulo">Brechas genéricas</div>' +
+        '<div class="plan-brecha-fallback-msg">' + escapeHtmlPlan(brechasResp.mensaje || '') + '</div>' +
+        '<ul class="plan-brecha-list-generica">' + items + '</ul>' +
+      '</div>';
+    return;
+  }
+
+  // Modo personalizado
+  const estandarHeader = brechasResp.estandar_numero
+    ? '<div class="plan-brecha-estandar-tag">Estándar ' + escapeHtmlPlan(brechasResp.estandar_numero) + ' EID · ' + escapeHtmlPlan(brechasResp.estandar_titulo || '') + '</div>'
+    : '';
+
+  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
+    '<div class="plan-brecha-item">' +
+      '<div class="plan-brecha-num">' + (i + 1) + '</div>' +
+      '<div class="plan-brecha-cuerpo">' +
+        '<div class="plan-brecha-texto">' + escapeHtmlPlan(b.texto || '') + '</div>' +
+        '<div class="plan-brecha-fuente">' + escapeHtmlPlan(b.fuente || '') + '</div>' +
+      '</div>' +
+    '</div>'
+  ).join('');
+
+  const fuentes = brechasResp.fuentes_consultadas || [];
+  const fuentesHtml = fuentes.length > 0
+    ? '<details class="plan-brecha-fuentes-detalle"><summary>Fuentes consultadas (' + fuentes.length + ')</summary><ul>' +
+        fuentes.map(f => '<li>' + escapeHtmlPlan(f) + '</li>').join('') +
+      '</ul></details>'
+    : '';
+
+  cont.innerHTML = estandarHeader + '<div class="plan-brecha-list-personalizada">' + brechasHtml + '</div>' + fuentesHtml;
 }
 
 async function planEliminarBorrador(){
