@@ -6053,7 +6053,40 @@ const PLAN_CSS = `
 
 .plan-brecha-fuentes{display:flex;flex-direction:column;gap:3px;margin-top:8px}
 .plan-brecha-fuente-item{font-size:11px;color:var(--muted);font-style:italic;
-  padding-left:10px;border-left:2px solid var(--border);line-height:1.4}
+  padding-left:10px;border-left:2px solid var(--border);line-height:1.4;
+  overflow-wrap:break-word;word-break:break-word}
+
+.plan-brecha-fuentes-cat{margin-top:8px}
+.plan-brecha-fuentes-cat:first-child{margin-top:0}
+.plan-brecha-fuentes-cat-label{font-size:9.5px;font-weight:700;letter-spacing:.6px;
+  text-transform:uppercase;margin-bottom:3px;line-height:1.2}
+.plan-brecha-fuentes-cat-normativo .plan-brecha-fuentes-cat-label{color:#1E3A2F}
+.plan-brecha-fuentes-cat-academico .plan-brecha-fuentes-cat-label{color:#5B548F}
+.plan-brecha-fuentes-cat-otro .plan-brecha-fuentes-cat-label{color:var(--muted)}
+.plan-brecha-fuentes-cat-normativo .plan-brecha-fuente-item{border-left-color:#1E3A2F}
+.plan-brecha-fuentes-cat-academico .plan-brecha-fuente-item{border-left-color:#5B548F}
+
+/* === Fixes mobile críticos === */
+.plan-brecha-cuerpo{flex:1;min-width:0}
+.plan-brecha-texto,.plan-brecha-meta-value,.plan-brecha-meta-extra{
+  overflow-wrap:break-word;word-break:break-word}
+.plan-brecha-meta,.plan-brecha-item,.plan-brecha-list-personalizada{max-width:100%}
+.plan-brecha-estandar-tag{max-width:100%;overflow-wrap:break-word;
+  white-space:normal;display:block}
+
+@media (max-width:560px){
+  .plan-brecha-meta{padding:11px 13px;gap:8px}
+  .plan-brecha-item{padding:11px;gap:10px}
+  .plan-brecha-num{width:22px;height:22px;font-size:11px}
+  .plan-brecha-texto{font-size:13px;line-height:1.5}
+  .plan-brecha-meta-value{font-size:12.5px}
+  .plan-brecha-meta-extra{font-size:11px}
+  .plan-brecha-meta-label{font-size:9.5px}
+  .plan-brecha-explicacion{font-size:12px;padding:9px 12px}
+  .plan-brecha-estandar-tag{font-size:10.5px;padding:5px 10px}
+  .plan-brecha-fuente-item{font-size:10.5px}
+  .plan-brecha-fuentes-cat-label{font-size:9px}
+}
 
 .plan-fuentes-banner{background:#1E3A2F;color:#fff;padding:14px 16px;
   border-radius:8px;margin-bottom:18px}
@@ -6698,9 +6731,50 @@ async function renderPaso1Contexto(){
       fuentesArr = partes;
     }
 
-    const fuentesHtml = fuentesArr.length > 0
+    // Filtro defensivo: quitar PEI/PME del array de fuentes (por si el backend los dejó pasar)
+    fuentesArr = fuentesArr.filter(f => {
+      const t = String(f || '').toLowerCase().trim();
+      if (!t) return false;
+      if (/\bpei\b/.test(t)) return false;
+      if (/pme oficial/.test(t)) return false;
+      if (/reporte pme/.test(t)) return false;
+      if (/\bpme\b.*mineduc/.test(t)) return false;
+      if (/mineduc.*\bpme\b/.test(t)) return false;
+      return true;
+    });
+
+    // Categorizar cada fuente
+    const grupos = { normativo: [], academico: [], otro: [] };
+    fuentesArr.forEach(f => {
+      const t = String(f || '').toLowerCase();
+      let cat = 'otro';
+      if (/(estándar|estandar)/.test(t) || /decreto/.test(t) || /mineduc/.test(t) ||
+          /superintendencia/.test(t) || /\bcpeip\b/.test(t) || /mbe\b/.test(t) || /mbdle/.test(t)) {
+        cat = 'normativo';
+      } else if (/líderes educativos|lideres educativos/.test(t) || /\bciae\b/.test(t) ||
+                 /\buc\b/.test(t) || /universidad/.test(t) || /recomendación|recomendacion/.test(t)) {
+        cat = 'academico';
+      }
+      grupos[cat].push(f);
+    });
+
+    const catsPresentes = [['normativo','Marco normativo'],['academico','Respaldo académico'],['otro','Otras fuentes']]
+      .filter(([k]) => grupos[k].length > 0);
+    const mostrarLabels = catsPresentes.length > 1;
+
+    const fuentesHtml = catsPresentes.length > 0
       ? '<div class="plan-brecha-fuentes">' +
-          fuentesArr.map(f => '<div class="plan-brecha-fuente-item">' + escapeHtmlPlan(f) + '</div>').join('') +
+          catsPresentes.map(([k, label]) => {
+            const labelHtml = mostrarLabels
+              ? '<div class="plan-brecha-fuentes-cat-label">' + label + '</div>'
+              : '';
+            const itemsHtml = grupos[k].map(f =>
+              '<div class="plan-brecha-fuente-item">' + escapeHtmlPlan(f) + '</div>'
+            ).join('');
+            return '<div class="plan-brecha-fuentes-cat plan-brecha-fuentes-cat-' + k + '">' +
+                     labelHtml + itemsHtml +
+                   '</div>';
+          }).join('') +
         '</div>'
       : '';
 
