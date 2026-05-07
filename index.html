@@ -5883,6 +5883,15 @@ const PLAN_CSS = `
   background:var(--surface);resize:vertical;line-height:1.6;color:inherit}
 .plan-textarea:focus{outline:none;border-color:var(--accent2)}
 
+/* Caja de comentario opcional dentro de Causales */
+.plan-comentario-box{background:var(--surface2);border-radius:8px;padding:14px;margin-top:14px}
+.plan-comentario-box h4{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.plan-comentario-box .plan-otros-sub{font-size:11px;color:var(--muted);margin-bottom:10px}
+.plan-comentario-box .plan-textarea{min-height:90px;font-size:12.5px}
+.plan-comentario-box .plan-opcional{text-transform:none;letter-spacing:0;font-weight:500;
+  color:var(--muted);font-size:10.5px;font-style:italic}
+
 /* P4: Constructor */
 .plan-lineas{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
 @media(min-width:560px){.plan-lineas{grid-template-columns:repeat(2,1fr)}}
@@ -6389,7 +6398,7 @@ async function planSyncSupabase(){
     mes: s.mes,
     estado: 'BORRADOR',
     modo: s.banda,
-    paso_actual: Math.min(s.paso, 8),
+    paso_actual: Math.min(s.paso, 7),
     causas: s.causas.length ? s.causas : null,
     causas_otros: s.causasOtros.length ? s.causasOtros : null,
     comentario: s.comentario || null,
@@ -6479,7 +6488,7 @@ function renderBotonPlan(accionId, mes, seg) {
       +'<span class="plan-dot"></span>Plan</button>';
   }
   if(ma && ma.estado==='BORRADOR'){
-    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/8)">'
+    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/7)">'
       +'<span class="plan-dot"></span>Borrador</button>';
   }
   if(ma){
@@ -6604,24 +6613,23 @@ function renderPlanPaso(){
 
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
-  for(let i=1;i<=8;i++){
+  for(let i=1;i<=7;i++){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
-    if(s.paso===99 && i<=8) d.classList.add('done');
+    if(s.paso===99 && i<=7) d.classList.add('done');
     prog.appendChild(d);
   }
 
   if(s.paso===99){ renderPasoExistente(); return; }
 
   switch(s.paso){
-    case 1: renderPaso1Contexto(); break;
-    case 2: renderPaso2Diagnostico(); break;
-    case 3: renderPaso3Comentario(); break;
-    case 4: renderPaso4MarcoConceptual(); break;
-    case 5: renderPaso4Constructor(); break;
-    case 6: renderPaso5Asignacion(); break;
-    case 7: renderPaso6Acuerdos(); break;
-    case 8: renderPaso7Confirmacion(); break;
+    case 1: renderPaso4MarcoConceptual(); break;
+    case 2: renderPaso1Contexto(); break;
+    case 3: renderPaso2Diagnostico(); break;
+    case 4: renderPaso4Constructor(); break;
+    case 5: renderPaso5Asignacion(); break;
+    case 6: renderPaso6Acuerdos(); break;
+    case 7: renderPaso7Confirmacion(); break;
   }
 
   // Indicador "Guardando…/Guardado" en footer
@@ -6736,9 +6744,9 @@ async function renderPaso1Contexto(){
   `;
 
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 1 de 8</span>
+    <span class="info">Paso 2 de 7</span>
     <div style="display:flex;gap:8px">
-      <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
+      <button class="plan-btn-back" onclick="planBack()">Volver</button>
       <button class="plan-btn-next" onclick="planNext()">${banda==='CONSOLIDACION'?'Definir consolidación':'Diagnosticar'} →</button>
     </div>`;
 
@@ -6876,14 +6884,19 @@ function renderPaso2Diagnostico(){
         <button onclick="planAgregarOtro()">+ Agregar</button>
       </div>
     </div>
+    <div class="plan-comentario-box">
+      <h4>¿Algo más que quieras agregar? <span class="plan-opcional">— opcional</span></h4>
+      <div class="plan-otros-sub">Cualquier contexto del colegio, equipo o coyuntura que el sistema deba tener en cuenta al generar el plan.</div>
+      <textarea class="plan-textarea" id="planComentario" placeholder="Ej: este mes tuvimos paro de funcionarios; o, la UTP está cubriendo licencia médica del coordinador SEP..." oninput="PLAN_STATE.comentario=this.value;planMarcarCambio()">${escapeHtmlPlan(s.comentario||'')}</textarea>
+    </div>
   `;
 
   const cnt = s.causas.length;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">${cnt} de 3 causas ranqueadas${s.causasOtros.length?' · '+s.causasOtros.length+' propias':''}</span>
+    <span class="info">Paso 3 de 7 · ${cnt} de 3 causas ranqueadas${s.causasOtros.length?' · '+s.causasOtros.length+' propias':''}</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planNext()" ${cnt===0&&s.causasOtros.length===0?'disabled':''}>Continuar →</button>
+      <button class="plan-btn-next" onclick="planGenerarPropuestas()" ${cnt===0&&s.causasOtros.length===0?'disabled':''}>Generar plan personalizado →</button>
     </div>`;
 }
 
@@ -6984,7 +6997,7 @@ async function planGenerarPropuestas(){
 
   // Si ya hay propuestas (borrador retomado), saltar generación
   if(s.propuestas && s.propuestas.length){
-    s.paso = 5;
+    s.paso = 4;
     planMarcarCambio();
     renderPlanPaso();
     return;
@@ -7052,7 +7065,7 @@ async function planGenerarPropuestas(){
     showToast('No se pudo generar plan personalizado. Usando plantilla local.');
   }
 
-  s.paso = 5;
+  s.paso = 4;
   planMarcarCambio();
   await planSyncSupabase();
   renderPlanPaso();
@@ -7075,15 +7088,25 @@ function generarPropuestasFallback(s){
   }));
 }
 
-/* ====================== PASO 4: MARCO CONCEPTUAL ====================== */
+/* ====================== PASO 1: MARCO CONCEPTUAL ====================== */
 async function renderPaso4MarcoConceptual(){
   const s = PLAN_STATE;
   const accionNombre = s.accion?.nombre || '';
+  const obj = DB.objetivos.find(o=>o.id===s.accion?.objetivo_id);
+  const area = obj ? DB.areas.find(a=>a.id===obj.area_id) : null;
+  const colegioNombre = DB.colegio?.nombre || '';
+  const areaLabel = (area?.nombre || '') + (colegioNombre ? ' · ' + colegioNombre : '');
 
   // Render con loading mientras carga la ficha
   document.getElementById('planBody').innerHTML = `
+    <div class="aviso-disclaimer">Antes de mirar datos, leé el marco que sustenta el plan. Cuatro bullets por fuente — 60 segundos en total.</div>
+    <div class="plan-accion-evaluada">
+      <div class="plan-accion-evaluada-label">ACCIÓN PME · PASO 1 DE 7</div>
+      <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(accionNombre)}</div>
+      ${areaLabel ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
+    </div>
     <h3>Marco conceptual</h3>
-    <p class="marco-intro">El plan que vas a ver no es un listado al azar. Se construye a partir de <strong>cuatro fuentes</strong> que conversan entre sí: dos marcos normativos chilenos y dos centros de investigación. Léelas antes de decidir.</p>
+    <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>cuatro fuentes</strong> que conversan entre sí: dos marcos normativos chilenos (Mineduc) y dos centros de investigación (uno chileno, uno internacional). Léelas antes de avanzar.</p>
     <div id="planMarcoContenedor">
       <div class="plan-loading-inline">
         <div class="plan-loading-spin-sm"></div>
@@ -7092,10 +7115,10 @@ async function renderPaso4MarcoConceptual(){
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 4 de 8</span>
+    <span class="info">Paso 1 de 7</span>
     <div style="display:flex;gap:8px">
-      <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planGenerarPropuestas()">Generar plan personalizado →</button>
+      <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
+      <button class="plan-btn-next" onclick="planNext()">Ver mi estado actual →</button>
     </div>`;
 
   const ficha = await planCargarFichaContenido(accionNombre);
@@ -7104,7 +7127,7 @@ async function renderPaso4MarcoConceptual(){
 
   const mc = ficha?.marco_conceptual;
   if(!mc || (!mc.mbd && !mc.mbe && !mc.uc && !mc.harvard)){
-    cont.innerHTML = `<div class="marco-fallback">El marco conceptual para esta acción aún no está cargado en la base de conocimiento. Puedes continuar al plan personalizado de todas formas.</div>`;
+    cont.innerHTML = `<div class="marco-fallback">El marco conceptual para esta acción aún no está cargado en la base de conocimiento. Puedes continuar al estado actual de todas formas.</div>`;
     return;
   }
 
@@ -7141,7 +7164,7 @@ async function renderPaso4MarcoConceptual(){
     </div>
     <div class="marco-transicion">
       <div class="marco-transicion-label">Lo que viene</div>
-      <div class="marco-transicion-texto">Tu plan personalizado <em>aplica estos cuatro marcos</em> a tu realidad concreta: las causas que marcaste, tu nivel actual y la trayectoria de mejora más probable.</div>
+      <div class="marco-transicion-texto">Con este marco en mente, ahora vas a ver el <em>estado actual de tu acción</em> y las <em>3 brechas críticas</em> que tu equipo debe cerrar para avanzar.</div>
     </div>
   `;
 }
@@ -7397,7 +7420,7 @@ function renderPaso6Acuerdos(){
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 7 de 8</span>
+    <span class="info">Paso 6 de 7</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
       <button class="plan-btn-next" onclick="planConfirmar()">Confirmar plan →</button>
@@ -7424,7 +7447,7 @@ async function planConfirmar(){
 
     const updatePayload = {
       estado: 'ACTIVA',
-      paso_actual: 8,
+      paso_actual: 7,
       fecha_objetivo: fechaObj.toISOString().split('T')[0],
       titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes),
       acuerdo_que: s.acuerdos.qhe,
