@@ -6722,70 +6722,14 @@ async function renderPaso1Contexto(){
       '</div>'
     : '';
 
-  const brechasHtml = (brechasResp.brechas || []).map((b, i) => {
-    let fuentesArr = [];
-    if (Array.isArray(b.fuentes)) {
-      fuentesArr = b.fuentes.filter(Boolean);
-    } else if (b.fuente) {
-      const partes = String(b.fuente).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
-      fuentesArr = partes;
-    }
-
-    // Filtro defensivo: quitar PEI/PME del array de fuentes (por si el backend los dejó pasar)
-    fuentesArr = fuentesArr.filter(f => {
-      const t = String(f || '').toLowerCase().trim();
-      if (!t) return false;
-      if (/\bpei\b/.test(t)) return false;
-      if (/pme oficial/.test(t)) return false;
-      if (/reporte pme/.test(t)) return false;
-      if (/\bpme\b.*mineduc/.test(t)) return false;
-      if (/mineduc.*\bpme\b/.test(t)) return false;
-      return true;
-    });
-
-    // Categorizar cada fuente
-    const grupos = { normativo: [], academico: [], otro: [] };
-    fuentesArr.forEach(f => {
-      const t = String(f || '').toLowerCase();
-      let cat = 'otro';
-      if (/(estándar|estandar)/.test(t) || /decreto/.test(t) || /mineduc/.test(t) ||
-          /superintendencia/.test(t) || /\bcpeip\b/.test(t) || /mbe\b/.test(t) || /mbdle/.test(t)) {
-        cat = 'normativo';
-      } else if (/líderes educativos|lideres educativos/.test(t) || /\bciae\b/.test(t) ||
-                 /\buc\b/.test(t) || /universidad/.test(t) || /recomendación|recomendacion/.test(t)) {
-        cat = 'academico';
-      }
-      grupos[cat].push(f);
-    });
-
-    const catsPresentes = [['normativo','Marco normativo'],['academico','Respaldo académico'],['otro','Otras fuentes']]
-      .filter(([k]) => grupos[k].length > 0);
-    const mostrarLabels = catsPresentes.length > 1;
-
-    const fuentesHtml = catsPresentes.length > 0
-      ? '<div class="plan-brecha-fuentes">' +
-          catsPresentes.map(([k, label]) => {
-            const labelHtml = mostrarLabels
-              ? '<div class="plan-brecha-fuentes-cat-label">' + label + '</div>'
-              : '';
-            const itemsHtml = grupos[k].map(f =>
-              '<div class="plan-brecha-fuente-item">' + escapeHtmlPlan(f) + '</div>'
-            ).join('');
-            return '<div class="plan-brecha-fuentes-cat plan-brecha-fuentes-cat-' + k + '">' +
-                     labelHtml + itemsHtml +
-                   '</div>';
-          }).join('') +
-        '</div>'
-      : '';
-
-    return '<div class="plan-brecha-item">' +
+  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
+    '<div class="plan-brecha-item">' +
       '<div class="plan-brecha-num">' + (i + 1) + '</div>' +
       '<div class="plan-brecha-cuerpo">' +
         '<div class="plan-brecha-texto">' + escapeHtmlPlan(b.texto || '') + '</div>' +
-        fuentesHtml +
       '</div>' +
-    '</div>';
-  }).join('');
+    '</div>'
+  ).join('');
 
   const fuentes = brechasResp.fuentes_consultadas || [];
   const fuentesHtml = fuentes.length > 0
