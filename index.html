@@ -7006,12 +7006,71 @@ async function planGenerarPropuestas(){
   document.getElementById('planBody').innerHTML = `
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
-      <p>Analizando contexto institucional y generando plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Cruzando PEI · Reporte PME · Estándar EID · Diagnóstico</p>
+      <p>Construyendo plan personalizado…</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
-  let llmExitoso = false;
+  // 1. INTENTAR CONSTRUIR DESDE FICHA CURADA (sin LLM)
+  try {
+    const ficha = await planCargarFichaContenido(s.accion?.nombre || '');
+
+    if(ficha && ficha.causales?.length && s.causas.length > 0){
+      const propuestas = s.causas.map((causa, i) => {
+        const causal = ficha.causales.find(c =>
+          c.nombre?.toLowerCase().trim() === causa.etiqueta?.toLowerCase().trim()
+        );
+        if(!causal) return null;
+        return {
+          id: 'linea_' + (i+1),
+          titulo: causal.nombre,
+          foco: 'FOCO EN ' + causal.nombre.toUpperCase(),
+          descripcion_corta: causal.descripcion || causal.nombre,
+          causa_atacada: causal.nombre,
+          pasos: [
+            {id:(i+1)+'.1', descripcion: causal.rec_a, responsable_sugerido:'Equipo directivo', plazo_dias:7, esfuerzo:'BAJO'},
+            {id:(i+1)+'.2', descripcion: causal.rec_b, responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
+            {id:(i+1)+'.3', descripcion: causal.rec_c, responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
+          ]
+        };
+      }).filter(Boolean);
+
+      // Agregar línea NÚCLEO desde el nivel actual
+      if(propuestas.length && ficha.niveles?.length){
+        const pct = s.pct || 0;
+        const nIdx = pct <= 25 ? 0 : pct <= 50 ? 1 : pct <= 75 ? 2 : pct <= 90 ? 3 : 4;
+        const nivel = ficha.niveles[nIdx];
+        if(nivel?.gestion?.length){
+          propuestas.push({
+            id: 'linea_nucleo',
+            titulo: nivel.subtitulo || nivel.etiqueta,
+            foco: 'NÚCLEO · NIVEL ' + (nivel.etiqueta || '').toUpperCase(),
+            descripcion_corta: 'Acciones concretas para tu nivel de madurez actual.',
+            causa_atacada: 'nivel',
+            pasos: nivel.gestion.slice(0,3).map((g, gi) => ({
+              id: 'nucleo.' + (gi+1),
+              descripcion: g,
+              responsable_sugerido: gi===0 ? 'UTP' : gi===1 ? 'Director' : 'Equipo',
+              plazo_dias: (gi+1) * 14,
+              esfuerzo: gi===0 ? 'BAJO' : 'MEDIO'
+            }))
+          });
+        }
+      }
+
+      if(propuestas.length){
+        s.propuestas = propuestas;
+        s.fuentesGlobales = [];
+        s.paso = 4;
+        planMarcarCambio();
+        await planSyncSupabase();
+        renderPlanPaso();
+        return;
+      }
+    }
+  } catch(e){ console.warn('Ficha curada falló:', e.message); }
+
+  // 2. FALLBACK: Edge Function (LLM genérico)
   try {
     const payload = {
       colegio_id: DB.colegio.id,
@@ -7040,7 +7099,6 @@ async function planGenerarPropuestas(){
       throw new Error('Respuesta inválida del servicio');
     }
 
-    // Adaptar formato del LLM al formato interno del módulo
     s.propuestas = data.lineas_de_accion.map((linea, i) => ({
       id: linea.id || ('linea_' + (i+1)),
       titulo: linea.titulo || ('Línea ' + (i+1)),
@@ -7056,9 +7114,7 @@ async function planGenerarPropuestas(){
         fuente: p.fuente || ''
       }))
     }));
-    // Guardar fuentes globales para mostrar banner
     s.fuentesGlobales = data.fuentes_globales || [];
-    llmExitoso = true;
   } catch(e) {
     console.warn('Edge Function plan-avanzado falló:', e.message);
     s.propuestas = generarPropuestasFallback(s);
@@ -7614,11 +7670,11 @@ async function planCerrarMicroaccion(){
 /* ====================== NAVEGACIÓN ====================== */
 async function planNext(){
   const s = PLAN_STATE;
-  if(s.paso===2 && s.banda!=='CONSOLIDACION' && s.causas.length===0 && s.causasOtros.length===0){
+  if(s.paso===3 && s.banda!=='CONSOLIDACION' && s.causas.length===0 && s.causasOtros.length===0){
     showToast('Selecciona al menos una causa o agrega un Otro');
     return;
   }
-  if(s.paso===2 && s.banda==='CONSOLIDACION' && s.consolidacionModos.length===0){
+  if(s.paso===3 && s.banda==='CONSOLIDACION' && s.consolidacionModos.length===0){
     showToast('Selecciona al menos un modo');
     return;
   }
