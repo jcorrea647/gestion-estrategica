@@ -6101,6 +6101,67 @@ const PLAN_CSS = `
 .plan-paso-fuente{font-size:10.5px;color:var(--muted);margin-top:5px;
   font-style:italic;letter-spacing:.2px;font-weight:500}
 .plan-paso.selected .plan-paso-fuente{color:#5E5848}
+
+/* === MARCO CONCEPTUAL (paso 4) === */
+.marco-intro{font-size:13px; color:var(--muted); line-height:1.55; margin-bottom:18px}
+.marco-intro strong{color:var(--accent); font-weight:700}
+.marco-grid{display:flex; flex-direction:column; gap:14px}
+.marco-card{
+  border-radius:12px; padding:18px 20px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+}
+.marco-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px}
+.marco-tag{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:11px;
+  font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase}
+.marco-origen{font-size:9.5px; font-weight:600; color:var(--muted);
+  letter-spacing:.5px; text-transform:uppercase; text-align:right; flex-shrink:0}
+.marco-subtitulo{font-size:11.5px; color:var(--muted); font-style:italic; margin-bottom:8px}
+.marco-titulo{font-family:'DM Serif Display','Georgia',serif; font-size:19px;
+  color:var(--accent); line-height:1.25; margin-bottom:14px; font-weight:400}
+.marco-bullets{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px}
+.marco-bullet{display:flex; gap:10px; align-items:flex-start; font-size:13.5px; line-height:1.55; color:#2A2622}
+.marco-bullet-icon{flex-shrink:0; width:18px; height:18px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700; color:#fff; margin-top:2px}
+.marco-bullet strong{font-weight:700; color:#1A1916}
+.marco-mbd{background:#E8F0EA; border:3px solid var(--accent)}
+.marco-mbd .marco-tag{background:var(--accent); color:#fff}
+.marco-mbd .marco-bullet-icon{background:var(--accent)}
+.marco-mbd .marco-titulo{color:var(--accent)}
+.marco-mbe{background:#E1ECDF; border:3px solid var(--accent2)}
+.marco-mbe .marco-tag{background:var(--accent2); color:#fff}
+.marco-mbe .marco-bullet-icon{background:var(--accent2)}
+.marco-mbe .marco-titulo{color:var(--accent2)}
+.marco-uc{background:#FAEFD7; border:3px solid var(--gold)}
+.marco-uc .marco-tag{background:var(--gold); color:#fff}
+.marco-uc .marco-bullet-icon{background:var(--gold)}
+.marco-uc .marco-titulo{color:#7A5A18}
+.marco-harvard{background:#EDE4D8; border:3px solid #7A5A18}
+.marco-harvard .marco-tag{background:#7A5A18; color:#fff}
+.marco-harvard .marco-bullet-icon{background:#7A5A18}
+.marco-harvard .marco-titulo{color:#5C4416}
+.marco-transicion{
+  background:var(--accent); color:#fff;
+  border-radius:12px; padding:18px 20px; margin-top:18px; text-align:center;
+  box-shadow:0 4px 16px rgba(30,58,47,.18);
+}
+.marco-transicion-label{font-size:10px; font-weight:700; letter-spacing:1.2px;
+  text-transform:uppercase; color:var(--gold); margin-bottom:8px}
+.marco-transicion-texto{font-family:'DM Serif Display','Georgia',serif; font-size:16px;
+  line-height:1.45; color:#fff; font-weight:400}
+.marco-transicion-texto em{color:var(--gold); font-style:normal; font-weight:700}
+.marco-fallback{
+  padding:18px; background:var(--surface2); border:1px dashed var(--border);
+  border-radius:8px; color:var(--muted); font-size:13px; text-align:center;
+}
+@media (max-width:560px){
+  .marco-card{padding:16px}
+  .marco-head{flex-direction:column; gap:6px}
+  .marco-origen{text-align:left}
+  .marco-titulo{font-size:17px}
+  .marco-bullet{font-size:13px}
+  .marco-transicion-texto{font-size:14px}
+}
 `;
 
 // Inyectar CSS al cargar
@@ -6174,6 +6235,28 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     return null;
   } finally {
     PLAN_BRECHAS_LOADING = false;
+  }
+}
+
+// Cache de contenido de ficha por nombre de acción (marco conceptual + niveles + causales + sustento)
+let PLAN_FICHA_CACHE = {};
+async function planCargarFichaContenido(accionNombre){
+  if(!accionNombre) return null;
+  if(PLAN_FICHA_CACHE[accionNombre] !== undefined) return PLAN_FICHA_CACHE[accionNombre];
+  try{
+    const {data, error} = await sb
+      .from('acciones_ficha_contenido')
+      .select('marco_conceptual, niveles, causales, sustento, brechas_anclas, meta')
+      .eq('accion_nombre', accionNombre)
+      .eq('activa', true)
+      .maybeSingle();
+    if(error){ console.warn('planCargarFichaContenido error:', error.message); PLAN_FICHA_CACHE[accionNombre]=null; return null; }
+    PLAN_FICHA_CACHE[accionNombre] = data || null;
+    return PLAN_FICHA_CACHE[accionNombre];
+  }catch(e){
+    console.warn('planCargarFichaContenido exception:', e.message);
+    PLAN_FICHA_CACHE[accionNombre] = null;
+    return null;
   }
 }
 
@@ -6306,7 +6389,7 @@ async function planSyncSupabase(){
     mes: s.mes,
     estado: 'BORRADOR',
     modo: s.banda,
-    paso_actual: Math.min(s.paso, 7),
+    paso_actual: Math.min(s.paso, 8),
     causas: s.causas.length ? s.causas : null,
     causas_otros: s.causasOtros.length ? s.causasOtros : null,
     comentario: s.comentario || null,
@@ -6396,7 +6479,7 @@ function renderBotonPlan(accionId, mes, seg) {
       +'<span class="plan-dot"></span>Plan</button>';
   }
   if(ma && ma.estado==='BORRADOR'){
-    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/7)">'
+    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/8)">'
       +'<span class="plan-dot"></span>Borrador</button>';
   }
   if(ma){
@@ -6521,10 +6604,10 @@ function renderPlanPaso(){
 
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
-  for(let i=1;i<=7;i++){
+  for(let i=1;i<=8;i++){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
-    if(s.paso===99 && i<=7) d.classList.add('done');
+    if(s.paso===99 && i<=8) d.classList.add('done');
     prog.appendChild(d);
   }
 
@@ -6534,10 +6617,11 @@ function renderPlanPaso(){
     case 1: renderPaso1Contexto(); break;
     case 2: renderPaso2Diagnostico(); break;
     case 3: renderPaso3Comentario(); break;
-    case 4: renderPaso4Constructor(); break;
-    case 5: renderPaso5Asignacion(); break;
-    case 6: renderPaso6Acuerdos(); break;
-    case 7: renderPaso7Confirmacion(); break;
+    case 4: renderPaso4MarcoConceptual(); break;
+    case 5: renderPaso4Constructor(); break;
+    case 6: renderPaso5Asignacion(); break;
+    case 7: renderPaso6Acuerdos(); break;
+    case 8: renderPaso7Confirmacion(); break;
   }
 
   // Indicador "Guardando…/Guardado" en footer
@@ -6652,7 +6736,7 @@ async function renderPaso1Contexto(){
   `;
 
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 1 de 7</span>
+    <span class="info">Paso 1 de 8</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
       <button class="plan-btn-next" onclick="planNext()">${banda==='CONSOLIDACION'?'Definir consolidación':'Diagnosticar'} →</button>
@@ -6876,11 +6960,21 @@ function renderPaso3Comentario(){
     <textarea class="plan-textarea" id="planComentario" placeholder="${escapeHtmlPlan(ph)}" oninput="PLAN_STATE.comentario=this.value;planMarcarCambio()">${escapeHtmlPlan(s.comentario||'')}</textarea>
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 3 de 7 — opcional</span>
+    <span class="info">Paso 3 de 8 — opcional</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planGenerarPropuestas()">Generar plan →</button>
+      <button class="plan-btn-next" onclick="planAvanzarAMarco()">Continuar →</button>
     </div>`;
+}
+
+async function planAvanzarAMarco(){
+  const s = PLAN_STATE;
+  const ta = document.getElementById('planComentario');
+  if(ta) s.comentario = ta.value.trim();
+  s.paso = 4;
+  planMarcarCambio();
+  await planSyncSupabase();
+  renderPlanPaso();
 }
 
 async function planGenerarPropuestas(){
@@ -6890,7 +6984,7 @@ async function planGenerarPropuestas(){
 
   // Si ya hay propuestas (borrador retomado), saltar generación
   if(s.propuestas && s.propuestas.length){
-    s.paso = 4;
+    s.paso = 5;
     planMarcarCambio();
     renderPlanPaso();
     return;
@@ -6958,7 +7052,7 @@ async function planGenerarPropuestas(){
     showToast('No se pudo generar plan personalizado. Usando plantilla local.');
   }
 
-  s.paso = 4;
+  s.paso = 5;
   planMarcarCambio();
   await planSyncSupabase();
   renderPlanPaso();
@@ -6979,6 +7073,77 @@ function generarPropuestasFallback(s){
       {id:(i+1)+'.3', descripcion:'Implementar ajuste piloto y evaluar resultado', responsable_sugerido:'UTP', plazo_dias:21, esfuerzo:'MEDIO'}
     ]
   }));
+}
+
+/* ====================== PASO 4: MARCO CONCEPTUAL ====================== */
+async function renderPaso4MarcoConceptual(){
+  const s = PLAN_STATE;
+  const accionNombre = s.accion?.nombre || '';
+
+  // Render con loading mientras carga la ficha
+  document.getElementById('planBody').innerHTML = `
+    <h3>Marco conceptual</h3>
+    <p class="marco-intro">El plan que vas a ver no es un listado al azar. Se construye a partir de <strong>cuatro fuentes</strong> que conversan entre sí: dos marcos normativos chilenos y dos centros de investigación. Léelas antes de decidir.</p>
+    <div id="planMarcoContenedor">
+      <div class="plan-loading-inline">
+        <div class="plan-loading-spin-sm"></div>
+        <span>Cargando marco pedagógico…</span>
+      </div>
+    </div>
+  `;
+  document.getElementById('planFooter').innerHTML = `
+    <span class="info">Paso 4 de 8</span>
+    <div style="display:flex;gap:8px">
+      <button class="plan-btn-back" onclick="planBack()">Volver</button>
+      <button class="plan-btn-next" onclick="planGenerarPropuestas()">Generar plan personalizado →</button>
+    </div>`;
+
+  const ficha = await planCargarFichaContenido(accionNombre);
+  const cont = document.getElementById('planMarcoContenedor');
+  if(!cont) return; // drawer cerrado
+
+  const mc = ficha?.marco_conceptual;
+  if(!mc || (!mc.mbd && !mc.mbe && !mc.uc && !mc.harvard)){
+    cont.innerHTML = `<div class="marco-fallback">El marco conceptual para esta acción aún no está cargado en la base de conocimiento. Puedes continuar al plan personalizado de todas formas.</div>`;
+    return;
+  }
+
+  const renderCard = (key, cls) => {
+    const c = mc[key];
+    if(!c) return '';
+    const bullets = (c.bullets || []).map(b => `
+      <li class="marco-bullet">
+        <span class="marco-bullet-icon">→</span>
+        <span>${escapeHtmlPlan(b)}</span>
+      </li>`).join('');
+    const tagLabel = key === 'mbd' ? 'MBD'
+      : key === 'mbe' ? 'MBE'
+      : key === 'uc' ? 'CEPPE · UC'
+      : 'HARVARD · ELMORE';
+    return `
+      <div class="marco-card ${cls}">
+        <div class="marco-head">
+          <span class="marco-tag">${tagLabel}</span>
+          <span class="marco-origen">${escapeHtmlPlan(c.origen || '')}</span>
+        </div>
+        ${c.subtitulo ? `<div class="marco-subtitulo">${escapeHtmlPlan(c.subtitulo)}</div>` : ''}
+        <h3 class="marco-titulo">${escapeHtmlPlan(c.titulo || '')}</h3>
+        <ul class="marco-bullets">${bullets}</ul>
+      </div>`;
+  };
+
+  cont.innerHTML = `
+    <div class="marco-grid">
+      ${renderCard('mbd', 'marco-mbd')}
+      ${renderCard('mbe', 'marco-mbe')}
+      ${renderCard('uc', 'marco-uc')}
+      ${renderCard('harvard', 'marco-harvard')}
+    </div>
+    <div class="marco-transicion">
+      <div class="marco-transicion-label">Lo que viene</div>
+      <div class="marco-transicion-texto">Tu plan personalizado <em>aplica estos cuatro marcos</em> a tu realidad concreta: las causas que marcaste, tu nivel actual y la trayectoria de mejora más probable.</div>
+    </div>
+  `;
 }
 
 /* ====================== PASO 4: CONSTRUCTOR ====================== */
@@ -7232,7 +7397,7 @@ function renderPaso6Acuerdos(){
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 6 de 7</span>
+    <span class="info">Paso 7 de 8</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
       <button class="plan-btn-next" onclick="planConfirmar()">Confirmar plan →</button>
@@ -7259,7 +7424,7 @@ async function planConfirmar(){
 
     const updatePayload = {
       estado: 'ACTIVA',
-      paso_actual: 7,
+      paso_actual: 8,
       fecha_objetivo: fechaObj.toISOString().split('T')[0],
       titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes),
       acuerdo_que: s.acuerdos.qhe,
