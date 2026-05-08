@@ -6226,9 +6226,10 @@ let PLAN_BRECHAS_LOADING = false;
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   const cacheKey = colegioId + '_' + accionId + '_' + mes;
+  // 1a. Cache en memoria (misma sesión)
   if (PLAN_BRECHAS_CACHE[cacheKey]) return PLAN_BRECHAS_CACHE[cacheKey];
 
-  // 1. Si el estado ya tiene brechas cargadas (borrador retomado), usarlas
+  // 1b. Estado ya hidratado (borrador cargó brechasData desde DB o localStorage)
   if (PLAN_STATE && PLAN_STATE.brechasData) {
     PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
     return PLAN_STATE.brechasData;
@@ -6354,7 +6355,7 @@ function planInitState(accionId, mes, seg, borrador) {
       como: borrador.acuerdo_como || ''
     };
     PLAN_STATE.consolidacionModos = borrador.consolidacion_modos || [];
-    PLAN_STATE.brechasData = borrador.brechas_data || null;
+    PLAN_STATE.brechasData = borrador.brechas_data || borrador.brechasData || null;
   }
 
   PLAN_LAST_SAVED_HASH = planSnapshotHash();
@@ -6398,6 +6399,7 @@ function planGuardarLocal(){
       acuerdos: PLAN_STATE.acuerdos,
       consolidacionModos: PLAN_STATE.consolidacionModos,
       microaccionId: PLAN_STATE.microaccionId,
+      brechasData: PLAN_STATE.brechasData || null,
       ts: Date.now()
     };
     localStorage.setItem(key, JSON.stringify(snapshot));
