@@ -7088,6 +7088,23 @@ async function planAvanzarAMarco(){
 }
 
 // Genera cache_key a partir de accion + banda + tramo_pct + causales ordenadas
+async function planRegenerarPlan(){
+  if(!confirm('¿Regenerar el plan? Se borrarán los pasos actuales y se generará uno nuevo.')) return;
+  const s = PLAN_STATE;
+  s.propuestas = null;
+  s.pasosSeleccionados = [];
+  s.pasosFocoPropio = [];
+  s.pasosOtrosLinea = {};
+  // Limpiar cache para forzar nueva llamada a IA
+  if(typeof PLAN_BRECHAS_CACHE !== 'undefined'){
+    const ck = (s.colegioId||DB?.colegio?.id||'') + '_' + s.accionId + '_' + s.mes;
+    delete PLAN_BRECHAS_CACHE[ck];
+  }
+  planMarcarCambio();
+  await planSyncSupabase();
+  planGenerarPropuestas();
+}
+
 function planGenerarCacheKey(s){
   const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
   const causas = [...(s.causas||[])].map(c=>c.codigo).sort().join(',');
@@ -7370,7 +7387,10 @@ function renderPaso4Constructor(){
 
   document.getElementById('planBody').innerHTML = `
     ${bannerFuentes}
-    <h3>Construye tu plan</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px">
+      <h3 style="margin:0">Construye tu plan</h3>
+      <button onclick="planRegenerarPlan()" style="display:flex;align-items:center;gap:5px;background:none;border:1px solid var(--border);border-radius:6px;padding:5px 11px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit" title="Limpiar plan y regenerar con IA">↺ Regenerar</button>
+    </div>
     <p class="lead">Selecciona pasos de las líneas, agrega tus propios pasos en Otros, o crea una línea entera con Foco propio.</p>
     <div class="plan-lineas">${lineas}</div>
     <div class="plan-foco-propio">
