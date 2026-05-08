@@ -7591,17 +7591,66 @@ async function planConfirmar(){
 
 function renderPaso7Confirmacion(){
   const s = PLAN_STATE;
-  const pasos = obtenerTodosLosPasos();
+  const todosPasos = obtenerTodosLosPasos();
+
+  // Agrupar pasos por línea
+  const lineasMap = {};
+  (s.pasosSeleccionados||[]).forEach(p => {
+    const key = p.lineaId || p.lineaTitulo || 'Sin línea';
+    if(!lineasMap[key]) lineasMap[key] = { titulo: p.lineaTitulo||key, foco: p.lineaFoco||'', pasos:[] };
+    lineasMap[key].pasos.push(p);
+  });
+  // Pasos de foco propio
+  if((s.pasosFocoPropio||[]).length){
+    lineasMap['__foco__'] = { titulo:'Foco propio', foco:'FOCO PROPIO', pasos: s.pasosFocoPropio };
+  }
+  // Pasos "otros" por línea
+  Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
+    if(pasos.length){
+      const ln = (s.propuestas||[]).find(l=>l.id===lineaId);
+      const k2 = lineaId+'_otros';
+      if(!lineasMap[k2]) lineasMap[k2] = { titulo:(ln?.titulo||'Línea')+' · Pasos propios', foco:ln?.foco||'', pasos:[] };
+      pasos.forEach(p => lineasMap[k2].pasos.push(p));
+    }
+  });
+
+  const esfuerzoColor = e => e==='BAJO' ? 'var(--green)' : e==='ALTO' ? '#e53e3e' : 'var(--accent)';
+
+  const lineasHtml = Object.values(lineasMap).map(linea => {
+    const pasosHtml = linea.pasos.map((p,i) => `
+      <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${i+1}</div>
+        <div style="flex:1">
+          <div style="font-size:13px;color:var(--text)">${escapeHtmlPlan(p.descripcion||p.descripcion_sugerida||'')}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap">
+            <span>👤 ${escapeHtmlPlan(p.responsable||p.responsable_sugerido||'Sin asignar')}</span>
+            <span>📅 ${p.plazo_dias||14} días</span>
+            ${p.esfuerzo ? `<span style="color:${esfuerzoColor(p.esfuerzo)};font-weight:600">${p.esfuerzo}</span>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:10px 14px;background:var(--bg-soft,#f8f9fa)">
+          <div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px">${escapeHtmlPlan(linea.foco)}</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text)">${escapeHtmlPlan(linea.titulo)}</div>
+        </div>
+        <div style="padding:0 14px 4px">${pasosHtml}</div>
+      </div>`;
+  }).join('');
+
+  const responsable = [s.acuerdos.quien, s.acuerdos.co].filter(Boolean).join(' + ');
+
   document.getElementById('planBody').innerHTML = `
-    <div class="plan-final">
-      <div class="plan-final-icon">✓</div>
-      <h3>Plan creado</h3>
-      <p>Tu plan quedó activo en el sistema. Podrás monitorear cada paso desde la fila de esta acción.</p>
-      <div class="plan-final-summary">
-        <strong>${pasos.length} paso(s)</strong> en ejecución<br>
-        <strong>${s.acuerdos.quien}</strong>${s.acuerdos.co?' + '+s.acuerdos.co:''} se comprometió a llevarlo adelante
-      </div>
+    <div style="text-align:center;padding:16px 0 20px">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--green,#38a169);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px">✓</div>
+      <h3 style="margin:0 0 4px;font-size:18px">Plan activado</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 4px">${todosPasos.length} paso(s) · ${responsable||'Sin responsable asignado'}</p>
+      <p style="font-size:12px;color:var(--muted);margin:0">Podés monitorear cada paso desde la fila de esta acción.</p>
     </div>
+    <div style="margin-top:4px">${lineasHtml}</div>
+    ${s.acuerdos.como ? `<div style="margin-top:8px;padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;border-left:3px solid var(--accent)"><div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px">CÓMO SABREMOS QUE AVANZAMOS</div><div style="font-size:13px;color:var(--text)">${escapeHtmlPlan(s.acuerdos.como)}</div></div>` : ''}
   `;
   document.getElementById('planFooter').innerHTML = `
     <span></span>
