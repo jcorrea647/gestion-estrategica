@@ -6878,13 +6878,17 @@ async function renderPaso1Contexto(){
     return 'Análisis';
   }
   function brechaResumen(texto){
-    // Primera oración (hasta primer punto seguido de espacio y mayúscula o fin)
-    const m = texto.match(/^(.{40,140}?[.!?])(?:\s+[A-ZÁÉÍÓÚ]|$)/);
-    if(m) return m[1].trim();
-    // Fallback: primeras 100 chars cortando en palabra
-    const corte = texto.slice(0, 110);
-    const lastSpace = corte.lastIndexOf(' ');
-    return (lastSpace > 50 ? corte.slice(0, lastSpace) : corte) + '…';
+    // Extraer idea central: 8-12 palabras máximo, tipo titular
+    // Buscar frase clave: "el X debe/exige/requiere/implica Y"
+    const mAccion = texto.match(/(?:debe|exige|requiere|implica|establece que|indica que)\s+([^.]{15,80})/i);
+    if(mAccion){
+      const frase = mAccion[1].trim().replace(/^(el|la|los|las|que|un|una)\s+/i,'');
+      const palabras = frase.split(' ').slice(0,10).join(' ');
+      return palabras.endsWith(',') ? palabras.slice(0,-1)+'…' : palabras+'…';
+    }
+    // Fallback: primeras 8-9 palabras del texto
+    const palabras = texto.trim().split(/\s+/).slice(0, 9);
+    return palabras.join(' ') + '…';
   }
   function brechaEnriquecer(texto){
     // Bold: Estándares, porcentajes, instituciones, frases clave
