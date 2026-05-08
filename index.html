@@ -6878,17 +6878,41 @@ async function renderPaso1Contexto(){
     return 'Análisis';
   }
   function brechaResumen(texto){
-    // Extraer idea central: 8-12 palabras máximo, tipo titular
-    // Buscar frase clave: "el X debe/exige/requiere/implica Y"
-    const mAccion = texto.match(/(?:debe|exige|requiere|implica|establece que|indica que)\s+([^.]{15,80})/i);
-    if(mAccion){
-      const frase = mAccion[1].trim().replace(/^(el|la|los|las|que|un|una)\s+/i,'');
-      const palabras = frase.split(' ').slice(0,10).join(' ');
-      return palabras.endsWith(',') ? palabras.slice(0,-1)+'…' : palabras+'…';
-    }
-    // Fallback: primeras 8-9 palabras del texto
-    const palabras = texto.trim().split(/\s+/).slice(0, 9);
-    return palabras.join(' ') + '…';
+    // Titular estilo diario: extraer el PROBLEMA o HALLAZGO central en 6-9 palabras
+    // Patrones: "el establecimiento X", "la acción X", "el sistema X", "la brecha X"
+    // Prioridad: buscar la frase que describe el estado negativo o el gap
+    const t = texto;
+
+    // 1. Buscar: "el cumplimiento actual... refleja/muestra/indica que [frase]"
+    const mCumpl = t.match(/refleja(?:\s+que)?\s+([^.]{10,90})/i);
+    if(mCumpl) return _titularizar(mCumpl[1]);
+
+    // 2. Buscar: "limita/impide/dificulta [la capacidad/el proceso] de [hacer X]"
+    const mLimita = t.match(/(?:limita|impide|dificulta)\s+([^.]{10,80})/i);
+    if(mLimita) return _titularizar(mLimita[1]);
+
+    // 3. Buscar: "aún no [se observa/alcanza/existe]..."
+    const mAun = t.match(/aún\s+no\s+([^.]{10,70})/i);
+    if(mAun) return _titularizar('Aún no ' + mAun[1]);
+
+    // 4. Buscar: "este [proceso/sistema/ciclo] debe [verbo]..."
+    const mDebe = t.match(/(?:debe|exige|requiere)\s+([^.]{10,70})/i);
+    if(mDebe) return _titularizar(mDebe[1]);
+
+    // 5. Fallback: segunda oración del texto (suele ser más concisa)
+    const oraciones = t.split(/\.\s+/);
+    const src = oraciones.length > 1 ? oraciones[1] : oraciones[0];
+    return _titularizar(src);
+  }
+  function _titularizar(frase){
+    // Limpiar artículos iniciales, cortar en 7 palabras, capitalizar
+    const limpia = frase.trim()
+      .replace(/^(que\s+|el\s+|la\s+|los\s+|las\s+|un\s+|una\s+|este\s+|esta\s+|su\s+)/i, '')
+      .replace(/,$/, '');
+    const palabras = limpia.split(/\s+/).slice(0, 8);
+    const titulo = palabras.join(' ');
+    // Capitalizar primera letra
+    return titulo.charAt(0).toUpperCase() + titulo.slice(1) + (palabras.length >= 8 ? '…' : '');
   }
   function brechaEnriquecer(texto){
     // Bold: Estándares, porcentajes, instituciones, frases clave
