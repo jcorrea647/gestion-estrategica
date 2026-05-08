@@ -6006,17 +6006,29 @@ const PLAN_CSS = `
   padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;
   letter-spacing:.3px;margin-bottom:14px;line-height:1.4}
 
-.plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:14px}
+.plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:12px}
 
-.plan-brecha-item{display:flex;gap:14px;padding:14px;background:#FAF7F2;
-  border-left:3px solid var(--gold);border-radius:0 6px 6px 0}
-.plan-brecha-num{flex-shrink:0;width:24px;height:24px;background:var(--gold);
+.plan-brecha-item{display:grid;grid-template-columns:148px 1fr;gap:0;
+  border-radius:10px;overflow:hidden;border:1px solid #C8DDD0;
+  box-shadow:0 1px 5px rgba(0,0,0,.07)}
+.plan-brecha-num{display:none}
+.plan-brecha-resumen-col{background:#1E3A2F;padding:14px 13px;display:flex;
+  flex-direction:column;gap:5px}
+.plan-brecha-badge{display:inline-block;background:rgba(255,255,255,.13);
+  color:#A8D5B5;font-size:9px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;padding:2px 7px;border-radius:3px;
+  width:fit-content;margin-bottom:2px}
+.plan-brecha-resumen{font-size:11px;font-weight:600;color:#E8F4EC;line-height:1.45}
+.plan-brecha-cuerpo{background:#FAFCFA;padding:13px 16px}
+.plan-brecha-header{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.plan-brecha-num-badge{flex-shrink:0;width:22px;height:22px;background:var(--gold);
   color:#fff;border-radius:50%;display:flex;align-items:center;
-  justify-content:center;font-size:12px;font-weight:700}
-.plan-brecha-cuerpo{flex:1}
-.plan-brecha-texto{font-size:13.5px;line-height:1.55;color:#2A2622}
-.plan-brecha-fuente{font-size:11px;color:var(--muted);margin-top:6px;
-  font-style:italic}
+  justify-content:center;font-size:11px;font-weight:700}
+.plan-brecha-fuente-tag{font-size:10px;font-weight:700;color:#2C7A4B;
+  text-transform:uppercase;letter-spacing:.05em}
+.plan-brecha-texto{font-size:12px;line-height:1.6;color:#2A2622}
+.plan-brecha-texto strong{color:#1E3A2F;font-weight:700}
+.plan-brecha-fuente{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
 
 .plan-brecha-fuentes-detalle{margin-top:14px;font-size:11px;color:var(--muted)}
 .plan-brecha-fuentes-detalle summary{cursor:pointer;padding:6px 0;
@@ -6847,14 +6859,62 @@ async function renderPaso1Contexto(){
       '</div>'
     : '';
 
-  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
-    '<div class="plan-brecha-item">' +
-      '<div class="plan-brecha-num">' + (i + 1) + '</div>' +
-      '<div class="plan-brecha-cuerpo">' +
-        '<div class="plan-brecha-texto">' + escapeHtmlPlan(b.texto || '') + '</div>' +
+  // Fuentes conocidas para el badge
+  const FUENTE_LABELS = {
+    'eid':'Estándar EID', 'estandar':'Estándar EID', 'decree':'Decreto',
+    'decreto':'Decreto', 'ciae':'CIAE · U. de Chile', 'ceppe':'CEPPE · UC',
+    'harvard':'Harvard', 'mineduc':'Mineduc', 'mbd':'MBD', 'mbe':'MBE',
+    'pei':'PEI', 'simce':'SIMCE', 'pie':'Decreto 170 / PIE',
+  };
+  function brechaDetectarBadge(texto){
+    const t = texto.toLowerCase();
+    if(t.includes('estándar') && (t.includes('eid') || /\d\.\d/.test(t))) return 'Estándar EID';
+    if(t.includes('ciae')) return 'CIAE · U. Chile';
+    if(t.includes('ceppe')) return 'CEPPE · UC';
+    if(t.includes('harvard')) return 'Harvard GSE';
+    if(t.includes('mineduc') || t.includes('mineduc')) return 'Mineduc';
+    if(t.includes('decreto 67') || t.includes('decreto 170')) return 'Decreto';
+    if(t.includes('pei') || t.includes('sello')) return 'PEI';
+    return 'Análisis';
+  }
+  function brechaResumen(texto){
+    // Primera oración (hasta primer punto seguido de espacio y mayúscula o fin)
+    const m = texto.match(/^(.{40,140}?[.!?])(?:\s+[A-ZÁÉÍÓÚ]|$)/);
+    if(m) return m[1].trim();
+    // Fallback: primeras 100 chars cortando en palabra
+    const corte = texto.slice(0, 110);
+    const lastSpace = corte.lastIndexOf(' ');
+    return (lastSpace > 50 ? corte.slice(0, lastSpace) : corte) + '…';
+  }
+  function brechaEnriquecer(texto){
+    // Bold: Estándares, porcentajes, instituciones, frases clave
+    return escapeHtmlPlan(texto)
+      .replace(/(Estándar \d+\.\d+ EID)/g, '<strong>$1</strong>')
+      .replace(/(\d+%)/g, '<strong>$1</strong>')
+      .replace(/(LICEO CARMELA CARVAJAL|Carmela Carvajal)/g, '<strong>$1</strong>')
+      .replace(/(banda CRÍTI[A-Z]+|banda Críti[a-z]+|CRÍTICO|Crítico)/g, '<strong style="color:#B85042">$1</strong>')
+      .replace(/(ciclo completo|ciclo de uso efectivo|brecha específica|decisiones pedagógicas)/gi, '<strong>$1</strong>');
+  }
+
+  const brechasHtml = (brechasResp.brechas || []).map((b, i) => {
+    const texto = b.texto || '';
+    const badge = brechaDetectarBadge(texto);
+    const resumen = brechaResumen(texto);
+    const textoRich = brechaEnriquecer(texto);
+    return '<div class="plan-brecha-item">' +
+      '<div class="plan-brecha-resumen-col">' +
+        '<span class="plan-brecha-badge">' + badge + '</span>' +
+        '<div class="plan-brecha-resumen">' + escapeHtmlPlan(resumen) + '</div>' +
       '</div>' +
-    '</div>'
-  ).join('');
+      '<div class="plan-brecha-cuerpo">' +
+        '<div class="plan-brecha-header">' +
+          '<div class="plan-brecha-num-badge">' + (i + 1) + '</div>' +
+          '<span class="plan-brecha-fuente-tag">' + badge + '</span>' +
+        '</div>' +
+        '<div class="plan-brecha-texto">' + textoRich + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 
   const fuentes = brechasResp.fuentes_consultadas || [];
   const fuentesHtml = fuentes.length > 0
