@@ -5810,7 +5810,9 @@ const PLAN_CSS = `
 
 .plan-progress{display:flex;gap:3px;padding:10px 20px 0;background:var(--surface2);
   border-bottom:1px solid var(--border);flex-shrink:0}
-.plan-progress-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:8px;cursor:default}
+.plan-progress-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:8px;cursor:pointer;transition:opacity .15s}
+.plan-progress-step:hover .plan-progress-label{opacity:.75}
+.plan-progress-step.future{cursor:default;pointer-events:none;opacity:.5}
 .plan-progress-bar{width:100%;height:3px;border-radius:2px;background:var(--border);transition:background .25s}
 .plan-progress-step.done .plan-progress-bar{background:#7ED4A0}
 .plan-progress-step.current .plan-progress-bar{background:var(--accent2)}
@@ -6662,6 +6664,9 @@ function renderPlanPaso(){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
     if(s.paso===99 && i<=7) d.classList.add('done');
+    const isFuture = s.paso !== 99 && i > s.paso;
+    if(isFuture) d.classList.add('future');
+    if(!isFuture) d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
     d.innerHTML=`<div class="plan-progress-bar"></div><span class="plan-progress-label">${PASO_LABELS[i]}</span>`;
     prog.appendChild(d);
   }
@@ -7823,6 +7828,22 @@ async function planNext(){
   planSyncSupabase();
   renderPlanPaso();
 }
+async function planIrAPaso(paso){
+  const s = PLAN_STATE;
+  if(paso === s.paso) return;
+  // Solo permite ir a pasos ya visitados (≤ paso actual) o al siguiente
+  if(paso > s.paso + 1) return;
+  // Validación: no saltar de paso 3 sin causas si van hacia adelante
+  if(s.paso === 3 && paso > 3 && s.causas.length === 0 && s.causasOtros.length === 0){
+    showToast('Selecciona al menos una causa antes de continuar');
+    return;
+  }
+  s.paso = paso;
+  if(PLAN_AUTOSAVE_TIMER){ clearTimeout(PLAN_AUTOSAVE_TIMER); PLAN_AUTOSAVE_TIMER=null; }
+  planSyncSupabase();
+  renderPlanPaso();
+}
+
 async function planBack(){
   if(PLAN_STATE.paso>1){
     PLAN_STATE.paso--;
