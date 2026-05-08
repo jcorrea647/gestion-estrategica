@@ -6219,6 +6219,31 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   const cacheKey = colegioId + '_' + accionId + '_' + mes;
   if (PLAN_BRECHAS_CACHE[cacheKey]) return PLAN_BRECHAS_CACHE[cacheKey];
 
+  // 1. Si el estado ya tiene brechas cargadas (borrador retomado), usarlas
+  if (PLAN_STATE && PLAN_STATE.brechasData) {
+    PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
+    return PLAN_STATE.brechasData;
+  }
+
+  // 2. Buscar brechas guardadas en Supabase (borrador previo)
+  try {
+    const { data: ma } = await sb.from('microacciones')
+      .select('brechas_data')
+      .eq('colegio_id', colegioId)
+      .eq('accion_id', accionId)
+      .eq('mes', mes)
+      .not('brechas_data', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (ma && ma.brechas_data) {
+      PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
+      if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
+      return ma.brechas_data;
+    }
+  } catch(e) { console.warn('planCargarBrechas lookup:', e.message); }
+
+  // 3. Generar con IA por primera vez y persistir
   PLAN_BRECHAS_LOADING = true;
   try {
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
@@ -6238,6 +6263,11 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     PLAN_BRECHAS_CACHE[cacheKey] = data;
+    // Guardar en estado para que planSyncSupabase lo persista
+    if (PLAN_STATE) {
+      PLAN_STATE.brechasData = data;
+      planSyncSupabase();
+    }
     return data;
   } catch(e) {
     console.warn('planCargarBrechas error:', e.message);
@@ -6284,6 +6314,7 @@ function planInitState(accionId, mes, seg, borrador) {
     causasOtros: [],
     comentario: seg?.comentario || '',
     propuestas: null,
+    brechasData: null,
     pasosSeleccionados: [],
     pasosFocoPropio: [],
     pasosOtrosLinea: {},
@@ -6314,6 +6345,7 @@ function planInitState(accionId, mes, seg, borrador) {
       como: borrador.acuerdo_como || ''
     };
     PLAN_STATE.consolidacionModos = borrador.consolidacion_modos || [];
+    PLAN_STATE.brechasData = borrador.brechas_data || null;
   }
 
   PLAN_LAST_SAVED_HASH = planSnapshotHash();
@@ -6403,6 +6435,7 @@ async function planSyncSupabase(){
     causas_otros: s.causasOtros.length ? s.causasOtros : null,
     comentario: s.comentario || null,
     propuestas_llm: s.propuestas || null,
+    brechas_data: s.brechasData || null,
     pasos_seleccionados: s.pasosSeleccionados.length ? s.pasosSeleccionados : null,
     pasos_otros_linea: Object.keys(s.pasosOtrosLinea).length ? s.pasosOtrosLinea : null,
     pasos_foco_propio: s.pasosFocoPropio.length ? s.pasosFocoPropio : null,
@@ -6990,6 +7023,13 @@ async function planAvanzarAMarco(){
   renderPlanPaso();
 }
 
+// Genera cache_key a partir de accion + banda + tramo_pct + causales ordenadas
+function planGenerarCacheKey(s){
+  const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
+  const causas = [...(s.causas||[])].map(c=>c.codigo).sort().join(',');
+  return [s.accionId, s.banda, tramo, causas].join('|');
+}
+
 async function planGenerarPropuestas(){
   const s = PLAN_STATE;
   const ta = document.getElementById('planComentario');
@@ -6997,116 +7037,70 @@ async function planGenerarPropuestas(){
 
   // Si ya hay propuestas (borrador retomado), saltar generación
   if(s.propuestas && s.propuestas.length){
-    s.paso = 4;
-    planMarcarCambio();
-    renderPlanPaso();
-    return;
+    s.paso = 4; planMarcarCambio(); renderPlanPaso(); return;
   }
 
   document.getElementById('planBody').innerHTML = `
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
       <p>Construyendo plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Buscando en base de conocimiento · Brechas · Causales · Nivel</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
-  // 1. INTENTAR CONSTRUIR DESDE FICHA CURADA (sin LLM)
+  const cacheKey = planGenerarCacheKey(s);
+
+  // 1. BUSCAR EN CACHE (planes_cache en Supabase)
   try {
-    const ficha = await planCargarFichaContenido(s.accion?.nombre || '');
-
-    if(ficha && ficha.causales?.length && s.causas.length > 0){
-      const propuestas = s.causas.map((causa, i) => {
-        const causal = ficha.causales.find(c =>
-          c.nombre?.toLowerCase().trim() === causa.etiqueta?.toLowerCase().trim()
-        );
-        if(!causal) return null;
-        return {
-          id: 'linea_' + (i+1),
-          titulo: causal.nombre,
-          foco: 'FOCO EN ' + causal.nombre.toUpperCase(),
-          descripcion_corta: causal.descripcion || causal.nombre,
-          causa_atacada: causal.nombre,
-          pasos: [
-            {id:(i+1)+'.1', descripcion: causal.rec_a, responsable_sugerido:'Equipo directivo', plazo_dias:7, esfuerzo:'BAJO'},
-            {id:(i+1)+'.2', descripcion: causal.rec_b, responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
-            {id:(i+1)+'.3', descripcion: causal.rec_c, responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
-          ]
-        };
-      }).filter(Boolean);
-
-      // Agregar línea NÚCLEO desde el nivel actual
-      if(propuestas.length && ficha.niveles?.length){
-        const pct = s.pct || 0;
-        const nIdx = pct <= 25 ? 0 : pct <= 50 ? 1 : pct <= 75 ? 2 : pct <= 90 ? 3 : 4;
-        const nivel = ficha.niveles[nIdx];
-        if(nivel?.gestion?.length){
-          propuestas.push({
-            id: 'linea_nucleo',
-            titulo: nivel.subtitulo || nivel.etiqueta,
-            foco: 'NÚCLEO · NIVEL ' + (nivel.etiqueta || '').toUpperCase(),
-            descripcion_corta: 'Acciones concretas para tu nivel de madurez actual.',
-            causa_atacada: 'nivel',
-            pasos: nivel.gestion.slice(0,3).map((g, gi) => ({
-              id: 'nucleo.' + (gi+1),
-              descripcion: g,
-              responsable_sugerido: gi===0 ? 'UTP' : gi===1 ? 'Director' : 'Equipo',
-              plazo_dias: (gi+1) * 14,
-              esfuerzo: gi===0 ? 'BAJO' : 'MEDIO'
-            }))
-          });
-        }
-      }
-
-      if(propuestas.length){
-        s.propuestas = propuestas;
-        s.fuentesGlobales = [];
-        s.paso = 4;
-        planMarcarCambio();
-        await planSyncSupabase();
-        renderPlanPaso();
-        return;
-      }
+    const { data: cached } = await sb.from('planes_cache')
+      .select('plan_data, id, hits')
+      .eq('cache_key', cacheKey)
+      .maybeSingle();
+    if(cached && cached.plan_data){
+      // Incrementar hits en background
+      sb.from('planes_cache').update({ hits: (cached.hits||1)+1, updated_at: new Date().toISOString() }).eq('id', cached.id);
+      s.propuestas = cached.plan_data;
+      s.fuentesGlobales = [];
+      s.paso = 4; planMarcarCambio();
+      await planSyncSupabase(); renderPlanPaso();
+      return;
     }
-  } catch(e){ console.warn('Ficha curada falló:', e.message); }
+  } catch(e){ console.warn('Cache lookup:', e.message); }
 
-  // 2. FALLBACK: Edge Function (LLM genérico)
+  // 2. GENERAR CON IA (Haiku 4.5) usando los 4 inputs
   try {
     const payload = {
       colegio_id: DB.colegio.id,
       accion_id: s.accionId,
+      accion_nombre: s.accion?.nombre || '',
       mes: s.mes,
       pct: s.pct,
       banda: s.banda,
       causas: s.causas,
       causas_otros: s.causasOtros,
       comentario: s.comentario,
+      brechas_data: s.brechasData || null,
       consolidacion_modos: s.consolidacionModos
     };
 
     const resp = await fetch(PLAN_FN_URL_V2, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (sb.supabaseKey || '')
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sb.supabaseKey || '') },
       body: JSON.stringify(payload)
     });
 
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    if(!data.ok || !data.lineas_de_accion || !data.lineas_de_accion.length) {
-      throw new Error('Respuesta inválida del servicio');
-    }
+    if(!data.ok || !data.lineas_de_accion?.length) throw new Error('Respuesta inválida');
 
-    s.propuestas = data.lineas_de_accion.map((linea, i) => ({
+    const propuestas = data.lineas_de_accion.map((linea, i) => ({
       id: linea.id || ('linea_' + (i+1)),
       titulo: linea.titulo || ('Línea ' + (i+1)),
       foco: linea.foco || '',
-      descripcion_corta: linea.foco || '',
-      causa_atacada: linea.foco || '',
-      pasos: (linea.pasos || []).map((p, pIdx) => ({
-        id: p.id || ('paso_' + (i+1) + '_' + (pIdx+1)),
+      descripcion_corta: linea.descripcion_corta || linea.foco || '',
+      causa_atacada: linea.causa_atacada || linea.foco || '',
+      pasos: (linea.pasos || []).map((p, pi) => ({
+        id: p.id || ('paso_' + (i+1) + '_' + (pi+1)),
         descripcion: p.descripcion || '',
         responsable_sugerido: p.responsable_sugerido || '',
         plazo_dias: p.plazo_dias || 14,
@@ -7114,17 +7108,29 @@ async function planGenerarPropuestas(){
         fuente: p.fuente || ''
       }))
     }));
+
+    // 3. GUARDAR EN CACHE para futuras consultas
+    try {
+      const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
+      await sb.from('planes_cache').upsert({
+        cache_key: cacheKey,
+        accion_id: s.accionId,
+        pct_banda: s.banda + '_' + tramo,
+        plan_data: propuestas,
+        hits: 1,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'cache_key' });
+    } catch(e){ console.warn('Cache save:', e.message); }
+
+    s.propuestas = propuestas;
     s.fuentesGlobales = data.fuentes_globales || [];
-  } catch(e) {
-    console.warn('Edge Function plan-avanzado falló:', e.message);
+  } catch(e){
+    console.warn('Edge Function falló:', e.message);
     s.propuestas = generarPropuestasFallback(s);
-    showToast('No se pudo generar plan personalizado. Usando plantilla local.');
+    showToast('No se pudo generar plan. Usando plantilla local.');
   }
 
-  s.paso = 4;
-  planMarcarCambio();
-  await planSyncSupabase();
-  renderPlanPaso();
+  s.paso = 4; planMarcarCambio(); await planSyncSupabase(); renderPlanPaso();
 }
 
 function generarPropuestasFallback(s){
