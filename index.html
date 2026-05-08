@@ -6006,28 +6006,21 @@ const PLAN_CSS = `
   padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;
   letter-spacing:.3px;margin-bottom:14px;line-height:1.4}
 
-.plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:12px}
-
-.plan-brecha-item{display:grid;grid-template-columns:148px 1fr;gap:0;
-  border-radius:10px;overflow:hidden;border:1px solid #C8DDD0;
-  box-shadow:0 1px 5px rgba(0,0,0,.07)}
+.plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:14px}
+.plan-brecha-item{border-radius:10px;overflow:hidden;border:0.5px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .plan-brecha-num{display:none}
-.plan-brecha-resumen-col{background:#1E3A2F;padding:14px 13px;display:flex;
-  flex-direction:column;gap:5px}
-.plan-brecha-badge{display:inline-block;background:rgba(255,255,255,.13);
-  color:#A8D5B5;font-size:9px;font-weight:700;letter-spacing:.07em;
-  text-transform:uppercase;padding:2px 7px;border-radius:3px;
-  width:fit-content;margin-bottom:2px}
-.plan-brecha-resumen{font-size:11px;font-weight:600;color:#E8F4EC;line-height:1.45}
-.plan-brecha-cuerpo{background:#FAFCFA;padding:13px 16px}
-.plan-brecha-header{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.plan-brecha-num-badge{flex-shrink:0;width:22px;height:22px;background:var(--gold);
-  color:#fff;border-radius:50%;display:flex;align-items:center;
-  justify-content:center;font-size:11px;font-weight:700}
-.plan-brecha-fuente-tag{font-size:10px;font-weight:700;color:#2C7A4B;
-  text-transform:uppercase;letter-spacing:.05em}
-.plan-brecha-texto{font-size:12px;line-height:1.6;color:#2A2622}
-.plan-brecha-texto strong{color:#1E3A2F;font-weight:700}
+.plan-brecha-head{padding:10px 15px;display:flex;align-items:center;gap:8px}
+.plan-brecha-source-badge{font-size:10px;font-weight:600;padding:3px 9px;border-radius:5px;letter-spacing:.03em;white-space:nowrap}
+.plan-brecha-std-pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;white-space:nowrap}
+.plan-brecha-diag{font-size:13px;font-weight:600;flex:1}
+.plan-brecha-cuerpo{background:var(--bg-soft,#FAFCFA);padding:13px 15px;display:flex;flex-direction:column;gap:10px}
+.plan-brecha-q{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 5px}
+.plan-brecha-quote{font-size:12.5px;color:var(--text-secondary,#4a4a4a);line-height:1.55;font-style:italic;border-left:2px solid var(--border);padding-left:10px;margin:0}
+.plan-brecha-divider{height:0.5px;background:var(--border)}
+.plan-brecha-roles{display:flex;flex-direction:column;gap:6px}
+.plan-brecha-rol-row{display:flex;gap:9px;align-items:flex-start}
+.plan-brecha-rol-chip{font-size:10px;font-weight:600;padding:2px 8px;border-radius:5px;white-space:nowrap;margin-top:2px;flex-shrink:0}
+.plan-brecha-rol-text{font-size:12px;color:var(--text,#2A2622);line-height:1.5}
 .plan-brecha-fuente{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
 
 .plan-brecha-fuentes-detalle{margin-top:14px;font-size:11px;color:var(--muted)}
@@ -6859,92 +6852,67 @@ async function renderPaso1Contexto(){
       '</div>'
     : '';
 
-  // Fuentes conocidas para el badge
-  const FUENTE_LABELS = {
-    'eid':'Estándar EID', 'estandar':'Estándar EID', 'decree':'Decreto',
-    'decreto':'Decreto', 'ciae':'CIAE · U. de Chile', 'ceppe':'CEPPE · UC',
-    'harvard':'Harvard', 'mineduc':'Mineduc', 'mbd':'MBD', 'mbe':'MBE',
-    'pei':'PEI', 'simce':'SIMCE', 'pie':'Decreto 170 / PIE',
+  // ── Configuración visual por tipo de fuente ──────────────────────────────
+  const BRECHA_THEME = {
+    eid:     { headBg:'#E6F1FB', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
+    uc:      { headBg:'#E1F5EE', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
+    harvard: { headBg:'#FAEEDA', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
+    default: { headBg:'#F1EFE8', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
   };
-  function brechaDetectarBadge(texto){
-    const t = texto.toLowerCase();
-    if(t.includes('estándar') && (t.includes('eid') || /\d\.\d/.test(t))) return 'Estándar EID';
-    if(t.includes('ciae')) return 'CIAE · U. Chile';
-    if(t.includes('ceppe')) return 'CEPPE · UC';
-    if(t.includes('harvard')) return 'Harvard GSE';
-    if(t.includes('mineduc') || t.includes('mineduc')) return 'Mineduc';
-    if(t.includes('decreto 67') || t.includes('decreto 170')) return 'Decreto';
-    if(t.includes('pei') || t.includes('sello')) return 'PEI';
-    return 'Análisis';
-  }
-  function brechaResumen(texto){
-    // Titular estilo diario: extraer el PROBLEMA o HALLAZGO central en 6-9 palabras
-    // Patrones: "el establecimiento X", "la acción X", "el sistema X", "la brecha X"
-    // Prioridad: buscar la frase que describe el estado negativo o el gap
-    const t = texto;
+  const BRECHA_ICON = { eid:'ti-certificate', uc:'ti-school', harvard:'ti-brain', default:'ti-chart-bar' };
 
-    // 1. Buscar: "el cumplimiento actual... refleja/muestra/indica que [frase]"
-    const mCumpl = t.match(/refleja(?:\s+que)?\s+([^.]{10,90})/i);
-    if(mCumpl) return _titularizar(mCumpl[1]);
-
-    // 2. Buscar: "limita/impide/dificulta [la capacidad/el proceso] de [hacer X]"
-    const mLimita = t.match(/(?:limita|impide|dificulta)\s+([^.]{10,80})/i);
-    if(mLimita) return _titularizar(mLimita[1]);
-
-    // 3. Buscar: "aún no [se observa/alcanza/existe]..."
-    const mAun = t.match(/aún\s+no\s+([^.]{10,70})/i);
-    if(mAun) return _titularizar('Aún no ' + mAun[1]);
-
-    // 4. Buscar: "este [proceso/sistema/ciclo] debe [verbo]..."
-    const mDebe = t.match(/(?:debe|exige|requiere)\s+([^.]{10,70})/i);
-    if(mDebe) return _titularizar(mDebe[1]);
-
-    // 5. Fallback: segunda oración del texto (suele ser más concisa)
-    const oraciones = t.split(/\.\s+/);
-    const src = oraciones.length > 1 ? oraciones[1] : oraciones[0];
-    return _titularizar(src);
-  }
-  function _titularizar(frase){
-    // Limpiar artículos iniciales, cortar en 7 palabras, capitalizar
-    const limpia = frase.trim()
-      .replace(/^(que\s+|el\s+|la\s+|los\s+|las\s+|un\s+|una\s+|este\s+|esta\s+|su\s+)/i, '')
-      .replace(/,$/, '');
-    const palabras = limpia.split(/\s+/).slice(0, 8);
-    const titulo = palabras.join(' ');
-    // Capitalizar primera letra
-    return titulo.charAt(0).toUpperCase() + titulo.slice(1) + (palabras.length >= 8 ? '…' : '');
-  }
-  function brechaEnriquecer(texto){
-    // Bold: Estándares, porcentajes, instituciones, frases clave
-    return escapeHtmlPlan(texto)
-      .replace(/(Estándar \d+\.\d+ EID)/g, '<strong>$1</strong>')
-      .replace(/(\d+%)/g, '<strong>$1</strong>')
-      .replace(/(LICEO CARMELA CARVAJAL|Carmela Carvajal)/g, '<strong>$1</strong>')
-      .replace(/(banda CRÍTI[A-Z]+|banda Críti[a-z]+|CRÍTICO|Crítico)/g, '<strong style="color:#B85042">$1</strong>')
-      .replace(/(ciclo completo|ciclo de uso efectivo|brecha específica|decisiones pedagógicas)/gi, '<strong>$1</strong>');
+  function brechaRenderNew(b, i) {
+    const tipo = (b.fuente_tipo || 'default').toLowerCase();
+    const th = BRECHA_THEME[tipo] || BRECHA_THEME.default;
+    const icon = BRECHA_ICON[tipo] || BRECHA_ICON.default;
+    const stdPill = b.estandar_num
+      ? `<span class="plan-brecha-std-pill" style="background:${th.stdBg||th.badgeBg};color:${th.stdColor||th.badgeColor}">${escapeHtmlPlan(b.estandar_num)}</span>`
+      : '';
+    const rolesHtml = (b.para_superar || []).map(r =>
+      `<div class="plan-brecha-rol-row">
+        <span class="plan-brecha-rol-chip" style="background:${th.chipBg};color:${th.chipColor}">${escapeHtmlPlan(r.rol)}</span>
+        <span class="plan-brecha-rol-text">${escapeHtmlPlan(r.accion)}</span>
+      </div>`
+    ).join('');
+    const qLabel = tipo === 'eid' ? '¿Qué exige el estándar?' : tipo === 'uc' ? '¿Qué dice la UC?' : tipo === 'harvard' ? '¿Qué dice Harvard?' : '¿Qué dice la fuente?';
+    return `<div class="plan-brecha-item">
+      <div class="plan-brecha-head" style="background:${th.headBg}">
+        <span class="plan-brecha-source-badge" style="background:${th.badgeBg};color:${th.badgeColor}">${escapeHtmlPlan(b.fuente_label||'Fuente')}</span>
+        ${stdPill}
+        <span class="plan-brecha-diag" style="color:${th.diagColor}">${escapeHtmlPlan(b.diagnostico||'')}</span>
+      </div>
+      <div class="plan-brecha-cuerpo">
+        <div>
+          <p class="plan-brecha-q">${qLabel}</p>
+          <p class="plan-brecha-quote">${escapeHtmlPlan(b.que_dice||b.texto||'')}</p>
+        </div>
+        <div class="plan-brecha-divider"></div>
+        <div>
+          <p class="plan-brecha-q">Para superar esta brecha, el colegio debe:</p>
+          <div class="plan-brecha-roles">${rolesHtml}</div>
+        </div>
+      </div>
+    </div>`;
   }
 
-  const brechasHtml = (brechasResp.brechas || []).map((b, i) => {
-    const texto = b.texto || '';
-    const badge = brechaDetectarBadge(texto);
-    const resumen = brechaResumen(texto);
-    const textoRich = brechaEnriquecer(texto);
-    return '<div class="plan-brecha-item">' +
-      '<div class="plan-brecha-resumen-col">' +
-        '<span class="plan-brecha-badge">' + badge + '</span>' +
-        '<div class="plan-brecha-resumen">' + escapeHtmlPlan(resumen) + '</div>' +
-      '</div>' +
-      '<div class="plan-brecha-cuerpo">' +
-        '<div class="plan-brecha-header">' +
-          '<div class="plan-brecha-num-badge">' + (i + 1) + '</div>' +
-          '<span class="plan-brecha-fuente-tag">' + badge + '</span>' +
-        '</div>' +
-        '<div class="plan-brecha-texto">' + textoRich + '</div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  // Compatibilidad retroactiva: si viene formato viejo ({texto:...}), usar fallback visual
+  function brechaRenderLegacy(b, i) {
+    return `<div class="plan-brecha-item">
+      <div class="plan-brecha-head" style="background:#E6F1FB">
+        <span class="plan-brecha-source-badge" style="background:#B5D4F4;color:#042C53">Brecha ${i+1}</span>
+        <span class="plan-brecha-diag" style="color:#0C447C">${escapeHtmlPlan((b.texto||'').split('.')[0].slice(0,60))}</span>
+      </div>
+      <div class="plan-brecha-cuerpo">
+        <p class="plan-brecha-quote">${escapeHtmlPlan(b.texto||'')}</p>
+      </div>
+    </div>`;
+  }
 
-  const fuentes = brechasResp.fuentes_consultadas || [];
+  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
+    b.para_superar ? brechaRenderNew(b, i) : brechaRenderLegacy(b, i)
+  ).join('');
+
+    const fuentes = brechasResp.fuentes_consultadas || [];
   const fuentesHtml = fuentes.length > 0
     ? '<details class="plan-brecha-fuentes-detalle"><summary>Fuentes consultadas (' + fuentes.length + ')</summary><ul>' +
         fuentes.map(f => '<li>' + escapeHtmlPlan(f) + '</li>').join('') +
