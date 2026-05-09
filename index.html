@@ -6702,9 +6702,10 @@ function renderPlanPaso(){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
     if(s.paso===99 && i<=7) d.classList.add('done');
-    const isFuture = s.paso !== 99 && i > s.paso;
+    const maxAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado||1);
+    const isFuture = s.paso !== 99 && i > maxAlcanzado + 1;
     if(isFuture) d.classList.add('future');
-    if(!isFuture) d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
+    d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
     d.innerHTML=`<div class="plan-progress-bar"></div><span class="plan-progress-label">${PASO_LABELS[i]}</span>`;
     prog.appendChild(d);
   }
@@ -7154,6 +7155,22 @@ function planGenerarCacheKey(s){
   return [s.accionId, s.banda, tramo, causas].join('|');
 }
 
+async function planRegenerarPlan(){
+  if(!confirm('¿Regenerar el plan? Se borrarán los pasos actuales y se generará uno nuevo.')) return;
+  const s = PLAN_STATE;
+  s.propuestas = null;
+  s.pasosSeleccionados = [];
+  s.pasosFocoPropio = [];
+  s.pasosOtrosLinea = {};
+  if(typeof PLAN_BRECHAS_CACHE !== 'undefined'){
+    const ck = (s.colegioId||DB?.colegio?.id||'') + '_' + s.accionId + '_' + s.mes;
+    delete PLAN_BRECHAS_CACHE[ck];
+  }
+  planMarcarCambio();
+  await planSyncSupabase();
+  planGenerarPropuestas();
+}
+
 async function planGenerarPropuestas(){
   const s = PLAN_STATE;
   const ta = document.getElementById('planComentario');
@@ -7162,11 +7179,21 @@ async function planGenerarPropuestas(){
   // Si ya hay propuestas (borrador retomado), verificar que no sean genéricas
   if(s.propuestas && s.propuestas.length){
     const primerDesc = s.propuestas?.[0]?.pasos?.[0]?.descripcion || '';
-    const esGenerico = primerDesc.toLowerCase().includes('revisar la causa') || primerDesc.toLowerCase().includes('indicador concreto de avance');
+    const esGenerico = primerDesc.toLowerCase().includes('revisar la causa') ||
+                       primerDesc.toLowerCase().includes('indicador concreto de avance');
     if(!esGenerico){
-      s.paso = 4; planMarcarCambio(); renderPlanPaso(); return;
+      // Verificar que las causales coincidan
+      const causasEtiq = (s.causas||[]).map(c=>c.etiqueta?.toLowerCase().trim());
+      const mismatch = s.propuestas.some(p => {
+        const ca = (p.causa_atacada||'').toLowerCase().trim();
+        if(!ca || ca==='nivel') return false;
+        return !causasEtiq.some(e => e && (ca.includes(e)||e.includes(ca)));
+      });
+      if(!mismatch){
+        s.paso = 4; planMarcarCambio(); renderPlanPaso(); return;
+      }
     }
-    // Si es genérico, limpiar y regenerar
+    // Si hay problema, limpiar y regenerar
     s.propuestas = null;
   }
 
@@ -7174,115 +7201,112 @@ async function planGenerarPropuestas(){
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
       <p>Construyendo plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Buscando en base de conocimiento · Brechas · Causales · Nivel</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
-  const cacheKey = planGenerarCacheKey(s);
-
-  // 1. BUSCAR EN CACHE (planes_cache en Supabase)
+  // ── ÚNICO PATH: FICHA CURADA (sin IA, determinístico) ─────────────────────
   try {
-    const { data: cached } = await sb.from('planes_cache')
-      .select('plan_data, id, hits')
-      .eq('cache_key', cacheKey)
-      .maybeSingle();
-    if(cached && cached.plan_data){
-      // Validar que no sea plan genérico (fallback)
-      const primerPaso = cached.plan_data?.[0]?.pasos?.[0]?.descripcion || '';
-      const esGenerico = primerPaso.toLowerCase().includes('revisar la causa') || primerPaso.toLowerCase().includes('indicador concreto de avance');
-      // Validar que las causales del plan coincidan con las seleccionadas
-      const causasEtiq = (s.causas||[]).map(c=>c.etiqueta?.toLowerCase().trim());
-      const causasMismatch = cached.plan_data.some(p => {
-        const ca = (p.causa_atacada||'').toLowerCase().trim();
-        if(!ca || ca==='nivel') return false;
-        return !causasEtiq.some(e => e && (ca.includes(e)||e.includes(ca)));
-      });
-      if(esGenerico || causasMismatch){
-        sb.from('planes_cache').delete().eq('id', cached.id);
-      } else {
-        sb.from('planes_cache').update({ hits: (cached.hits||1)+1, updated_at: new Date().toISOString() }).eq('id', cached.id);
-        s.propuestas = cached.plan_data;
-        s.fuentesGlobales = [];
-        s.paso = 4; planMarcarCambio();
-        await planSyncSupabase(); renderPlanPaso();
-        return;
+    const ficha = await planCargarFichaContenido(s.accion?.nombre || '');
+
+    if(ficha && ficha.causales?.length){
+      const causasAUsar = (s.causas||[]).length > 0 ? s.causas : [];
+
+      if(causasAUsar.length === 0){
+        showToast('Selecciona al menos una causa en el Paso 3');
+        s.paso = 3; renderPlanPaso(); return;
       }
+
+      // Una línea por causal seleccionada
+      const propuestas = causasAUsar.map((causa, i) => {
+        const causal = ficha.causales.find(c =>
+          c.nombre?.toLowerCase().trim() === causa.etiqueta?.toLowerCase().trim()
+        );
+
+        if(!causal){
+          console.warn('No match para causal:', causa.etiqueta, '— disponibles:', ficha.causales.map(c=>c.nombre));
+          // Usar la primera recomendación disponible como fallback
+          return {
+            id: 'linea_' + (i+1),
+            titulo: 'Estrategia para ' + causa.etiqueta,
+            foco: 'FOCO EN ' + causa.etiqueta.toUpperCase(),
+            descripcion_corta: 'Acciones para abordar la causa: ' + causa.etiqueta,
+            causa_atacada: causa.etiqueta,
+            pasos: [
+              {id:(i+1)+'.1', descripcion: 'Reunión del equipo para diagnosticar la causa "'+causa.etiqueta+'" con evidencia concreta.', responsable_sugerido:'Equipo directivo', plazo_dias:7, esfuerzo:'BAJO'},
+              {id:(i+1)+'.2', descripcion: 'Definir 1 acción específica para abordar "'+causa.etiqueta+'" con responsable y plazo.', responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
+              {id:(i+1)+'.3', descripcion: 'Evaluar resultado de la acción implementada y ajustar según evidencia.', responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
+            ]
+          };
+        }
+
+        return {
+          id: 'linea_' + (i+1),
+          titulo: 'Estrategia · ' + causal.nombre,
+          foco: 'FOCO EN ' + causal.nombre.toUpperCase(),
+          descripcion_corta: causal.descripcion || causal.nombre,
+          causa_atacada: causal.nombre,
+          pasos: [
+            {id:(i+1)+'.1', descripcion: causal.rec_a, responsable_sugerido:'Equipo directivo', plazo_dias:7, esfuerzo:'BAJO'},
+            {id:(i+1)+'.2', descripcion: causal.rec_b, responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
+            {id:(i+1)+'.3', descripcion: causal.rec_c, responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
+          ]
+        };
+      });
+
+      // Línea NÚCLEO desde nivel actual
+      if(ficha.niveles?.length){
+        const pct = s.pct || 0;
+        const nIdx = pct <= 25 ? 0 : pct <= 50 ? 1 : pct <= 75 ? 2 : pct <= 90 ? 3 : 4;
+        const nivel = ficha.niveles[nIdx];
+        if(nivel?.gestion?.length){
+          propuestas.push({
+            id: 'linea_nucleo',
+            titulo: nivel.subtitulo || nivel.etiqueta,
+            foco: 'NÚCLEO · NIVEL ' + (nivel.etiqueta || '').toUpperCase(),
+            descripcion_corta: 'Acciones concretas para tu nivel de madurez actual.',
+            causa_atacada: 'nivel',
+            pasos: nivel.gestion.slice(0,3).map((g, gi) => ({
+              id: 'nucleo.' + (gi+1),
+              descripcion: g,
+              responsable_sugerido: gi===0 ? 'UTP' : gi===1 ? 'Director' : 'Equipo',
+              plazo_dias: (gi+1) * 14,
+              esfuerzo: gi===0 ? 'BAJO' : 'MEDIO'
+            }))
+          });
+        }
+      }
+
+      s.propuestas = propuestas;
+      s.fuentesGlobales = [];
+      s.paso = 4;
+      planMarcarCambio();
+      await planSyncSupabase();
+      renderPlanPaso();
+      return;
     }
-  } catch(e){ console.warn('Cache lookup:', e.message); }
-
-  // 2. GENERAR CON IA (Haiku 4.5) usando los 4 inputs
-  try {
-    const payload = {
-      colegio_id: DB.colegio.id,
-      accion_id: s.accionId,
-      accion_nombre: s.accion?.nombre || '',
-      mes: s.mes,
-      pct: s.pct,
-      banda: s.banda,
-      causas: s.causas,
-      causas_otros: s.causasOtros,
-      comentario: s.comentario,
-      brechas_data: s.brechasData || null,
-      consolidacion_modos: s.consolidacionModos
-    };
-
-    const resp = await fetch(PLAN_FN_URL_V2, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sb.supabaseKey || '') },
-      body: JSON.stringify(payload)
-    });
-
-    if(!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    if(!data.ok || !data.lineas_de_accion?.length) throw new Error('Respuesta inválida');
-
-    const propuestas = data.lineas_de_accion.map((linea, i) => ({
-      id: linea.id || ('linea_' + (i+1)),
-      titulo: linea.titulo || ('Línea ' + (i+1)),
-      foco: linea.foco || '',
-      descripcion_corta: linea.descripcion_corta || linea.foco || '',
-      causa_atacada: linea.causa_atacada || linea.foco || '',
-      pasos: (linea.pasos || []).map((p, pi) => ({
-        id: p.id || ('paso_' + (i+1) + '_' + (pi+1)),
-        descripcion: p.descripcion || '',
-        responsable_sugerido: p.responsable_sugerido || '',
-        plazo_dias: p.plazo_dias || 14,
-        esfuerzo: p.esfuerzo || 'MEDIO',
-        fuente: p.fuente || ''
-      }))
-    }));
-
-    // 3. GUARDAR EN CACHE para futuras consultas
-    try {
-      const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
-      await sb.from('planes_cache').upsert({
-        cache_key: cacheKey,
-        accion_id: s.accionId,
-        pct_banda: s.banda + '_' + tramo,
-        plan_data: propuestas,
-        hits: 1,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'cache_key' });
-    } catch(e){ console.warn('Cache save:', e.message); }
-
-    // Filtrar líneas a solo las causales seleccionadas por el usuario + núcleo
-    const causasEtiquetas = (s.causas||[]).map(c => c.etiqueta?.toLowerCase().trim());
-    const propuestasFiltradas = propuestas.filter(p => {
-      if(!p.causa_atacada) return true; // conservar si no tiene causa
-      const ca = p.causa_atacada.toLowerCase().trim();
-      if(ca === 'nivel') return true; // conservar línea núcleo
-      return causasEtiquetas.some(e => e && (ca.includes(e) || e.includes(ca)));
-    });
-    // Si el filtro eliminó todo (mismatch total), usar propuestas sin filtrar
-    s.propuestas = propuestasFiltradas.length > 0 ? propuestasFiltradas : propuestas;
-    s.fuentesGlobales = data.fuentes_globales || [];
   } catch(e){
-    console.warn('Edge Function falló:', e.message);
-    s.propuestas = generarPropuestasFallback(s);
-    showToast('No se pudo generar plan. Usando plantilla local.');
+    console.warn('Ficha curada error:', e.message);
   }
 
-  s.paso = 4; planMarcarCambio(); await planSyncSupabase(); renderPlanPaso();
+  // ── FALLBACK MÍNIMO si no hay ficha (no debería ocurrir con las 21 acciones seedeadas) ──
+  showToast('No se encontró ficha para esta acción. Verifica que el seed esté cargado.');
+  s.propuestas = (s.causas||[]).map((causa, i) => ({
+    id: 'linea_' + (i+1),
+    titulo: 'Plan para ' + causa.etiqueta,
+    foco: 'FOCO EN ' + causa.etiqueta.toUpperCase(),
+    descripcion_corta: causa.etiqueta,
+    causa_atacada: causa.etiqueta,
+    pasos: [
+      {id:(i+1)+'.1', descripcion: 'Definir acciones concretas para abordar "'+causa.etiqueta+'".', responsable_sugerido:'Director', plazo_dias:7, esfuerzo:'BAJO'},
+      {id:(i+1)+'.2', descripcion: 'Implementar primera acción con responsable y plazo acordados.', responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
+      {id:(i+1)+'.3', descripcion: 'Evaluar resultado y ajustar según evidencia observable.', responsable_sugerido:'Equipo', plazo_dias:21, esfuerzo:'MEDIO'}
+    ]
+  }));
+  s.paso = 4;
+  planMarcarCambio();
+  await planSyncSupabase();
+  renderPlanPaso();
 }
 
 function generarPropuestasFallback(s){
@@ -8003,6 +8027,7 @@ async function planNext(){
     return;
   }
   s.paso++;
+  s._maxPasoAlcanzado = Math.max(s._maxPasoAlcanzado||1, s.paso);
   // Sync inmediato al cambiar de pantalla
   if(PLAN_AUTOSAVE_TIMER){ clearTimeout(PLAN_AUTOSAVE_TIMER); PLAN_AUTOSAVE_TIMER=null; }
   planSyncSupabase();
@@ -8011,13 +8036,22 @@ async function planNext(){
 async function planIrAPaso(paso){
   const s = PLAN_STATE;
   if(paso === s.paso) return;
-  // Solo permite ir a pasos ya visitados (≤ paso actual) o al siguiente
-  if(paso > s.paso + 1) return;
+
+  // Calcular el máximo paso alcanzado (el mayor entre el actual y lo que hay guardado)
+  const maxPasoAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado || 1);
+  if(paso > maxPasoAlcanzado + 1){
+    showToast('Completá los pasos anteriores primero');
+    return;
+  }
+
   // Validación: no saltar de paso 3 sin causas si van hacia adelante
-  if(s.paso === 3 && paso > 3 && s.causas.length === 0 && s.causasOtros.length === 0){
+  if(paso > 3 && (s.causas||[]).length === 0 && (s.causasOtros||[]).length === 0 && s.banda !== 'CONSOLIDACION'){
     showToast('Selecciona al menos una causa antes de continuar');
     return;
   }
+
+  // Guardar el máximo alcanzado
+  s._maxPasoAlcanzado = Math.max(maxPasoAlcanzado, paso);
   s.paso = paso;
   if(PLAN_AUTOSAVE_TIMER){ clearTimeout(PLAN_AUTOSAVE_TIMER); PLAN_AUTOSAVE_TIMER=null; }
   planSyncSupabase();
