@@ -6239,14 +6239,20 @@ let PLAN_BRECHAS_CACHE = {};
 let PLAN_BRECHAS_LOADING = false;
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
-  const cacheKey = colegioId + '_' + accionId + '_' + mes;
+  const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'');
   // 1a. Cache en memoria (misma sesión)
   if (PLAN_BRECHAS_CACHE[cacheKey]) return PLAN_BRECHAS_CACHE[cacheKey];
 
-  // 1b. Estado ya hidratado (borrador cargó brechasData desde DB o localStorage)
+  // 1b. Estado ya hidratado — verificar que la banda coincida
   if (PLAN_STATE && PLAN_STATE.brechasData) {
-    PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
-    return PLAN_STATE.brechasData;
+    const storedBanda = PLAN_STATE.brechasData._banda;
+    if (!storedBanda || storedBanda === (banda||'')) {
+      PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
+      return PLAN_STATE.brechasData;
+    }
+    // Banda cambió (ej: de 67% MEJORA a 12% CRITICO) — invalidar y regenerar
+    PLAN_STATE.brechasData = null;
+    if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
 
   // 2. Buscar brechas guardadas en Supabase (borrador previo)
@@ -6261,9 +6267,13 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
       .limit(1)
       .maybeSingle();
     if (ma && ma.brechas_data) {
-      PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
-      if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
-      return ma.brechas_data;
+      const storedBanda = ma.brechas_data._banda;
+      if(!storedBanda || storedBanda === banda){
+        PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
+        if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
+        return ma.brechas_data;
+      }
+      // Banda cambió — no usar brechas antiguas
     }
   } catch(e) { console.warn('planCargarBrechas lookup:', e.message); }
 
@@ -6286,6 +6296,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
+    if(data && typeof data === 'object') data._banda = banda || '';
     PLAN_BRECHAS_CACHE[cacheKey] = data;
     // Guardar en estado para que planSyncSupabase lo persista
     if (PLAN_STATE) {
@@ -6697,14 +6708,13 @@ async function _tryAutoRestoreSession(){
     const raw = localStorage.getItem('liax_session');
     if(!raw) return false;
     const saved = JSON.parse(raw);
-    // Sesión válida por 8 horas
     if(!saved.user || (Date.now() - (saved.ts||0)) > 8*60*60*1000) return false;
     const params = new URLSearchParams(window.location.search);
     const planColegioId = params.get('plan_colegio') || saved.colegioActivo || saved.user.colegio_id;
     if(!planColegioId) return false;
     SESSION.user = saved.user;
     SESSION.colegioActivo = planColegioId;
-    setLoading('Cargando datos...');
+    setLoading('Abriendo plan...');
     showScreen('screenColegio');
     await loadColegio(planColegioId);
     setupColegioUI();
@@ -7269,28 +7279,29 @@ async function planGenerarPropuestas(){
       }
 
       // Una línea por causal seleccionada
-      const propuestas = causasAUsar.map((causa, i) => {
+      // Calcular nivel actual del plan
+      const pct = s.pct || 0;
+      const nivelActual = pct <= 25 ? 'L1' : pct <= 50 ? 'L2' : pct <= 75 ? 'L3' : pct <= 90 ? 'L4' : 'L5';
+
+      const propuestas = await Promise.all(causasAUsar.map(async (causa, i) => {
+        // 1. Buscar en planes_cache pre-computados (nivel-específico)
+        const precompKey = 'precomp|' + (s.accion?.nombre||'') + '|' + nivelActual + '|' + causa.codigo;
+        try {
+          const { data: cached } = await sb.from('planes_cache')
+            .select('plan_data')
+            .eq('cache_key', precompKey)
+            .maybeSingle();
+          if(cached?.plan_data?.[0]){
+            const linea = cached.plan_data[0];
+            return { ...linea, id: 'linea_' + (i+1) };
+          }
+        } catch(e){ console.warn('precomp lookup:', e.message); }
+
+        // 2. Fallback: rec_a/b/c de la ficha (nivel-agnóstico)
         const causal = ficha.causales.find(c =>
           c.nombre?.toLowerCase().trim() === causa.etiqueta?.toLowerCase().trim()
         );
-
-        if(!causal){
-          console.warn('No match para causal:', causa.etiqueta, '— disponibles:', ficha.causales.map(c=>c.nombre));
-          // Usar la primera recomendación disponible como fallback
-          return {
-            id: 'linea_' + (i+1),
-            titulo: 'Estrategia para ' + causa.etiqueta,
-            foco: 'FOCO EN ' + causa.etiqueta.toUpperCase(),
-            descripcion_corta: 'Acciones para abordar la causa: ' + causa.etiqueta,
-            causa_atacada: causa.etiqueta,
-            pasos: [
-              {id:(i+1)+'.1', descripcion: 'Reunión del equipo para diagnosticar la causa "'+causa.etiqueta+'" con evidencia concreta.', responsable_sugerido:'Equipo directivo', plazo_dias:7, esfuerzo:'BAJO'},
-              {id:(i+1)+'.2', descripcion: 'Definir 1 acción específica para abordar "'+causa.etiqueta+'" con responsable y plazo.', responsable_sugerido:'UTP', plazo_dias:14, esfuerzo:'MEDIO'},
-              {id:(i+1)+'.3', descripcion: 'Evaluar resultado de la acción implementada y ajustar según evidencia.', responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
-            ]
-          };
-        }
-
+        if(!causal) return null;
         return {
           id: 'linea_' + (i+1),
           titulo: 'Estrategia · ' + causal.nombre,
@@ -7303,30 +7314,10 @@ async function planGenerarPropuestas(){
             {id:(i+1)+'.3', descripcion: causal.rec_c, responsable_sugerido:'Director', plazo_dias:21, esfuerzo:'MEDIO'}
           ]
         };
-      });
+      }));
 
-      // Línea NÚCLEO desde nivel actual
-      if(ficha.niveles?.length){
-        const pct = s.pct || 0;
-        const nIdx = pct <= 25 ? 0 : pct <= 50 ? 1 : pct <= 75 ? 2 : pct <= 90 ? 3 : 4;
-        const nivel = ficha.niveles[nIdx];
-        if(nivel?.gestion?.length){
-          propuestas.push({
-            id: 'linea_nucleo',
-            titulo: nivel.subtitulo || nivel.etiqueta,
-            foco: 'NÚCLEO · NIVEL ' + (nivel.etiqueta || '').toUpperCase(),
-            descripcion_corta: 'Acciones concretas para tu nivel de madurez actual.',
-            causa_atacada: 'nivel',
-            pasos: nivel.gestion.slice(0,3).map((g, gi) => ({
-              id: 'nucleo.' + (gi+1),
-              descripcion: g,
-              responsable_sugerido: gi===0 ? 'UTP' : gi===1 ? 'Director' : 'Equipo',
-              plazo_dias: (gi+1) * 14,
-              esfuerzo: gi===0 ? 'BAJO' : 'MEDIO'
-            }))
-          });
-        }
-      }
+      // NOTA: el Núcleo se eliminó. Las recs por causal se cruzan con el nivel
+      // cuando se complete el pre-cómputo con Gemini (accion × nivel × causal).
 
       s.propuestas = propuestas;
       s.fuentesGlobales = [];
@@ -7575,13 +7566,51 @@ function renderPaso4Constructor(){
     <div class="plan-resumen">
       <div class="plan-resumen-head">
         <span class="ttl">Mi plan armado</span>
-        <span class="cnt">${totalPasos} paso${totalPasos===1?'':'s'} · máx 6 sugerido</span>
+        <span class="cnt">${totalPasos} paso${totalPasos===1?'':'s'} seleccionado${totalPasos===1?'':'s'}</span>
       </div>
-      ${resumen.map(r=>`<div class="plan-resumen-item">• ${escapeHtmlPlan(r.desc)} <span class="src">${escapeHtmlPlan(r.src)}</span></div>`).join('') || '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>'}
+      ${(() => {
+        if(!totalPasos) return '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>';
+        const items = [];
+        s.pasosSeleccionados.forEach((p,i) => {
+          const ln = (s.propuestas||[]).find(l=>l.id===p.lineaId);
+          const pk = escapeHtmlPlan(p.key||p.id||String(i));
+          items.push(`<div class="plan-resumen-item" style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
+            <span style="color:var(--accent2);flex-shrink:0;margin-top:1px">•</span>
+            <div style="flex:1;min-width:0">
+              <div contenteditable="true" data-paso-key="${pk}"
+                onblur="planGuardarEdicionPasoResumen('${pk}', this.innerText.trim())"
+                onfocus="this.style.background='var(--bg-soft,#f8f9fa)';this.style.borderRadius='4px';this.style.padding='2px 4px'"
+                onblur="this.style.background='';this.style.padding='';planGuardarEdicionPasoResumen('${pk}',this.innerText.trim())"
+                style="font-size:12.5px;color:var(--text);outline:none;cursor:text;line-height:1.45"
+                title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+              <div style="font-size:10px;color:var(--accent2);margin-top:1px">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
+            </div>
+          </div>`);
+        });
+        (s.pasosFocoPropio||[]).forEach((p,i) => {
+          items.push(`<div class="plan-resumen-item" style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
+            <span style="color:var(--muted);flex-shrink:0">•</span>
+            <div style="flex:1"><div style="font-size:12.5px;color:var(--text)">${escapeHtmlPlan(p.descripcion||'')}</div>
+            <div style="font-size:10px;color:var(--muted)">Foco propio</div></div>
+          </div>`);
+        });
+        Object.values(s.pasosOtrosLinea||{}).flat().forEach(p => {
+          items.push(`<div class="plan-resumen-item" style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
+            <span style="color:var(--muted);flex-shrink:0">•</span>
+            <div style="flex:1"><div style="font-size:12.5px;color:var(--text)">${escapeHtmlPlan(p.descripcion||'')}</div>
+            <div style="font-size:10px;color:var(--muted)">Paso propio</div></div>
+          </div>`);
+        });
+        return items.join('');
+      })()}
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">${totalPasos} paso(s) seleccionado(s)</span>
+    <div style="display:flex;gap:7px;align-items:center">
+      <span class="info" style="font-size:12px;color:var(--muted)">${totalPasos} paso(s)</span>
+      <button class="plan-btn-back" onclick="planDescargarWord()" title="Descargar como Word" ${totalPasos===0?'disabled':''}>↓ Word</button>
+      <button class="plan-btn-back" onclick="planDescargarPDF()" title="Imprimir / PDF" ${totalPasos===0?'disabled':''}>↓ PDF</button>
+    </div>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
       <button class="plan-btn-next" onclick="planNext()" ${totalPasos===0?'disabled':''}>Asignar responsables →</button>
@@ -7838,6 +7867,17 @@ async function planConfirmar(){
         <p style="color:var(--red)">Error al guardar: ${escapeHtmlPlan(e.message||'desconocido')}</p>
         <button class="plan-btn-next" onclick="planBack()" style="margin-top:14px">Volver</button>
       </div>`;
+  }
+}
+
+function planGuardarEdicionPasoResumen(pasoKey, nuevoTexto){
+  if(!nuevoTexto || !PLAN_STATE) return;
+  const s = PLAN_STATE;
+  const idx = (s.pasosSeleccionados||[]).findIndex(p=>(p.key||p.id||String(s.pasosSeleccionados.indexOf(p)))===pasoKey);
+  if(idx >= 0 && nuevoTexto !== s.pasosSeleccionados[idx].descripcion){
+    s.pasosSeleccionados[idx].descripcion = nuevoTexto;
+    planMarcarCambio();
+    planSyncSupabase();
   }
 }
 
