@@ -419,6 +419,13 @@ const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
   hideLoading();
   // Si el usuario llega desde un email de recuperación, mostrar pantalla de nueva clave
   if(detectarRecovery()) return;
+  // Si viene de nueva pestaña con plan params, intentar restaurar sesión automáticamente
+  if(_planParamsPresent()){
+    _tryAutoRestoreSession().then(ok => {
+      if(!ok) showScreen('screenLogin');
+    });
+    return;
+  }
   showScreen('screenLogin');
 })();
 
@@ -446,6 +453,7 @@ async function doLogin() {
     const {data:cols} = await query;
     SESSION.colegios = cols || [];
     hideLoading();
+    _saveSession(user);
     renderMultiPanel();
     showScreen('screenMulti');
   } else {
@@ -466,6 +474,7 @@ async function doLogin() {
       hideLoading();
       showPanel('dashboard');
       denLoad();
+      _saveSession(user);
       _checkPlanAutoOpen();
     } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
   }
@@ -875,6 +884,7 @@ async function entrarColegio(colegioId) {
     setupColegioUI();
     hideLoading();
     showPanel('dashboard');
+    _saveSession(SESSION.user, colegioId);
     _checkPlanAutoOpen();
   } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenMulti'); }
 }
@@ -6562,10 +6572,12 @@ function renderBotonPlan(accionId, mes, seg) {
 
 /* ====================== ABRIR / CERRAR ====================== */
 async function abrirPlan(accionId, mes){
-  // Abrir en nueva pestaña
+  // Abrir en nueva pestaña con colegio actual
+  const planColegioId = SESSION?.colegioActivo || DB?.colegio?.id || '';
   const url = window.location.origin + window.location.pathname +
     '?plan_accion=' + encodeURIComponent(accionId) +
-    '&plan_mes=' + encodeURIComponent(mes);
+    '&plan_mes=' + encodeURIComponent(mes) +
+    '&plan_colegio=' + encodeURIComponent(planColegioId);
   window.open(url, '_blank');
   return;
   // ── código original preservado abajo (ejecutado en la pestaña nueva) ──
@@ -6647,24 +6659,63 @@ function _checkPlanAutoOpen(){
   const accionId = params.get('plan_accion');
   const mes = params.get('plan_mes');
   if(!accionId || !mes) return;
-  // Switch to seguimiento panel so background makes sense
   showPanel('seguimiento');
-  // Small delay to let panel render
   setTimeout(async () => {
     await _abrirPlanInternal(accionId, mes);
-    // In new-tab mode: make drawer fullscreen and hide close-to-overlay
     const overlay = document.getElementById('planOverlay');
-    if(overlay) overlay.onclick = null; // don't close on backdrop click
+    if(overlay) overlay.onclick = null;
     const drawer = document.getElementById('planDrawer');
-    if(drawer){
-      drawer.style.width = '100vw';
-      drawer.style.maxWidth = '100vw';
-      drawer.style.boxShadow = 'none';
-    }
-    // Update X button to "Cerrar pestaña"
+    if(drawer){ drawer.style.width='100vw'; drawer.style.maxWidth='100vw'; drawer.style.boxShadow='none'; }
     const hdr = document.querySelector('.plan-close');
-    if(hdr){ hdr.title = 'Cerrar pestaña'; hdr.onclick = ()=>window.close(); }
+    if(hdr){ hdr.title='Cerrar pestaña'; hdr.onclick=()=>window.close(); }
   }, 400);
+}
+
+// Detectar params de plan en URL antes de cualquier pantalla
+function _planParamsPresent(){
+  const p = new URLSearchParams(window.location.search);
+  return p.get('plan_accion') && p.get('plan_mes');
+}
+
+function _saveSession(user, colegioActivoOverride){
+  try {
+    const data = {
+      user: {
+        id: user.id, nombre: user.nombre, email: user.email,
+        rol: user.rol, colegio_id: user.colegio_id, activo: user.activo
+      },
+      colegioActivo: colegioActivoOverride || SESSION.colegioActivo || user.colegio_id,
+      ts: Date.now()
+    };
+    localStorage.setItem('liax_session', JSON.stringify(data));
+  } catch(e){}
+}
+
+async function _tryAutoRestoreSession(){
+  if(!_planParamsPresent()) return false;
+  try {
+    const raw = localStorage.getItem('liax_session');
+    if(!raw) return false;
+    const saved = JSON.parse(raw);
+    // Sesión válida por 8 horas
+    if(!saved.user || (Date.now() - (saved.ts||0)) > 8*60*60*1000) return false;
+    const params = new URLSearchParams(window.location.search);
+    const planColegioId = params.get('plan_colegio') || saved.colegioActivo || saved.user.colegio_id;
+    if(!planColegioId) return false;
+    SESSION.user = saved.user;
+    SESSION.colegioActivo = planColegioId;
+    setLoading('Cargando datos...');
+    showScreen('screenColegio');
+    await loadColegio(planColegioId);
+    setupColegioUI();
+    hideLoading();
+    showPanel('seguimiento');
+    _checkPlanAutoOpen();
+    return true;
+  } catch(e) {
+    console.warn('Auto-restore failed:', e.message);
+    return false;
+  }
 }
 
 function asegurarDrawer(){
