@@ -7190,11 +7190,16 @@ async function planGenerarPropuestas(){
       // Validar que no sea plan genérico (fallback)
       const primerPaso = cached.plan_data?.[0]?.pasos?.[0]?.descripcion || '';
       const esGenerico = primerPaso.toLowerCase().includes('revisar la causa') || primerPaso.toLowerCase().includes('indicador concreto de avance');
-      if(esGenerico){
-        // Borrar entrada inválida del cache
+      // Validar que las causales del plan coincidan con las seleccionadas
+      const causasEtiq = (s.causas||[]).map(c=>c.etiqueta?.toLowerCase().trim());
+      const causasMismatch = cached.plan_data.some(p => {
+        const ca = (p.causa_atacada||'').toLowerCase().trim();
+        if(!ca || ca==='nivel') return false;
+        return !causasEtiq.some(e => e && (ca.includes(e)||e.includes(ca)));
+      });
+      if(esGenerico || causasMismatch){
         sb.from('planes_cache').delete().eq('id', cached.id);
       } else {
-        // Incrementar hits en background
         sb.from('planes_cache').update({ hits: (cached.hits||1)+1, updated_at: new Date().toISOString() }).eq('id', cached.id);
         s.propuestas = cached.plan_data;
         s.fuentesGlobales = [];
@@ -7260,7 +7265,16 @@ async function planGenerarPropuestas(){
       }, { onConflict: 'cache_key' });
     } catch(e){ console.warn('Cache save:', e.message); }
 
-    s.propuestas = propuestas;
+    // Filtrar líneas a solo las causales seleccionadas por el usuario + núcleo
+    const causasEtiquetas = (s.causas||[]).map(c => c.etiqueta?.toLowerCase().trim());
+    const propuestasFiltradas = propuestas.filter(p => {
+      if(!p.causa_atacada) return true; // conservar si no tiene causa
+      const ca = p.causa_atacada.toLowerCase().trim();
+      if(ca === 'nivel') return true; // conservar línea núcleo
+      return causasEtiquetas.some(e => e && (ca.includes(e) || e.includes(ca)));
+    });
+    // Si el filtro eliminó todo (mismatch total), usar propuestas sin filtrar
+    s.propuestas = propuestasFiltradas.length > 0 ? propuestasFiltradas : propuestas;
     s.fuentesGlobales = data.fuentes_globales || [];
   } catch(e){
     console.warn('Edge Function falló:', e.message);
