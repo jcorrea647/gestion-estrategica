@@ -6119,7 +6119,7 @@ const PLAN_CSS = `
   padding:4px 10px;border-radius:12px;font-size:11px;font-weight:500;
   border:1px solid rgba(255,255,255,0.18);line-height:1.4}
 
-.plan-paso-cuerpo{flex:1;min-width:0}
+.plan-paso-cuerpo{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}
 .plan-paso-fuente{font-size:10.5px;color:var(--muted);margin-top:5px;
   font-style:italic;letter-spacing:.2px;font-weight:500}
 .plan-paso.selected .plan-paso-fuente{color:#5E5848}
@@ -7393,9 +7393,31 @@ function renderPaso4Constructor(){
         <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días · propio</span></div>
       </div>`
     ).join('');
+    // Determinar pill de causa
+    const causaAtacada = ln.causa_atacada || '';
+    const esNucleo = ln.id === 'linea_nucleo' || causaAtacada === 'nivel';
+    const causaObj = (s.causas||[]).find(c =>
+      c.etiqueta?.toLowerCase().trim() === causaAtacada.toLowerCase().trim()
+    );
+    const CAUSA_COLORS = {
+      estructural: {bg:'#E6F1FB', color:'#0C447C', dot:'#378ADD'},
+      relacional:  {bg:'#FAEEDA', color:'#633806', dot:'#EF9F27'},
+      nucleo:      {bg:'#EAF3DE', color:'#27500A', dot:'#639922'},
+      default:     {bg:'#F1EFE8', color:'#444441', dot:'#888780'},
+    };
+    const causaGrupo = esNucleo ? 'nucleo' : (causaObj?.grupo?.toLowerCase().includes('relacional') ? 'relacional' : causaObj ? 'estructural' : 'default');
+    const cc = CAUSA_COLORS[causaGrupo];
+    const causaPillLabel = esNucleo
+      ? 'Núcleo · ' + (ln.foco||'').replace('NÚCLEO · ','')
+      : causaAtacada || (ln.foco||'');
+    const causaPill = `<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+      <span style="font-size:10px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">${esNucleo?'Nivel actual':'Causa identificada'}</span>
+      <span style="font-size:11px;font-weight:500;padding:2px 10px;border-radius:20px;background:${cc.bg};color:${cc.color}">${escapeHtmlPlan(causaPillLabel)}</span>
+    </div>`;
+
     return `<div class="plan-linea">
-      <span class="plan-linea-tag">${escapeHtmlPlan(ln.foco||'')}</span>
-      <h4>${escapeHtmlPlan(ln.titulo)}</h4>
+      ${causaPill}
+      <h4 style="margin-top:0">${escapeHtmlPlan(ln.titulo)}</h4>
       <div class="plan-linea-desc">${escapeHtmlPlan(ln.descripcion_corta||'')}</div>
       ${pasos}
       ${otros}
