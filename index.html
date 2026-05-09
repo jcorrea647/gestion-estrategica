@@ -6212,24 +6212,38 @@ const PLAN_LS_PREFIX = 'plan_borrador_v2_';
 
 const CAUSAS_TAXONOMIA = {
   estructurales: [
-    {codigo:'TIEMPO', etiqueta:'Tiempo'},
-    {codigo:'RECURSOS_MAT', etiqueta:'Recursos materiales'},
-    {codigo:'RECURSOS_HUM', etiqueta:'Recursos humanos'},
-    {codigo:'COMPETENCIAS', etiqueta:'Competencias técnicas'},
-    {codigo:'COORDINACION', etiqueta:'Coordinación entre cargos'},
-    {codigo:'DEFINICION', etiqueta:'Definición poco clara'},
-    {codigo:'DATOS', etiqueta:'Datos / información'},
-    {codigo:'EXTERNA', etiqueta:'Causa externa'}
+    {codigo:'C1', etiqueta:'Tiempo'},
+    {codigo:'C2', etiqueta:'Recursos materiales'},
+    {codigo:'C3', etiqueta:'Recursos humanos'},
+    {codigo:'C4', etiqueta:'Competencias técnicas'},
+    {codigo:'C5', etiqueta:'Coordinación entre cargos'},
+    {codigo:'C6', etiqueta:'Definición poco clara'},
+    {codigo:'C7', etiqueta:'Datos / información'},
+    {codigo:'C8', etiqueta:'Causa externa'}
   ],
   relacionales: [
-    {codigo:'COMPROMISO', etiqueta:'Falta de compromiso docente'},
-    {codigo:'RESISTENCIA', etiqueta:'Resistencia o cultura instalada'},
-    {codigo:'COMUNIC_APOD', etiqueta:'Comunicación con apoderados'},
-    {codigo:'INVOL_EST', etiqueta:'Bajo involucramiento estudiantes'},
-    {codigo:'CONFLICTOS', etiqueta:'Conflictos entre estamentos'},
-    {codigo:'LIDERAZGO', etiqueta:'Liderazgo intermedio débil'}
+    {codigo:'C9',  etiqueta:'Falta de compromiso docente'},
+    {codigo:'C10', etiqueta:'Resistencia o cultura instalada'},
+    {codigo:'C11', etiqueta:'Comunicación con apoderados'},
+    {codigo:'C12', etiqueta:'Bajo involucramiento estudiantes'},
+    {codigo:'C13', etiqueta:'Conflictos entre estamentos'},
+    {codigo:'C14', etiqueta:'Liderazgo intermedio débil'}
   ]
 };
+
+/* Mapa de retro-compatibilidad: traduce códigos legacy a C1-C14
+ * Usado al cargar borradores guardados con códigos antiguos. */
+const CAUSAS_LEGACY_MAP = {
+  'TIEMPO':'C1', 'RECURSOS_MAT':'C2', 'RECURSOS_HUM':'C3',
+  'COMPETENCIAS':'C4', 'COORDINACION':'C5', 'DEFINICION':'C6',
+  'DATOS':'C7', 'EXTERNA':'C8',
+  'COMPROMISO':'C9', 'RESISTENCIA':'C10', 'COMUNIC_APOD':'C11',
+  'INVOL_EST':'C12', 'CONFLICTOS':'C13', 'LIDERAZGO':'C14'
+};
+function planNormalizarCodigoCausa(codigo){
+  if(!codigo) return codigo;
+  return CAUSAS_LEGACY_MAP[codigo] || codigo;
+}
 
 /* ====================== ESTADO ====================== */
 let PLAN_STATE = null;
@@ -6365,7 +6379,10 @@ function planInitState(accionId, mes, seg, borrador) {
   if(borrador){
     PLAN_STATE.microaccionId = borrador.id || null;
     PLAN_STATE.paso = 1; // Siempre iniciar desde Marco Conceptual
-    PLAN_STATE.causas = borrador.causas || [];
+    PLAN_STATE.causas = (borrador.causas || []).map(c => ({
+      ...c,
+      codigo: planNormalizarCodigoCausa(c.codigo)
+    }));
     PLAN_STATE.causasOtros = borrador.causas_otros || [];
     PLAN_STATE.comentario = borrador.comentario || PLAN_STATE.comentario;
     PLAN_STATE.propuestas = borrador.propuestas_llm || null;
@@ -7237,12 +7254,22 @@ async function planGenerarPropuestas(){
   const ta = document.getElementById('planComentario');
   if(ta) s.comentario = ta.value.trim();
 
-  // Si ya hay propuestas (borrador retomado), verificar que no sean genéricas
+  // Defensiva: normalizar códigos de causas (compat con borradores con códigos legacy)
+  if(s.causas?.length){
+    s.causas = s.causas.map(c => ({...c, codigo: planNormalizarCodigoCausa(c.codigo)}));
+  }
+
+  // Si ya hay propuestas (borrador retomado), verificar que no sean obsoletas
   if(s.propuestas && s.propuestas.length){
     const primerDesc = s.propuestas?.[0]?.pasos?.[0]?.descripcion || '';
-    const esGenerico = primerDesc.toLowerCase().includes('revisar la causa') ||
-                       primerDesc.toLowerCase().includes('indicador concreto de avance');
-    if(!esGenerico){
+    // Detectar propuestas obsoletas: del fallback genérico O del fallback de ficha
+    // (anterior al precomp nivel-específico de planes_cache)
+    const esObsoleto =
+      primerDesc.toLowerCase().includes('revisar la causa') ||
+      primerDesc.toLowerCase().includes('indicador concreto de avance') ||
+      // Marca del fallback de ficha: pasos de rec_a típicos no nivel-específicos
+      !s.propuestas[0]?._fromPrecomp;
+    if(!esObsoleto){
       // Verificar que las causales coincidan
       const causasEtiq = (s.causas||[]).map(c=>c.etiqueta?.toLowerCase().trim());
       const mismatch = s.propuestas.some(p => {
@@ -7293,7 +7320,7 @@ async function planGenerarPropuestas(){
             .maybeSingle();
           if(cached?.plan_data?.[0]){
             const linea = cached.plan_data[0];
-            return { ...linea, id: 'linea_' + (i+1) };
+            return { ...linea, id: 'linea_' + (i+1), _fromPrecomp: true };
           }
         } catch(e){ console.warn('precomp lookup:', e.message); }
 
