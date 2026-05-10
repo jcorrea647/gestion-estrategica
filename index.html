@@ -947,6 +947,8 @@ function renderSidebar() {
     '<div class="nav-label">Principal</div>' +
     '<div class="nav-item active" onclick="showPanel(\'dashboard\')" id="nav-dashboard"><span class="icon">o</span> Dashboard</div>' +
     '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
+    '<div class="nav-item" onclick="showPanel(\'mis-planes\')" id="nav-mis-planes"><span class="icon">p</span> Mis planes <span id="nav-mis-planes-count" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
+    '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' +
     '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
     '</div>' +
     '<div class="nav-divider"></div>' +
@@ -1037,7 +1039,24 @@ function getResps(id) { return DB.accion_responsable.filter(ar=>ar.accion_id===i
 
 // FILTERS
 function applyFilters() { filterCargo=document.getElementById('filterCargo')?.value||''; filterMes=document.getElementById('filterMes')?.value||''; renderCurrentPanel(); }
-function initFilters() { const s=document.getElementById('filterCargo'); if(!s) return; s.innerHTML='<option value="">Todos los cargos</option>'+DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join(''); }
+function initFilters() { const s=document.getElementById('filterCargo'); if(!s) return; s.innerHTML='<option value="">Todos los cargos</option>'+DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join(''); misPlanesActualizarBadge(); }
+
+/* Actualiza el contador del nav "Mis planes" — vencidos + próximos a vencer */
+function misPlanesActualizarBadge(){
+  const badge = document.getElementById('nav-mis-planes-count');
+  if(!badge) return;
+  const cartera = (DB.microacciones||[]).filter(m =>
+    m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA'
+  );
+  const alertas = cartera.filter(m => {
+    if(m.estado !== 'ACTIVA') return false;
+    if(!m.fecha_objetivo) return false;
+    const d = Math.round((new Date(m.fecha_objetivo+'T23:59:59') - new Date(new Date().setHours(0,0,0,0))) / (1000*60*60*24));
+    return d < 0 || d <= 7;
+  }).length;
+  if(alertas > 0){ badge.textContent = alertas; badge.style.display=''; }
+  else { badge.style.display='none'; }
+}
 function acMatchFilter(a) { if(filterCargo&&!getResps(a.id).some(r=>r.cargo_id===filterCargo)) return false; if(filterMes&&!a.meses_activos.includes(filterMes)) return false; return true; }
 
 // PANELS
@@ -1054,6 +1073,8 @@ function renderCurrentPanel() {
   switch(currentPanel) {
     case 'dashboard':          main.innerHTML = renderDashboard(); break;
     case 'seguimiento':        main.innerHTML = renderSeguimiento(); break;
+    case 'mis-planes':         renderMisPlanes(); break;
+    case 'biblioteca':         renderBiblioteca(); break;
     case 'informes':           main.innerHTML = renderInformes(); break;
     case 'ver-reuniones':      main.innerHTML = renderVerReuniones(); break;
     case 'resumen-ejecutivo':  main.innerHTML = renderResumenEjecutivo(); break;
@@ -6632,7 +6653,7 @@ async function _abrirPlanInternal(accionId, mes){
     return;
   }
 
-  // 2. Si no, buscar borrador
+  // 2. Si no, buscar borrador del mes actual
   const borrador = await planBuscarBorrador(accionId, mes);
   let datosBorrador = null;
   if(borrador){
@@ -6659,6 +6680,32 @@ async function _abrirPlanInternal(accionId, mes){
     }
   }
 
+  // 3. Si NO hay borrador del mes actual, ver si hay plan anterior heredable
+  if(!datosBorrador){
+    const colegioId = SESSION?.colegioActivo || DB?.colegio?.id || '';
+    const planAnterior = await planBuscarPlanAnterior(colegioId, accionId, mes);
+    if(planAnterior){
+      const accion = DB.acciones.find(a=>a.id===accionId);
+      planRenderSelectorHerencia(planAnterior, accion, mes, (modo) => {
+        if(modo === 'continuar'){
+          const datos = planConstruirDesdePlanAnterior(planAnterior);
+          planInitState(accionId, mes, seg, datos);
+          renderPlanPaso();
+          // Marcar como modificado para que el primer autosave persista
+          if(PLAN_STATE){
+            PLAN_STATE._heredadoDeMes = planAnterior.mes;
+            planMarcarCambio();
+          }
+        } else {
+          // 'nuevo' → flujo normal sin datos heredados
+          planInitState(accionId, mes, seg, null);
+          renderPlanPaso();
+        }
+      });
+      return;
+    }
+  }
+
   planInitState(accionId, mes, seg, datosBorrador);
 
   asegurarDrawer();
@@ -6679,6 +6726,160 @@ async function cerrarPlan(){
   document.body.style.overflow='';
   setTimeout(()=>{ PLAN_STATE = null; PLAN_LAST_SAVED_HASH = null; }, 300);
   if(typeof renderCurrentPanel==='function') renderCurrentPanel();
+}
+
+/* ====================== HERENCIA DE PLAN ANTERIOR ====================== */
+/* Busca el último plan del mismo colegio + misma acción, en cualquier mes anterior.
+ * Solo retorna planes con contenido real (pasos seleccionados o propuestas). */
+async function planBuscarPlanAnterior(colegioId, accionId, mesActual){
+  if(!colegioId || !accionId || !mesActual) return null;
+  try {
+    const { data, error } = await sb.from('microacciones')
+      .select('id, mes, estado, causas, causas_otros, comentario, propuestas_llm, pasos_seleccionados, pasos_otros_linea, pasos_foco_propio, asignaciones, consolidacion_modos, acuerdo_que, acuerdo_quien, acuerdo_co, acuerdo_como, brechas_data, ultimo_autosave')
+      .eq('colegio_id', colegioId)
+      .eq('accion_id', accionId)
+      .lt('mes', mesActual)
+      .in('estado', ['ACTIVA','COMPLETADA','PROPUESTA','BORRADOR'])
+      .order('mes', { ascending: false })
+      .limit(5);
+    if(error){ console.warn('planBuscarPlanAnterior:', error.message); return null; }
+    const conContenido = (data||[]).find(p =>
+      (Array.isArray(p.pasos_seleccionados) && p.pasos_seleccionados.length > 0) ||
+      (Array.isArray(p.propuestas_llm) && p.propuestas_llm.length > 0)
+    );
+    return conContenido || null;
+  } catch(e){
+    console.warn('planBuscarPlanAnterior:', e.message);
+    return null;
+  }
+}
+
+/* Marca asignaciones y acuerdos como heredados, para mostrar "⚠ Heredado" en UI */
+function planMarcarHeredado(planAnterior){
+  const asign = {};
+  const asignOriginal = planAnterior.asignaciones || {};
+  Object.keys(asignOriginal).forEach(key => {
+    const val = asignOriginal[key];
+    if(val && typeof val === 'object'){
+      asign[key] = { ...val, _heredado: true };
+    } else {
+      asign[key] = { valor: val, _heredado: true };
+    }
+  });
+  return {
+    asignaciones: asign,
+    acuerdos: {
+      qhe:   planAnterior.acuerdo_que   || '',
+      quien: planAnterior.acuerdo_quien || '',
+      co:    planAnterior.acuerdo_co    || '',
+      como:  planAnterior.acuerdo_como  || '',
+      _heredado: true,
+      _heredadoDeMes: planAnterior.mes
+    }
+  };
+}
+
+/* Construye datosBorrador desde el plan anterior. NO copia microaccionId
+ * (es plan nuevo) ni cumplimiento/evidencia. */
+function planConstruirDesdePlanAnterior(planAnterior){
+  const heredado = planMarcarHeredado(planAnterior);
+  const comentarioHeredado = planAnterior.comentario
+    ? `[Continuación de ${planAnterior.mes}] ${planAnterior.comentario}`
+    : '';
+  return {
+    id: null,
+    paso_actual: 1,
+    causas: planAnterior.causas || [],
+    causas_otros: planAnterior.causas_otros || [],
+    comentario: comentarioHeredado,
+    propuestas_llm: planAnterior.propuestas_llm || null,
+    pasos_seleccionados: planAnterior.pasos_seleccionados || [],
+    pasos_otros_linea: planAnterior.pasos_otros_linea || {},
+    pasos_foco_propio: planAnterior.pasos_foco_propio || [],
+    asignaciones: heredado.asignaciones,
+    consolidacion_modos: planAnterior.consolidacion_modos || [],
+    acuerdo_que:   heredado.acuerdos.qhe,
+    acuerdo_quien: heredado.acuerdos.quien,
+    acuerdo_co:    heredado.acuerdos.co,
+    acuerdo_como:  heredado.acuerdos.como,
+    brechas_data: planAnterior.brechas_data || null,
+    _heredadoDeMes: planAnterior.mes
+  };
+}
+
+/* Renderiza pantalla "Continuar / Empezar nuevo". Llama callback(modo) al elegir. */
+function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
+  asegurarDrawer();
+  document.getElementById('planOverlay').classList.add('show');
+  document.getElementById('planDrawer').classList.add('show');
+  document.body.style.overflow='hidden';
+  document.getElementById('planTitle').textContent = accion?.nombre || 'Plan';
+  document.getElementById('planSubtitle').textContent = 'Período: ' + (typeof fmtMes==='function' ? fmtMes(mesActual) : mesActual);
+
+  const prog = document.getElementById('planProgress');
+  if(prog) prog.innerHTML = '';
+
+  const mesAnteriorLabel = typeof fmtMes==='function' ? fmtMes(planAnterior.mes) : planAnterior.mes;
+  const numPasos = (planAnterior.pasos_seleccionados||[]).length;
+  const causasNombres = (planAnterior.causas||[]).map(c => c.etiqueta).filter(Boolean).join(', ') || '—';
+
+  document.getElementById('planBody').innerHTML = `
+    <div class="aviso-disclaimer" style="margin-bottom:18px">
+      Tu colegio ya trabajó esta acción en ${escapeHtmlPlan(mesAnteriorLabel)}.
+      Antes de empezar, decide cómo querés arrancar este mes.
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">
+      <button onclick="window._planSelHerencia('continuar')"
+        style="padding:20px;border:2px solid var(--accent);border-radius:10px;background:var(--bg-soft,#f8f9fa);cursor:pointer;text-align:left;transition:all .15s;font-family:inherit">
+        <div style="font-size:24px;margin-bottom:8px">🔁</div>
+        <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px">Continuar de ${escapeHtmlPlan(mesAnteriorLabel)}</div>
+        <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
+          Mismas causales, mismos pasos, mismas asignaciones (con aviso para confirmar).
+          Sumás un mes más a la estrategia que ya venías trabajando.
+        </div>
+        <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
+          <div>📋 ${numPasos} paso(s) ya definidos</div>
+          <div style="margin-top:3px">🎯 Causales: ${escapeHtmlPlan(causasNombres)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
+          Recomendado si la realidad no cambió
+        </div>
+      </button>
+
+      <button onclick="window._planSelHerencia('nuevo')"
+        style="padding:20px;border:2px solid var(--border);border-radius:10px;background:transparent;cursor:pointer;text-align:left;transition:all .15s;font-family:inherit">
+        <div style="font-size:24px;margin-bottom:8px">✏</div>
+        <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Empezar plan nuevo</div>
+        <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
+          Partís desde la versión institucional. Volves a diagnosticar causales
+          y construir el plan según lo que está pasando hoy.
+        </div>
+        <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
+          <div>📋 Pasos institucionales (las 1.470 base)</div>
+          <div style="margin-top:3px">🔄 Diagnóstico fresco</div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
+          Si las causas cambiaron
+        </div>
+      </button>
+    </div>
+
+    <div style="margin-top:24px;padding:14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;color:var(--muted)">
+      <strong>¿No estás seguro?</strong> Empezar nuevo no borra ${escapeHtmlPlan(mesAnteriorLabel)}.
+      Ese plan queda guardado tal como estaba. Si después decidís volver a la estrategia anterior,
+      podés copiar pasos puntualmente desde el editor.
+    </div>
+  `;
+  document.getElementById('planFooter').innerHTML = `
+    <span class="info">Paso previo · Continuidad</span>
+    <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
+  `;
+
+  window._planSelHerencia = function(modo){
+    delete window._planSelHerencia;
+    callback(modo);
+  };
 }
 
 // ── Auto-open plan when loaded via ?plan_accion=...&plan_mes=... ──────────
@@ -7696,29 +7897,44 @@ function renderPaso5Asignacion(){
     `<option value="${escapeHtmlPlan(r.nombre)}">${escapeHtmlPlan(r.nombre+' · '+r.cargo)}</option>`
   ).join('');
 
+  // Detectar si hay asignaciones heredadas (de plan anterior)
+  const hayHeredadas = Object.values(s.asignaciones||{}).some(a => a && a._heredado);
+  const mesHeredadoLabel = s._heredadoDeMes
+    ? (typeof fmtMes==='function' ? fmtMes(s._heredadoDeMes) : s._heredadoDeMes)
+    : '';
+  const bannerHeredado = hayHeredadas ? `
+    <div class="aviso-disclaimer" style="margin-bottom:14px;background:#fff7e6;border-left:3px solid #f59e0b">
+      <strong>⚠ Datos heredados de ${escapeHtmlPlan(mesHeredadoLabel||'plan anterior')}</strong> — revisa cada responsable y confirmá que sigue vigente.
+      Al cambiar cualquier campo, el aviso de "heredado" desaparece automáticamente.
+    </div>` : '';
+
   const cards = todosLosPasos.map((p,i)=>{
     const id = 'asign_'+i;
     s.asignaciones[i] = s.asignaciones[i] || {responsable:p.responsable||'', plazo_dias:p.plazo_dias, esfuerzo:p.esfuerzo||'MEDIO'};
     const a = s.asignaciones[i];
-    return `<div class="plan-asign">
+    const tagHeredado = a._heredado
+      ? `<span style="margin-left:8px;font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em">⚠ Heredado · confirmar</span>`
+      : '';
+    return `<div class="plan-asign"${a._heredado?' style="border-left:3px solid #f59e0b"':''}>
       <div class="plan-asign-head">
         <div class="plan-asign-num">${i+1}</div>
         <div style="flex:1">
           <div class="plan-asign-desc">${escapeHtmlPlan(p.descripcion)}</div>
           <span class="plan-linea-tag" style="margin-top:6px">${escapeHtmlPlan(p.lineaFoco||p.origen||'')}</span>
+          ${tagHeredado}
         </div>
       </div>
       <div class="plan-asign-grid">
         <div>
           <span class="lbl">Responsable</span>
-          <select onchange="PLAN_STATE.asignaciones[${i}].responsable=this.value;planMarcarCambio()">
+          <select onchange="PLAN_STATE.asignaciones[${i}].responsable=this.value; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
             <option value="${escapeHtmlPlan(a.responsable||'')}" selected>${escapeHtmlPlan(a.responsable||'(sin asignar)')}</option>
             ${responsables}
           </select>
         </div>
         <div>
           <span class="lbl">Plazo (días)</span>
-          <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones[${i}].plazo_dias=parseInt(this.value)||14;planMarcarCambio()">
+          <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones[${i}].plazo_dias=parseInt(this.value)||14; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
         </div>
         <div>
           <span class="lbl">Esfuerzo</span>
@@ -7736,6 +7952,7 @@ function renderPaso5Asignacion(){
   document.getElementById('planBody').innerHTML = `
     <h3>Asigna responsables y plazos</h3>
     <p class="lead">Revisa el responsable y plazo de cada paso.</p>
+    ${bannerHeredado}
     ${cards}
     <div class="plan-resumen" style="margin-top:14px">
       <div class="plan-resumen-item">Tu plan se completaría el <strong>${fechaTxt}</strong> (${maxPlazo} días).</div>
@@ -7768,25 +7985,40 @@ function renderPaso6Acuerdos(){
   const resumen = pasos.map((p,i)=>'• '+p.descripcion).join('\n');
   if(!s.acuerdos.qhe) s.acuerdos.qhe = resumen;
 
+  // Detectar si los acuerdos vienen heredados del plan anterior
+  const acuerdosHeredados = s.acuerdos._heredado === true;
+  const mesHeredadoLabel = s.acuerdos._heredadoDeMes
+    ? (typeof fmtMes==='function' ? fmtMes(s.acuerdos._heredadoDeMes) : s.acuerdos._heredadoDeMes)
+    : '';
+  const bannerHeredado = acuerdosHeredados ? `
+    <div class="aviso-disclaimer" style="margin-bottom:14px;background:#fff7e6;border-left:3px solid #f59e0b">
+      <strong>⚠ Acuerdos heredados de ${escapeHtmlPlan(mesHeredadoLabel||'plan anterior')}</strong> — revisa que el responsable y los compromisos sigan vigentes este mes.
+      Al editar cualquier campo, el aviso desaparecerá automáticamente.
+    </div>` : '';
+
+  // Wrap de eventos para limpiar flag al editar
+  const onInputClean = (campo) => `if(PLAN_STATE.acuerdos._heredado){ delete PLAN_STATE.acuerdos._heredado; delete PLAN_STATE.acuerdos._heredadoDeMes; renderPlanPaso(); return; } PLAN_STATE.acuerdos.${campo}=this.value;planMarcarCambio()`;
+
   document.getElementById('planBody').innerHTML = `
     <div class="plan-orient">El plan que estás por confirmar es responsabilidad del equipo directivo. Las sugerencias del sistema solo orientaron la decisión.</div>
     <h3>Acuerdos y compromisos</h3>
     <p class="lead">El cierre del protocolo. Aquí el equipo se compromete públicamente.</p>
-    <div class="plan-acuerdo-field">
-      <label>Qué haremos</label>
-      <textarea id="acu_qhe" oninput="PLAN_STATE.acuerdos.qhe=this.value;planMarcarCambio()">${escapeHtmlPlan(s.acuerdos.qhe)}</textarea>
+    ${bannerHeredado}
+    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
+      <label>Qué haremos${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
+      <textarea id="acu_qhe" oninput="${onInputClean('qhe')}">${escapeHtmlPlan(s.acuerdos.qhe)}</textarea>
     </div>
-    <div class="plan-acuerdo-field">
-      <label>Quién se compromete (responsable principal)</label>
-      <input type="text" id="acu_quien" value="${escapeHtmlPlan(s.acuerdos.quien)}" oninput="PLAN_STATE.acuerdos.quien=this.value;planMarcarCambio()" placeholder="Nombre del responsable">
+    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
+      <label>Quién se compromete (responsable principal)${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
+      <input type="text" id="acu_quien" value="${escapeHtmlPlan(s.acuerdos.quien)}" oninput="${onInputClean('quien')}" placeholder="Nombre del responsable">
     </div>
-    <div class="plan-acuerdo-field">
-      <label>Co-responsable (opcional)</label>
-      <input type="text" id="acu_co" value="${escapeHtmlPlan(s.acuerdos.co)}" oninput="PLAN_STATE.acuerdos.co=this.value;planMarcarCambio()" placeholder="Nombre del co-responsable">
+    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
+      <label>Co-responsable (opcional)${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
+      <input type="text" id="acu_co" value="${escapeHtmlPlan(s.acuerdos.co)}" oninput="${onInputClean('co')}" placeholder="Nombre del co-responsable">
     </div>
-    <div class="plan-acuerdo-field">
-      <label>Cómo sabremos que avanzamos a 15 días</label>
-      <textarea id="acu_como" oninput="PLAN_STATE.acuerdos.como=this.value;planMarcarCambio()" placeholder="Ej: 80% de docentes habrán recibido retroalimentación documentada">${escapeHtmlPlan(s.acuerdos.como)}</textarea>
+    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
+      <label>Cómo sabremos que avanzamos a 15 días${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
+      <textarea id="acu_como" oninput="${onInputClean('como')}" placeholder="Ej: 80% de docentes habrán recibido retroalimentación documentada">${escapeHtmlPlan(s.acuerdos.como)}</textarea>
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
@@ -8190,6 +8422,630 @@ async function planBack(){
 function escapeHtmlPlan(s){
   if(s==null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ====================== PANEL "MIS PLANES" ============================ */
+/* Vista del PRESENTE: muestra los planes activos/borradores del mes actual,
+ * filtrables, ordenables, con alertas de plazos y cumplimiento. */
+
+// Estado del panel (filtros que el directivo elige)
+let MIS_PLANES_FILTROS = { mes:'', estado:'', responsable:'', orden:'urgencia' };
+
+function _mesActualISO(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+/* Calcula días hasta la fecha objetivo. Negativo = vencido. */
+function _diasHastaFecha(fechaISO){
+  if(!fechaISO) return null;
+  const obj = new Date(fechaISO + 'T23:59:59');
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  return Math.round((obj - hoy) / (1000*60*60*24));
+}
+
+/* Dada una microacción, calcula su urgencia para ordenamiento */
+function _urgenciaPlan(m){
+  const dias = _diasHastaFecha(m.fecha_objetivo);
+  if(dias === null) return 999; // sin fecha → al final
+  return dias; // negativos primero (vencidos), después los próximos a vencer
+}
+
+/* Lista los responsables únicos en planes activos */
+function _responsablesEnPlanes(microacciones){
+  const set = new Set();
+  microacciones.forEach(m => {
+    if(m.acuerdo_quien) set.add(m.acuerdo_quien);
+    if(m.acuerdo_co)    set.add(m.acuerdo_co);
+  });
+  return Array.from(set).filter(Boolean).sort();
+}
+
+/* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
+function _cumplimientoPlan(microaccionId){
+  const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
+  if(!pasos.length) return null;
+  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
+  return Math.round(completos / pasos.length * 100);
+}
+
+/* Etiqueta de estado con color */
+function _estadoBadge(estado){
+  const map = {
+    'BORRADOR':   { bg:'#f3f4f6', fg:'#4b5563', label:'Borrador' },
+    'PROPUESTA':  { bg:'#dbeafe', fg:'#1e40af', label:'Propuesta' },
+    'ACTIVA':     { bg:'#d1fae5', fg:'#065f46', label:'Activa' },
+    'COMPLETADA': { bg:'#e0e7ff', fg:'#3730a3', label:'Completada' }
+  };
+  const s = map[estado] || { bg:'#f3f4f6', fg:'#4b5563', label:estado||'—' };
+  return `<span style="background:${s.bg};color:${s.fg};font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em">${s.label}</span>`;
+}
+
+/* Etiqueta de plazo con semáforo */
+function _plazoBadge(fechaISO){
+  const dias = _diasHastaFecha(fechaISO);
+  if(dias === null) return '<span style="color:var(--muted);font-size:11px">Sin plazo</span>';
+  if(dias < 0) return `<span style="color:#dc2626;font-weight:700;font-size:12px">⚠ Vencido hace ${Math.abs(dias)}d</span>`;
+  if(dias === 0) return `<span style="color:#dc2626;font-weight:700;font-size:12px">⚠ Vence HOY</span>`;
+  if(dias <= 7) return `<span style="color:#d97706;font-weight:600;font-size:12px">⏰ Vence en ${dias}d</span>`;
+  return `<span style="color:var(--text);font-size:12px">📅 ${dias}d</span>`;
+}
+
+/* Calcula el bucket "Mis planes activos" — los que cuentan como cartera del directivo */
+function _planesActivos(){
+  return (DB.microacciones||[]).filter(m =>
+    m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA'
+  );
+}
+
+function renderMisPlanes(){
+  const main = document.getElementById('mainContent');
+  if(!main) return;
+
+  const todos = DB.microacciones || [];
+  if(!todos.length){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">Mis planes</div>
+        <div class="page-sub">Cartera de planes del colegio</div>
+      </div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">📋</div>
+          <div style="font-weight:500;margin-bottom:8px">Aún no hay planes</div>
+          <div style="font-size:12px;color:var(--muted)">Cuando crees un plan desde "Ingresar seguimiento", va a aparecer acá.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Aplicar filtros
+  const f = MIS_PLANES_FILTROS;
+  let lista = todos.slice();
+  if(f.mes)         lista = lista.filter(m => m.mes === f.mes);
+  if(f.estado)      lista = lista.filter(m => m.estado === f.estado);
+  if(f.responsable) lista = lista.filter(m => m.acuerdo_quien === f.responsable || m.acuerdo_co === f.responsable);
+
+  // Por defecto si NO hay filtros, mostrar solo activos/borrador/propuesta del mes actual + planes con plazos vencidos de cualquier mes
+  if(!f.mes && !f.estado && !f.responsable){
+    const mesAct = _mesActualISO();
+    lista = lista.filter(m => {
+      const esCarteraActual = (m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA');
+      const dias = _diasHastaFecha(m.fecha_objetivo);
+      const vencidoActiva = m.estado === 'ACTIVA' && dias !== null && dias < 0;
+      return (esCarteraActual && m.mes === mesAct) || vencidoActiva;
+    });
+  }
+
+  // Ordenar
+  if(f.orden === 'urgencia'){
+    lista.sort((a,b) => _urgenciaPlan(a) - _urgenciaPlan(b));
+  } else if(f.orden === 'cumplimiento'){
+    lista.sort((a,b) => {
+      const ca = _cumplimientoPlan(a.id), cb = _cumplimientoPlan(b.id);
+      return (ca===null?100:ca) - (cb===null?100:cb);
+    });
+  } else if(f.orden === 'reciente'){
+    lista.sort((a,b) => (b.mes||'').localeCompare(a.mes||''));
+  }
+
+  // KPIs de cartera
+  const cartera = _planesActivos();
+  const vencidos = cartera.filter(m => {
+    const d = _diasHastaFecha(m.fecha_objetivo);
+    return m.estado === 'ACTIVA' && d !== null && d < 0;
+  }).length;
+  const proximos = cartera.filter(m => {
+    const d = _diasHastaFecha(m.fecha_objetivo);
+    return m.estado === 'ACTIVA' && d !== null && d >= 0 && d <= 7;
+  }).length;
+  const borradores = cartera.filter(m => m.estado === 'BORRADOR').length;
+  const cumplimientoPromedio = (() => {
+    const valores = cartera.map(m => _cumplimientoPlan(m.id)).filter(v => v !== null);
+    if(!valores.length) return null;
+    return Math.round(valores.reduce((a,b)=>a+b,0) / valores.length);
+  })();
+
+  // Opciones de filtro
+  const mesesUnicos = Array.from(new Set(todos.map(m => m.mes).filter(Boolean))).sort().reverse();
+  const responsablesUnicos = _responsablesEnPlanes(todos);
+
+  let html = `
+    <div class="page-header">
+      <div class="page-title">Mis planes</div>
+      <div class="page-sub">${cartera.length} plan(es) en cartera · ${DB.colegio?.nombre || ''}</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card ${vencidos>0?'rojo':'verde'}">
+        <div class="kpi-val">${vencidos}</div>
+        <div class="kpi-label">Vencidos</div>
+        <div class="kpi-badge ${vencidos>0?'rojo':'verde'}">Plazo expirado</div>
+      </div>
+      <div class="kpi-card ${proximos>0?'amarillo':'verde'}">
+        <div class="kpi-val">${proximos}</div>
+        <div class="kpi-label">Próximos 7 días</div>
+        <div class="kpi-badge ${proximos>0?'amarillo':'verde'}">Por vencer</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${borradores}</div>
+        <div class="kpi-label">Borradores</div>
+        <div class="kpi-badge">Sin activar</div>
+      </div>
+      <div class="kpi-card ${cumplimientoPromedio===null?'':(cumplimientoPromedio>=70?'verde':cumplimientoPromedio>=40?'amarillo':'rojo')}">
+        <div class="kpi-val">${cumplimientoPromedio===null?'—':cumplimientoPromedio+'%'}</div>
+        <div class="kpi-label">Cumplim. promedio</div>
+        <div class="kpi-badge">Pasos completados</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">MES</div>
+          <select class="filter-select" onchange="MIS_PLANES_FILTROS.mes=this.value;renderMisPlanes()">
+            <option value="">Cartera (mes actual + vencidos)</option>
+            ${mesesUnicos.map(m => `<option value="${m}"${m===f.mes?' selected':''}>${fmtMes(m)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">ESTADO</div>
+          <select class="filter-select" onchange="MIS_PLANES_FILTROS.estado=this.value;renderMisPlanes()">
+            <option value="">Todos</option>
+            <option value="ACTIVA"${f.estado==='ACTIVA'?' selected':''}>Activa</option>
+            <option value="BORRADOR"${f.estado==='BORRADOR'?' selected':''}>Borrador</option>
+            <option value="PROPUESTA"${f.estado==='PROPUESTA'?' selected':''}>Propuesta</option>
+            <option value="COMPLETADA"${f.estado==='COMPLETADA'?' selected':''}>Completada</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">RESPONSABLE</div>
+          <select class="filter-select" onchange="MIS_PLANES_FILTROS.responsable=this.value;renderMisPlanes()">
+            <option value="">Todos</option>
+            ${responsablesUnicos.map(r => `<option value="${escapeHtmlPlan(r)}"${r===f.responsable?' selected':''}>${escapeHtmlPlan(r)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">ORDENAR POR</div>
+          <select class="filter-select" onchange="MIS_PLANES_FILTROS.orden=this.value;renderMisPlanes()">
+            <option value="urgencia"${f.orden==='urgencia'?' selected':''}>Urgencia (vencidos primero)</option>
+            <option value="cumplimiento"${f.orden==='cumplimiento'?' selected':''}>Cumplimiento (más bajo primero)</option>
+            <option value="reciente"${f.orden==='reciente'?' selected':''}>Mes (más reciente primero)</option>
+          </select>
+        </div>
+        ${(f.mes||f.estado||f.responsable)?`
+          <button class="btn-secondary" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="MIS_PLANES_FILTROS={mes:'',estado:'',responsable:'',orden:'urgencia'};renderMisPlanes()">
+            ✕ Limpiar filtros
+          </button>` : ''}
+      </div>
+    </div>
+  `;
+
+  if(!lista.length){
+    html += `
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">🔍</div>
+          <div style="font-weight:500;margin-bottom:8px">Sin planes que coincidan</div>
+          <div style="font-size:12px;color:var(--muted)">Probá ajustar los filtros o limpiarlos.</div>
+        </div>
+      </div>`;
+  } else {
+    html += '<div class="card" style="padding:0;overflow:hidden">';
+    html += '<div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
+    html += '<div>Acción</div><div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Próximo plazo</div><div></div>';
+    html += '</div>';
+
+    lista.forEach(m => {
+      const accion = (DB.acciones||[]).find(a => a.id === m.accion_id);
+      const accionNombre = accion?.nombre || '(acción eliminada)';
+      const cumpl = _cumplimientoPlan(m.id);
+      const cumplBar = cumpl === null
+        ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
+        : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
+      const respDisplay = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '<span style="color:var(--muted)">Sin asignar</span>');
+
+      html += `
+        <div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s"
+             onmouseover="this.style.background='var(--bg-soft,#f8f9fa)'"
+             onmouseout="this.style.background=''"
+             onclick="abrirPlan('${m.accion_id}','${m.mes}')">
+          <div>
+            <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
+            <div style="font-size:11px;color:var(--muted)">👤 ${escapeHtmlPlan(respDisplay)}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text)">${fmtMes(m.mes, true)}</div>
+          <div>${_estadoBadge(m.estado)}</div>
+          <div>${cumplBar}</div>
+          <div>${_plazoBadge(m.fecha_objetivo)}</div>
+          <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  main.innerHTML = html;
+
+  // Actualizar el badge de la nav con cantidad de vencidos + próximos
+  setTimeout(() => {
+    const badge = document.getElementById('nav-mis-planes-count');
+    const total = vencidos + proximos;
+    if(badge){
+      if(total > 0){ badge.textContent = total; badge.style.display=''; }
+      else { badge.style.display='none'; }
+    }
+  }, 50);
+}
+
+/* ====================== PANEL "BIBLIOTECA" ============================ */
+/* Vista del PASADO: histórico completo de planes del colegio,
+ * agrupados por acción del PME, con evolución temporal y mejor versión. */
+
+let BIBLIO_FILTROS = {
+  area: '',
+  ano: '',
+  ordenAccion: 'mas-versiones',
+  expandidas: new Set()
+};
+
+/* Agrupa todos los planes por acción del PME (ignora estado).
+ * Solo planes con contenido real (pasos seleccionados o propuestas). */
+function _bibliotecaAgruparPorAccion(){
+  const todas = (DB.microacciones || []).filter(m =>
+    (Array.isArray(m.pasos_seleccionados) && m.pasos_seleccionados.length > 0) ||
+    (Array.isArray(m.propuestas_llm) && m.propuestas_llm.length > 0) ||
+    m.estado === 'ACTIVA' || m.estado === 'COMPLETADA'
+  );
+  const grupos = {};
+  todas.forEach(m => {
+    const key = m.accion_id;
+    if(!grupos[key]) grupos[key] = [];
+    grupos[key].push(m);
+  });
+  // Ordenar versiones de cada grupo: más reciente primero
+  Object.values(grupos).forEach(arr => {
+    arr.sort((a,b) => (b.mes||'').localeCompare(a.mes||''));
+  });
+  return grupos;
+}
+
+/* Identifica la "mejor versión" de un grupo de planes:
+ * la versión COMPLETADA con mayor % de cumplimiento. */
+function _bibliotecaMejorVersion(versiones){
+  let mejor = null;
+  let mejorPct = -1;
+  versiones.forEach(v => {
+    if(v.estado !== 'COMPLETADA') return;
+    const pct = _cumplimientoPlan(v.id);
+    if(pct !== null && pct > mejorPct){
+      mejor = v;
+      mejorPct = pct;
+    }
+  });
+  return mejor ? { plan: mejor, cumplimiento: mejorPct } : null;
+}
+
+/* Genera un mini-gráfico SVG sparkline de la evolución del cumplimiento.
+ * width=120, height=32. Versiones ordenadas cronológicamente (asc). */
+function _bibliotecaSparkline(versiones){
+  const ordenadas = versiones.slice().sort((a,b) => (a.mes||'').localeCompare(b.mes||''));
+  const puntos = ordenadas.map(v => ({
+    mes: v.mes,
+    pct: v.estado === 'COMPLETADA' ? _cumplimientoPlan(v.id) : null,
+    estado: v.estado
+  })).filter(p => p.pct !== null);
+
+  if(puntos.length < 2){
+    return `<div style="font-size:11px;color:var(--muted);font-style:italic">Aún no hay versiones COMPLETADAS suficientes para evolución</div>`;
+  }
+
+  const w = 120, h = 32, pad = 3;
+  const xs = puntos.map((_, i) => pad + (i * (w - 2*pad) / (puntos.length - 1)));
+  const ys = puntos.map(p => h - pad - (p.pct/100) * (h - 2*pad));
+  const pathD = puntos.map((p, i) => `${i===0?'M':'L'}${xs[i].toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  const ultimoPct = puntos[puntos.length-1].pct;
+  const colorLinea = ultimoPct >= 70 ? '#10b981' : ultimoPct >= 40 ? '#f59e0b' : '#ef4444';
+  const tendencia = puntos[puntos.length-1].pct - puntos[0].pct;
+  const flecha = tendencia >= 5 ? '↑' : tendencia <= -5 ? '↓' : '→';
+  const colorFlecha = tendencia >= 5 ? '#10b981' : tendencia <= -5 ? '#ef4444' : '#6b7280';
+
+  return `
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg width="${w}" height="${h}" style="display:block">
+        <path d="${pathD}" fill="none" stroke="${colorLinea}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${puntos.map((p,i) => `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="2.5" fill="${colorLinea}"/>`).join('')}
+      </svg>
+      <span style="font-size:13px;font-weight:700;color:${colorFlecha}">${flecha}</span>
+      <span style="font-size:11px;color:var(--muted)">${puntos.length} vers.</span>
+    </div>`;
+}
+
+/* Toggle expandir/colapsar tarjeta de acción en biblioteca */
+function bibliotecaToggleAccion(accionId){
+  if(BIBLIO_FILTROS.expandidas.has(accionId)) BIBLIO_FILTROS.expandidas.delete(accionId);
+  else BIBLIO_FILTROS.expandidas.add(accionId);
+  renderBiblioteca();
+}
+
+/* Abre un plan histórico en modo lectura. Reusa la lógica existente. */
+function bibliotecaAbrirVersion(accionId, mes){
+  abrirPlan(accionId, mes);
+}
+
+function renderBiblioteca(){
+  const main = document.getElementById('mainContent');
+  if(!main) return;
+
+  const grupos = _bibliotecaAgruparPorAccion();
+  const accionesIds = Object.keys(grupos);
+
+  if(!accionesIds.length){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">Biblioteca</div>
+        <div class="page-sub">Histórico de planes del colegio</div>
+      </div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">📚</div>
+          <div style="font-weight:500;margin-bottom:8px">La biblioteca está vacía</div>
+          <div style="font-size:12px;color:var(--muted)">Cuando completes planes con pasos definidos, van a aparecer acá organizados por acción.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const f = BIBLIO_FILTROS;
+
+  // Filtros disponibles
+  const areasUnicas = new Map();
+  const anosUnicos = new Set();
+  accionesIds.forEach(aid => {
+    const accion = (DB.acciones||[]).find(a => a.id === aid);
+    if(accion){
+      const obj = (DB.objetivos||[]).find(o => o.id === accion.objetivo_id);
+      const area = obj ? (DB.areas||[]).find(a => a.id === obj.area_id) : null;
+      if(area) areasUnicas.set(area.id, area.nombre);
+    }
+    grupos[aid].forEach(m => {
+      if(m.mes) anosUnicos.add(m.mes.split('-')[0]);
+    });
+  });
+
+  // Aplicar filtros para construir lista visible
+  let accionesVisibles = accionesIds.slice();
+  if(f.area){
+    accionesVisibles = accionesVisibles.filter(aid => {
+      const accion = (DB.acciones||[]).find(a => a.id === aid);
+      if(!accion) return false;
+      const obj = (DB.objetivos||[]).find(o => o.id === accion.objetivo_id);
+      return obj && obj.area_id === f.area;
+    });
+  }
+  if(f.ano){
+    accionesVisibles = accionesVisibles.filter(aid =>
+      grupos[aid].some(m => (m.mes||'').startsWith(f.ano))
+    );
+  }
+
+  // Ordenar acciones
+  if(f.ordenAccion === 'mas-versiones'){
+    accionesVisibles.sort((a,b) => grupos[b].length - grupos[a].length);
+  } else if(f.ordenAccion === 'mejor-cumplim'){
+    accionesVisibles.sort((a,b) => {
+      const ma = _bibliotecaMejorVersion(grupos[a]);
+      const mb = _bibliotecaMejorVersion(grupos[b]);
+      return (mb?.cumplimiento ?? -1) - (ma?.cumplimiento ?? -1);
+    });
+  } else if(f.ordenAccion === 'alfa'){
+    accionesVisibles.sort((a,b) => {
+      const na = (DB.acciones||[]).find(x=>x.id===a)?.nombre || '';
+      const nb = (DB.acciones||[]).find(x=>x.id===b)?.nombre || '';
+      return na.localeCompare(nb);
+    });
+  }
+
+  // Stats globales
+  const totalPlanes = accionesIds.reduce((sum, aid) => sum + grupos[aid].length, 0);
+  const completados = accionesIds.reduce((sum, aid) =>
+    sum + grupos[aid].filter(m => m.estado === 'COMPLETADA').length, 0);
+  const cumplimientoGlobal = (() => {
+    const valores = [];
+    accionesIds.forEach(aid => {
+      grupos[aid].forEach(m => {
+        if(m.estado === 'COMPLETADA'){
+          const c = _cumplimientoPlan(m.id);
+          if(c !== null) valores.push(c);
+        }
+      });
+    });
+    if(!valores.length) return null;
+    return Math.round(valores.reduce((a,b)=>a+b,0) / valores.length);
+  })();
+
+  let html = `
+    <div class="page-header">
+      <div class="page-title">Biblioteca</div>
+      <div class="page-sub">${accionesIds.length} acción(es) · ${totalPlanes} planes históricos · ${DB.colegio?.nombre || ''}</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-val">${accionesIds.length}</div>
+        <div class="kpi-label">Acciones trabajadas</div>
+        <div class="kpi-badge">Con plan histórico</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${totalPlanes}</div>
+        <div class="kpi-label">Planes totales</div>
+        <div class="kpi-badge">Suma de versiones</div>
+      </div>
+      <div class="kpi-card verde">
+        <div class="kpi-val">${completados}</div>
+        <div class="kpi-label">Completados</div>
+        <div class="kpi-badge verde">Memoria institucional</div>
+      </div>
+      <div class="kpi-card ${cumplimientoGlobal===null?'':(cumplimientoGlobal>=70?'verde':cumplimientoGlobal>=40?'amarillo':'rojo')}">
+        <div class="kpi-val">${cumplimientoGlobal===null?'—':cumplimientoGlobal+'%'}</div>
+        <div class="kpi-label">Cumplim. histórico</div>
+        <div class="kpi-badge">Promedio completados</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">ÁREA</div>
+          <select class="filter-select" onchange="BIBLIO_FILTROS.area=this.value;renderBiblioteca()">
+            <option value="">Todas las áreas</option>
+            ${Array.from(areasUnicas.entries()).map(([id,nombre]) =>
+              `<option value="${id}"${id===f.area?' selected':''}>${escapeHtmlPlan(nombre)}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">AÑO</div>
+          <select class="filter-select" onchange="BIBLIO_FILTROS.ano=this.value;renderBiblioteca()">
+            <option value="">Todos los años</option>
+            ${Array.from(anosUnicos).sort().reverse().map(a =>
+              `<option value="${a}"${a===f.ano?' selected':''}>${a}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">ORDENAR POR</div>
+          <select class="filter-select" onchange="BIBLIO_FILTROS.ordenAccion=this.value;renderBiblioteca()">
+            <option value="mas-versiones"${f.ordenAccion==='mas-versiones'?' selected':''}>Más trabajadas</option>
+            <option value="mejor-cumplim"${f.ordenAccion==='mejor-cumplim'?' selected':''}>Mejor cumplimiento</option>
+            <option value="alfa"${f.ordenAccion==='alfa'?' selected':''}>Alfabético</option>
+          </select>
+        </div>
+        ${(f.area||f.ano)?`
+          <button class="btn-secondary" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="BIBLIO_FILTROS={area:'',ano:'',ordenAccion:BIBLIO_FILTROS.ordenAccion,expandidas:BIBLIO_FILTROS.expandidas};renderBiblioteca()">
+            ✕ Limpiar filtros
+          </button>` : ''}
+      </div>
+    </div>
+  `;
+
+  if(!accionesVisibles.length){
+    html += `
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">🔍</div>
+          <div style="font-weight:500;margin-bottom:8px">Sin resultados</div>
+          <div style="font-size:12px;color:var(--muted)">Probá ajustar o limpiar los filtros.</div>
+        </div>
+      </div>`;
+  } else {
+    accionesVisibles.forEach(aid => {
+      const accion = (DB.acciones||[]).find(a => a.id === aid);
+      const accionNombre = accion?.nombre || '(acción eliminada)';
+      const versiones = grupos[aid];
+      const obj = accion ? (DB.objetivos||[]).find(o => o.id === accion.objetivo_id) : null;
+      const area = obj ? (DB.areas||[]).find(a => a.id === obj.area_id) : null;
+      const mejor = _bibliotecaMejorVersion(versiones);
+      const expandida = f.expandidas.has(aid);
+
+      const numActivos = versiones.filter(v => v.estado === 'ACTIVA' || v.estado === 'BORRADOR' || v.estado === 'PROPUESTA').length;
+      const numCompletados = versiones.filter(v => v.estado === 'COMPLETADA').length;
+
+      html += `
+        <div class="card" style="margin-bottom:12px;padding:0;overflow:hidden">
+          <div onclick="bibliotecaToggleAccion('${aid}')" style="padding:14px 18px;cursor:pointer;display:grid;grid-template-columns:30px 1.6fr 1fr 1fr 0.8fr;gap:14px;align-items:center;transition:background .12s;${expandida?'background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border)':''}"
+               onmouseover="if(!${expandida})this.style.background='var(--bg-soft,#f8f9fa)'"
+               onmouseout="if(!${expandida})this.style.background=''">
+            <div style="font-size:18px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s">›</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:3px">${escapeHtmlPlan(accionNombre)}</div>
+              <div style="font-size:11px;color:var(--muted)">${escapeHtmlPlan(area?.nombre || '')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:3px">VERSIONES</div>
+              <div style="font-size:13px;color:var(--text)">
+                <strong>${versiones.length}</strong> total
+                ${numCompletados ? ` · <span style="color:var(--green,#10b981)">${numCompletados} ✓</span>` : ''}
+                ${numActivos ? ` · <span style="color:var(--accent)">${numActivos} en curso</span>` : ''}
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:3px">EVOLUCIÓN</div>
+              ${_bibliotecaSparkline(versiones)}
+            </div>
+            <div style="text-align:right">
+              ${mejor ? `
+                <div style="font-size:11px;color:var(--muted);margin-bottom:3px">MEJOR</div>
+                <div style="font-size:13px;font-weight:700;color:#d97706">⭐ ${mejor.cumplimiento}%</div>
+                <div style="font-size:10px;color:var(--muted)">${fmtMes(mejor.plan.mes, true)}</div>
+              ` : `
+                <div style="font-size:11px;color:var(--muted);font-style:italic">Sin completar aún</div>
+              `}
+            </div>
+          </div>
+          ${expandida ? _bibliotecaRenderVersiones(aid, versiones, mejor?.plan?.id) : ''}
+        </div>`;
+    });
+  }
+
+  main.innerHTML = html;
+}
+
+/* Renderiza la lista expandida de versiones de una acción */
+function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
+  let html = '<div style="padding:0">';
+
+  html += `
+    <div style="display:grid;grid-template-columns:0.7fr 0.9fr 1fr 1fr 1.5fr 0.5fr;gap:12px;padding:10px 18px;background:var(--bg-soft,#f8f9fa);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border-light,#e8e8e8)">
+      <div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Pasos</div><div>Responsable</div><div></div>
+    </div>`;
+
+  versiones.forEach(v => {
+    const cumpl = _cumplimientoPlan(v.id);
+    const numPasos = (v.pasos_seleccionados||[]).length;
+    const esMejor = v.id === mejorPlanId;
+
+    const cumplBar = cumpl === null
+      ? '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin pasos cerrados</span>'
+      : `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:40px;max-width:80px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
+
+    const respDisplay = v.acuerdo_quien || '<span style="color:var(--muted)">Sin asignar</span>';
+
+    html += `
+      <div onclick="bibliotecaAbrirVersion('${accionId}','${v.mes}')" 
+           style="display:grid;grid-template-columns:0.7fr 0.9fr 1fr 1fr 1.5fr 0.5fr;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s;${esMejor?'background:#fffbeb':''}"
+           onmouseover="this.style.background='${esMejor?'#fef3c7':'var(--bg-soft,#f8f9fa)'}'"
+           onmouseout="this.style.background='${esMejor?'#fffbeb':''}'">
+        <div style="font-size:12px;font-weight:600;color:var(--text)">${esMejor?'⭐ ':''}${fmtMes(v.mes, true)}</div>
+        <div>${_estadoBadge(v.estado)}</div>
+        <div>${cumplBar}</div>
+        <div style="font-size:12px;color:var(--text)">${numPasos} paso(s)</div>
+        <div style="font-size:12px;color:var(--text)">👤 ${escapeHtmlPlan(respDisplay)}</div>
+        <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
+      </div>`;
+  });
+
+  html += '</div>';
+  return html;
 }
 
 /* ====================== CARGA INICIAL DE DATOS ====================== */
