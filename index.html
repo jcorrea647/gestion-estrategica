@@ -367,6 +367,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
       <div class="logo">Gestión Estratégica</div>
       <span class="colegio-name" id="topColegio"></span>
       <div class="spacer"></div>
+      <button class="logout-btn" id="topMapaAccionesBtn" onclick="abrirMapaAcciones()" style="display:none;margin-right:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2)" title="Curaduría institucional de planes pre-computados">🗺 Mapa de Acciones</button>
       <span class="role-badge" id="topRolBadge" style="margin-right:8px"></span>
       <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:12px" id="topUserName"></span>
       <span class="rbd-badge" id="topRbd"></span>
@@ -934,6 +935,9 @@ function setupColegioUI() {
   const trb = document.getElementById('topRolBadge');
   trb.textContent = ROL_LABELS[u.rol]; trb.className = 'role-badge '+u.rol;
   document.getElementById('backBtn').style.display = isMulti(u.rol) ? '' : 'none';
+  // Botón Mapa de Acciones: solo visible para superadmin
+  const mapaBtn = document.getElementById('topMapaAccionesBtn');
+  if(mapaBtn) mapaBtn.style.display = (u.rol === 'superadmin') ? '' : 'none';
   renderSidebar();
   openAreas = new Set(DB.areas.length ? [DB.areas[0].id] : []);
   openObjs = new Set(); filterCargo=''; filterMes='';
@@ -8680,7 +8684,7 @@ function safeMarkupPlan(s){
  * filtrables, ordenables, con alertas de plazos y cumplimiento. */
 
 // Estado del panel (filtros que el directivo elige)
-let MIS_PLANES_FILTROS = { mes:'', estado:'', responsable:'', orden:'urgencia' };
+let MIS_PLANES_FILTROS = { area:'', mes:'', estado:'', responsable:'', orden:'urgencia' };
 
 function _mesActualISO(){
   const d = new Date();
@@ -8710,6 +8714,51 @@ function _responsablesEnPlanes(microacciones){
     if(m.acuerdo_co)    set.add(m.acuerdo_co);
   });
   return Array.from(set).filter(Boolean).sort();
+}
+
+/* Devuelve el área de una acción navegando accion → objetivo → area.
+ * Retorna {id, nombre, color} o null si no se puede resolver. */
+function _areaDeAccion(accionId){
+  if(!accionId) return null;
+  const accion = (DB.acciones||[]).find(a => a.id === accionId);
+  if(!accion) return null;
+  const obj = (DB.objetivos||[]).find(o => o.id === accion.objetivo_id);
+  if(!obj) return null;
+  const area = (DB.areas||[]).find(a => a.id === obj.area_id);
+  return area || null;
+}
+
+/* Devuelve un color consistente según el nombre del área.
+ * Si el área tiene un campo `color` definido, se usa ese; si no, se mapea
+ * por palabras clave del nombre. */
+function _colorDeArea(area){
+  if(!area) return { bg:'#f3f4f6', fg:'#4b5563', borde:'#9ca3af' };
+  if(area.color) return { bg:area.color+'22', fg:area.color, borde:area.color };
+  const n = (area.nombre||'').toLowerCase();
+  if(n.includes('lider'))     return { bg:'#dbeafe', fg:'#1e40af', borde:'#3b82f6' }; // azul
+  if(n.includes('pedag'))     return { bg:'#dcfce7', fg:'#166534', borde:'#22c55e' }; // verde
+  if(n.includes('conviv'))    return { bg:'#fef3c7', fg:'#92400e', borde:'#f59e0b' }; // ámbar
+  if(n.includes('recurs'))    return { bg:'#f3e8ff', fg:'#6b21a8', borde:'#a855f7' }; // violeta
+  if(n.includes('resultad'))  return { bg:'#fee2e2', fg:'#991b1b', borde:'#ef4444' }; // rojo
+  // fallback con hash simple del nombre para que siempre sea consistente
+  const colors = [
+    { bg:'#dbeafe', fg:'#1e40af', borde:'#3b82f6' },
+    { bg:'#dcfce7', fg:'#166534', borde:'#22c55e' },
+    { bg:'#fef3c7', fg:'#92400e', borde:'#f59e0b' },
+    { bg:'#f3e8ff', fg:'#6b21a8', borde:'#a855f7' },
+    { bg:'#fee2e2', fg:'#991b1b', borde:'#ef4444' },
+    { bg:'#fce7f3', fg:'#9f1239', borde:'#ec4899' }
+  ];
+  let hash = 0;
+  for(let i=0; i<n.length; i++) hash = ((hash<<5) - hash + n.charCodeAt(i)) | 0;
+  return colors[Math.abs(hash) % colors.length];
+}
+
+/* Tag visual del área para mostrar en cada plan */
+function _areaBadge(area){
+  if(!area) return '';
+  const c = _colorDeArea(area);
+  return `<span style="background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;border:1px solid ${c.borde}33">${escapeHtmlPlan(area.nombre)}</span>`;
 }
 
 /* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
@@ -8789,12 +8838,13 @@ async function renderMisPlanes(){
   // Aplicar filtros
   const f = MIS_PLANES_FILTROS;
   let lista = todos.slice();
+  if(f.area)        lista = lista.filter(m => { const a = _areaDeAccion(m.accion_id); return a && a.id === f.area; });
   if(f.mes)         lista = lista.filter(m => m.mes === f.mes);
   if(f.estado)      lista = lista.filter(m => m.estado === f.estado);
   if(f.responsable) lista = lista.filter(m => m.acuerdo_quien === f.responsable || m.acuerdo_co === f.responsable);
 
   // Por defecto si NO hay filtros, mostrar solo activos/borrador/propuesta del mes actual + planes con plazos vencidos de cualquier mes
-  if(!f.mes && !f.estado && !f.responsable){
+  if(!f.area && !f.mes && !f.estado && !f.responsable){
     const mesAct = _mesActualISO();
     lista = lista.filter(m => {
       const esCarteraActual = (m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA');
@@ -8836,6 +8886,14 @@ async function renderMisPlanes(){
   // Opciones de filtro
   const mesesUnicos = Array.from(new Set(todos.map(m => m.mes).filter(Boolean))).sort().reverse();
   const responsablesUnicos = _responsablesEnPlanes(todos);
+  // Áreas únicas presentes en los planes (en orden por área.orden si existe)
+  const areasMap = new Map();
+  todos.forEach(m => {
+    const area = _areaDeAccion(m.accion_id);
+    if(area && !areasMap.has(area.id)) areasMap.set(area.id, area);
+  });
+  const areasUnicas = Array.from(areasMap.values())
+    .sort((a,b) => (a.orden ?? 999) - (b.orden ?? 999) || (a.nombre||'').localeCompare(b.nombre||''));
 
   let html = `
     <div class="page-header">
@@ -8869,6 +8927,13 @@ async function renderMisPlanes(){
     <div class="card" style="padding:14px;margin-bottom:14px">
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
         <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">ÁREA</div>
+          <select class="filter-select" onchange="MIS_PLANES_FILTROS.area=this.value;renderMisPlanes()">
+            <option value="">Todas las áreas</option>
+            ${areasUnicas.map(a => `<option value="${a.id}"${a.id===f.area?' selected':''}>${escapeHtmlPlan(a.nombre)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
           <div style="font-size:10px;color:var(--muted);margin-bottom:3px">MES</div>
           <select class="filter-select" onchange="MIS_PLANES_FILTROS.mes=this.value;renderMisPlanes()">
             <option value="">Cartera (mes actual + vencidos)</option>
@@ -8900,8 +8965,8 @@ async function renderMisPlanes(){
             <option value="reciente"${f.orden==='reciente'?' selected':''}>Mes (más reciente primero)</option>
           </select>
         </div>
-        ${(f.mes||f.estado||f.responsable)?`
-          <button class="btn-secondary" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="MIS_PLANES_FILTROS={mes:'',estado:'',responsable:'',orden:'urgencia'};renderMisPlanes()">
+        ${(f.area||f.mes||f.estado||f.responsable)?`
+          <button class="btn-secondary" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="MIS_PLANES_FILTROS={area:'',mes:'',estado:'',responsable:'',orden:MIS_PLANES_FILTROS.orden};renderMisPlanes()">
             ✕ Limpiar filtros
           </button>` : ''}
       </div>
@@ -8931,6 +8996,7 @@ async function renderMisPlanes(){
         ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
         : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
       const respDisplay = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '<span style="color:var(--muted)">Sin asignar</span>');
+      const areaPlan = _areaDeAccion(m.accion_id);
 
       html += `
         <div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s"
@@ -8938,6 +9004,7 @@ async function renderMisPlanes(){
              onmouseout="this.style.background=''"
              onclick="abrirPlan('${m.accion_id}','${m.mes}')">
           <div>
+            ${areaPlan ? `<div style="margin-bottom:5px">${_areaBadge(areaPlan)}</div>` : ''}
             <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
             <div style="font-size:11px;color:var(--muted)">👤 ${escapeHtmlPlan(respDisplay)}</div>
           </div>
@@ -9328,6 +9395,600 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
 
   html += '</div>';
   return html;
+}
+
+/* ====================== MAPA DE ACCIONES (CURACIÓN SUPERADMIN) ============
+ * Pantalla solo visible para superadmin. Permite ver y editar los 1.470
+ * planes pre-computados de la tabla `planes_cache`. La curación es global:
+ * un cambio aquí afecta a TODOS los colegios la próxima vez que generen
+ * un plan con esa combinación (no afecta planes ya guardados en microacciones).
+ *
+ * Estructura de cache_key: precomp|{accion_nombre}|{nivel}|{causal_codigo}
+ * Estructura de plan_data: array con 1 objeto línea, que tiene array de pasos.
+ */
+
+const MAPA_NIVELES_INFO = {
+  L1: { etiqueta:'Inicial',                  rango:'0-30%'  },
+  L2: { etiqueta:'Estandarización inicial',  rango:'31-50%' },
+  L3: { etiqueta:'Articulación institucional', rango:'51-70%' },
+  L4: { etiqueta:'Análisis y mejora',        rango:'71-89%' },
+  L5: { etiqueta:'Cultura institucional',    rango:'90-100%' }
+};
+
+const MAPA_CAUSAS_INFO = {
+  C1:  { grupo:'estructural', nombre:'Tiempo' },
+  C2:  { grupo:'estructural', nombre:'Recursos materiales' },
+  C3:  { grupo:'estructural', nombre:'Recursos humanos' },
+  C4:  { grupo:'estructural', nombre:'Competencias técnicas' },
+  C5:  { grupo:'estructural', nombre:'Coordinación entre cargos' },
+  C6:  { grupo:'estructural', nombre:'Definición poco clara' },
+  C7:  { grupo:'estructural', nombre:'Datos / información' },
+  C8:  { grupo:'estructural', nombre:'Causa externa' },
+  C9:  { grupo:'relacional',  nombre:'Falta de compromiso docente' },
+  C10: { grupo:'relacional',  nombre:'Resistencia o cultura instalada' },
+  C11: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
+  C12: { grupo:'relacional',  nombre:'Bajo involucramiento estudiantes' },
+  C13: { grupo:'relacional',  nombre:'Conflictos entre estamentos' },
+  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' }
+};
+
+// Estado del módulo
+let MAPA_STATE = {
+  planes: [],            // array de filas de planes_cache
+  accionesExpandidas: new Set(),
+  nivelesExpandidos: new Set(),  // key: "accion::nivel"
+  edicionActual: null    // { cache_key, plan_data, pct_banda, curado, ... }
+};
+
+/* Abre la pantalla. Solo accesible para superadmin. */
+async function abrirMapaAcciones(){
+  if(SESSION?.user?.rol !== 'superadmin'){
+    showToast('Acceso restringido a superadmin');
+    return;
+  }
+  // Reusar el screen principal pero cambiar el panel
+  currentPanel = 'mapa-acciones';
+  document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+  await renderMapaAcciones();
+}
+
+/* Carga los planes de planes_cache (solo los precomputados) */
+async function _mapaCargarPlanes(){
+  const { data, error } = await sb
+    .from('planes_cache')
+    .select('*')
+    .like('cache_key', 'precomp|%')
+    .limit(2000);
+  if(error){
+    console.error('[Mapa] Error cargando planes:', error);
+    return [];
+  }
+  return data || [];
+}
+
+/* Parsea cache_key → {accion, nivel, causal} */
+function _mapaParsearKey(cacheKey){
+  const partes = (cacheKey || '').split('|');
+  if(partes.length !== 4 || partes[0] !== 'precomp') return null;
+  return { accion: partes[1], nivel: partes[2], causal: partes[3] };
+}
+
+/* Agrupa planes por acción y nivel */
+function _mapaAgrupar(planes){
+  const grupos = {}; // { accionNombre: { L1: [{plan, causal}, ...], L2: [...] } }
+  planes.forEach(p => {
+    const k = _mapaParsearKey(p.cache_key);
+    if(!k) return;
+    if(!grupos[k.accion]) grupos[k.accion] = {};
+    if(!grupos[k.accion][k.nivel]) grupos[k.accion][k.nivel] = [];
+    grupos[k.accion][k.nivel].push({ plan: p, causal: k.causal });
+  });
+  // Ordenar causales dentro de cada nivel: C1, C2, ..., C14
+  Object.values(grupos).forEach(porNivel => {
+    Object.values(porNivel).forEach(arr => {
+      arr.sort((a,b) => {
+        const na = parseInt((a.causal||'').replace('C',''), 10) || 99;
+        const nb = parseInt((b.causal||'').replace('C',''), 10) || 99;
+        return na - nb;
+      });
+    });
+  });
+  return grupos;
+}
+
+/* Cuenta curados en un array de {plan, causal} */
+function _mapaContarCurados(arr){
+  return (arr || []).filter(x => x.plan?.curado === true).length;
+}
+
+/* Render principal del Mapa de Acciones */
+async function renderMapaAcciones(){
+  const main = document.getElementById('mainContent');
+  if(!main) return;
+
+  // Loading inicial
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🗺 Mapa de Acciones</div>
+      <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
+    </div>
+    <div class="card" style="padding:30px;text-align:center;color:var(--muted)">
+      <div style="font-size:13px">Cargando planes pre-computados…</div>
+    </div>`;
+
+  // Cargar planes si no están en memoria
+  if(!MAPA_STATE.planes.length){
+    MAPA_STATE.planes = await _mapaCargarPlanes();
+  }
+  const planes = MAPA_STATE.planes;
+
+  if(!planes.length){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">🗺 Mapa de Acciones</div>
+        <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
+      </div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">📋</div>
+          <div style="font-weight:500;margin-bottom:8px">No hay planes pre-computados en la base</div>
+          <div style="font-size:12px;color:var(--muted)">Asegurate de haber cargado los 1.470 planes en la tabla <code>planes_cache</code>.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const grupos = _mapaAgrupar(planes);
+  const accionesOrdenadas = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
+
+  // Stats globales
+  const totalPlanes = planes.length;
+  const totalCurados = planes.filter(p => p.curado === true).length;
+  const pctCurado = totalPlanes > 0 ? Math.round(totalCurados / totalPlanes * 100) : 0;
+
+  let html = `
+    <div class="page-header">
+      <div class="page-title">🗺 Mapa de Acciones</div>
+      <div class="page-sub">Curación institucional · ${totalPlanes} planes · todos los colegios ven la versión curada</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-val">${accionesOrdenadas.length}</div>
+        <div class="kpi-label">Acciones</div>
+        <div class="kpi-badge">21 acciones del PME</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${totalPlanes}</div>
+        <div class="kpi-label">Planes pre-computados</div>
+        <div class="kpi-badge">21 × 5 niveles × 14 causales</div>
+      </div>
+      <div class="kpi-card verde">
+        <div class="kpi-val">${totalCurados}</div>
+        <div class="kpi-label">Curados</div>
+        <div class="kpi-badge verde">Revisados por superadmin</div>
+      </div>
+      <div class="kpi-card ${pctCurado>=70?'verde':pctCurado>=40?'amarillo':'rojo'}">
+        <div class="kpi-val">${pctCurado}%</div>
+        <div class="kpi-label">Avance curación</div>
+        <div class="kpi-badge">${totalPlanes - totalCurados} pendientes</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px;margin-bottom:14px;background:#fff8e6;border-left:4px solid #d4a017">
+      <div style="font-size:13px;color:var(--text);line-height:1.5">
+        <strong>📚 Curación global</strong> — los cambios que hagas acá afectan a <strong>todos los colegios</strong> la próxima vez que generen un plan con esta combinación.
+        Los planes ya guardados en colegios (en <code>microacciones</code>) NO se modifican retroactivamente.
+      </div>
+    </div>
+  `;
+
+  // Vista jerárquica: acción → nivel → causal
+  accionesOrdenadas.forEach(accionNombre => {
+    const porNivel = grupos[accionNombre];
+    const totalAccion = Object.values(porNivel).reduce((s,arr) => s + arr.length, 0);
+    const curadosAccion = Object.values(porNivel).reduce((s,arr) => s + _mapaContarCurados(arr), 0);
+    const expandidaAccion = MAPA_STATE.accionesExpandidas.has(accionNombre);
+    const pctAccion = totalAccion > 0 ? Math.round(curadosAccion/totalAccion*100) : 0;
+
+    html += `
+      <div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
+        <div onclick="mapaToggleAccion('${escapeAttr(accionNombre)}')" style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;background:${expandidaAccion?'var(--bg-soft,#f8f9fa)':'#fff'};border-bottom:${expandidaAccion?'1px solid var(--border)':'none'};transition:background .12s"
+             onmouseover="if(!${expandidaAccion})this.style.background='var(--bg-soft,#f8f9fa)'"
+             onmouseout="if(!${expandidaAccion})this.style.background='#fff'">
+          <div style="font-size:18px;color:var(--muted);transform:${expandidaAccion?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:18px">›</div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(accionNombre)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${Object.keys(porNivel).length} niveles activos</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:200px">
+            <div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
+              <div style="width:${pctAccion}%;height:100%;background:${pctAccion>=70?'#10b981':pctAccion>=40?'#f59e0b':'#9ca3af'};transition:width .3s"></div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);min-width:60px;text-align:right">
+              ${curadosAccion}/${totalAccion}
+            </div>
+          </div>
+        </div>
+        ${expandidaAccion ? _mapaRenderNiveles(accionNombre, porNivel) : ''}
+      </div>`;
+  });
+
+  main.innerHTML = html;
+}
+
+/* Renderiza los niveles de una acción expandida */
+function _mapaRenderNiveles(accionNombre, porNivel){
+  const nivelesOrdenados = ['L1','L2','L3','L4','L5'].filter(n => porNivel[n]?.length);
+  let html = '<div style="padding:0">';
+  nivelesOrdenados.forEach(nivelCodigo => {
+    const arr = porNivel[nivelCodigo];
+    const info = MAPA_NIVELES_INFO[nivelCodigo];
+    const total = arr.length;
+    const curados = _mapaContarCurados(arr);
+    const pct = total > 0 ? Math.round(curados/total*100) : 0;
+    const claveNivel = accionNombre + '::' + nivelCodigo;
+    const expandida = MAPA_STATE.nivelesExpandidos.has(claveNivel);
+
+    html += `
+      <div style="border-top:1px solid var(--border-light,#f0f0f0)">
+        <div onclick="mapaToggleNivel('${escapeAttr(accionNombre)}','${nivelCodigo}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s"
+             onmouseover="if(!${expandida})this.style.background='#fafafa'"
+             onmouseout="if(!${expandida})this.style.background='#fff'">
+          <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${total} causales</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:180px">
+            <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:${pct>=70?'#10b981':pct>=40?'#f59e0b':'#9ca3af'}"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">
+              ${curados}/${total}
+            </div>
+          </div>
+        </div>
+        ${expandida ? _mapaRenderCausales(accionNombre, nivelCodigo, arr) : ''}
+      </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+/* Renderiza las causales (filas finales clickeables que abren editor) */
+function _mapaRenderCausales(accionNombre, nivelCodigo, arr){
+  let html = '<div style="background:#fcfcfc">';
+  arr.forEach(({plan, causal}) => {
+    const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
+    const curado = plan.curado === true;
+    const cacheKey = plan.cache_key;
+
+    html += `
+      <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
+           onmouseover="this.style.background='#f3f4f6'"
+           onmouseout="this.style.background='transparent'">
+        <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
+        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
+        <div style="color:var(--muted);font-size:14px">›</div>
+      </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+/* Toggle expandir/colapsar acción */
+function mapaToggleAccion(accionNombre){
+  if(MAPA_STATE.accionesExpandidas.has(accionNombre)){
+    MAPA_STATE.accionesExpandidas.delete(accionNombre);
+    // Colapsar niveles hijos también
+    Array.from(MAPA_STATE.nivelesExpandidos).forEach(k => {
+      if(k.startsWith(accionNombre + '::')) MAPA_STATE.nivelesExpandidos.delete(k);
+    });
+  } else {
+    MAPA_STATE.accionesExpandidas.add(accionNombre);
+  }
+  renderMapaAcciones();
+}
+
+/* Toggle expandir/colapsar nivel */
+function mapaToggleNivel(accionNombre, nivelCodigo){
+  const k = accionNombre + '::' + nivelCodigo;
+  if(MAPA_STATE.nivelesExpandidos.has(k)) MAPA_STATE.nivelesExpandidos.delete(k);
+  else MAPA_STATE.nivelesExpandidos.add(k);
+  renderMapaAcciones();
+}
+
+/* Helper: escape para atributos HTML con comillas simples */
+function escapeAttr(s){
+  return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+}
+
+/* ====================== EDITOR DEL PLAN INSTITUCIONAL ============= */
+
+/* Abre el drawer editor con el plan seleccionado */
+async function mapaAbrirEditor(cacheKey){
+  const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
+  if(!plan){ showToast('Plan no encontrado'); return; }
+
+  // Clonar para edición (no tocar el original hasta guardar)
+  MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
+  // Garantizar estructura mínima de plan_data
+  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data) || MAPA_STATE.edicionActual.plan_data.length === 0){
+    MAPA_STATE.edicionActual.plan_data = [{
+      id:'linea_1', titulo:'', foco:'', descripcion_corta:'',
+      causa_atacada:'', pasos:[]
+    }];
+  }
+  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data[0].pasos)){
+    MAPA_STATE.edicionActual.plan_data[0].pasos = [];
+  }
+
+  // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
+  if(typeof asegurarDrawer === 'function') asegurarDrawer();
+  document.getElementById('planOverlay').classList.add('show');
+  document.getElementById('planDrawer').classList.add('show');
+  document.body.style.overflow = 'hidden';
+
+  _mapaRenderEditor();
+}
+
+function _mapaRenderEditor(){
+  const e = MAPA_STATE.edicionActual;
+  if(!e) return;
+  const k = _mapaParsearKey(e.cache_key) || {};
+  const linea = e.plan_data[0];
+  const pasos = linea.pasos || [];
+  const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
+  const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
+
+  // Título y subtítulo del drawer
+  document.getElementById('planTitle').textContent = k.accion || 'Plan';
+  document.getElementById('planSubtitle').textContent = `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
+
+  const prog = document.getElementById('planProgress');
+  if(prog) prog.innerHTML = '';
+
+  // Render del editor
+  const curado = e.curado === true;
+
+  const pasosHtml = pasos.map((p, idx) => `
+    <div style="background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px;padding:18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${idx+1}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
+        <div style="flex:1"></div>
+        ${pasos.length > 1 ? `<button onclick="mapaEliminarPaso(${idx})" style="background:transparent;border:1px solid #fca5a5;color:#dc2626;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit" title="Eliminar este paso">✕ Eliminar</button>` : ''}
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción del paso</label>
+        <textarea
+          oninput="mapaActualizarPaso(${idx}, 'descripcion', this.value)"
+          style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+        >${escapeHtmlPlan(p.descripcion || '')}</textarea>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px">
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsable sugerido</label>
+          <input type="text" value="${escapeHtmlPlan(p.responsable_sugerido || '')}"
+            oninput="mapaActualizarPaso(${idx}, 'responsable_sugerido', this.value)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Plazo (días)</label>
+          <input type="number" min="1" max="90" value="${p.plazo_dias || 14}"
+            oninput="mapaActualizarPaso(${idx}, 'plazo_dias', parseInt(this.value)||14)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Esfuerzo</label>
+          <select onchange="mapaActualizarPaso(${idx}, 'esfuerzo', this.value)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;background:#fff">
+            <option value="BAJO"${(p.esfuerzo||'')==='BAJO'?' selected':''}>BAJO</option>
+            <option value="MEDIO"${(p.esfuerzo||'MEDIO')==='MEDIO'?' selected':''}>MEDIO</option>
+            <option value="ALTO"${(p.esfuerzo||'')==='ALTO'?' selected':''}>ALTO</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('planBody').innerHTML = `
+    <!-- Header con clave del plan -->
+    <div style="margin-bottom:24px;padding:14px 16px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
+      ${escapeHtmlPlan(e.cache_key)}
+    </div>
+
+    <!-- Toggle de curado -->
+    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
+         onclick="mapaToggleCurado()">
+      <div style="font-size:24px">${curado?'✅':'⚪'}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
+          ${curado ? 'Plan curado' : 'Plan sin curar'}
+        </div>
+        <div style="font-size:12px;color:var(--muted)">
+          ${curado ? 'Este plan fue revisado por superadmin y está listo para mostrarse a los colegios.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Metadatos de la línea -->
+    <div style="margin-bottom:24px">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
+        Metadatos del plan
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Título de la línea</label>
+        <input type="text" value="${escapeHtmlPlan(linea.titulo || '')}"
+          oninput="mapaActualizarLinea('titulo', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:14px;outline:none;font-weight:600"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Foco (encabezado pedagógico)</label>
+        <input type="text" value="${escapeHtmlPlan(linea.foco || '')}"
+          oninput="mapaActualizarLinea('foco', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción corta</label>
+        <textarea
+          oninput="mapaActualizarLinea('descripcion_corta', this.value)"
+          style="width:100%;min-height:60px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+        >${escapeHtmlPlan(linea.descripcion_corta || '')}</textarea>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Causa atacada (etiqueta visible)</label>
+        <input type="text" value="${escapeHtmlPlan(linea.causa_atacada || '')}"
+          oninput="mapaActualizarLinea('causa_atacada', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+    </div>
+
+    <!-- Pasos -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
+          Pasos del plan (${pasos.length})
+        </div>
+        <button onclick="mapaAgregarPaso()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s"
+          onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+          onmouseout="this.style.background='transparent';this.style.color='var(--accent)'">
+          + Agregar paso
+        </button>
+      </div>
+      ${pasosHtml || '<p style="color:var(--muted);font-style:italic;padding:20px;text-align:center;background:var(--bg-soft,#f8f9fa);border-radius:8px">Sin pasos. Hacé click en "Agregar paso" para comenzar.</p>'}
+    </div>
+  `;
+
+  document.getElementById('planFooter').innerHTML = `
+    <span class="info" style="font-size:12px;color:var(--muted)">${k.accion || ''} · ${k.nivel} · ${k.causal}</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
+      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
+    </div>`;
+}
+
+/* Actualizaciones en memoria (no guardan hasta apretar "Guardar cambios") */
+function mapaActualizarLinea(campo, valor){
+  if(!MAPA_STATE.edicionActual) return;
+  MAPA_STATE.edicionActual.plan_data[0][campo] = valor;
+}
+
+function mapaActualizarPaso(idx, campo, valor){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  if(!pasos[idx]) return;
+  pasos[idx][campo] = valor;
+}
+
+function mapaToggleCurado(){
+  if(!MAPA_STATE.edicionActual) return;
+  MAPA_STATE.edicionActual.curado = !MAPA_STATE.edicionActual.curado;
+  _mapaRenderEditor();
+}
+
+function mapaAgregarPaso(){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  const nuevoId = '1.' + (pasos.length + 1);
+  pasos.push({
+    id: nuevoId,
+    descripcion: '',
+    responsable_sugerido: '',
+    plazo_dias: 14,
+    esfuerzo: 'MEDIO'
+  });
+  _mapaRenderEditor();
+}
+
+function mapaEliminarPaso(idx){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  if(pasos.length <= 1){
+    showToast('Debe haber al menos un paso');
+    return;
+  }
+  if(!confirm('¿Eliminar este paso? Esta acción no se puede deshacer hasta que recargues sin guardar.')) return;
+  pasos.splice(idx, 1);
+  // Re-numerar IDs internos
+  pasos.forEach((p, i) => p.id = '1.' + (i+1));
+  _mapaRenderEditor();
+}
+
+function mapaCerrarEditor(){
+  document.getElementById('planOverlay')?.classList.remove('show');
+  document.getElementById('planDrawer')?.classList.remove('show');
+  document.body.style.overflow = '';
+  MAPA_STATE.edicionActual = null;
+  // Refrescar la vista del mapa para que se vean los cambios si se guardaron
+  if(currentPanel === 'mapa-acciones') renderMapaAcciones();
+}
+
+async function mapaGuardarPlan(){
+  const e = MAPA_STATE.edicionActual;
+  if(!e) return;
+
+  const btn = document.getElementById('mapaBtnGuardar');
+  if(btn){ btn.disabled = true; btn.textContent = '💾 Guardando…'; }
+
+  try {
+    const { data, error } = await sb
+      .from('planes_cache')
+      .update({
+        plan_data: e.plan_data,
+        curado: e.curado === true,
+        updated_at: new Date().toISOString()
+      })
+      .eq('cache_key', e.cache_key)
+      .select()
+      .single();
+
+    if(error){
+      console.error('[Mapa] Error guardando:', error);
+      // Si el error es por columna `curado` inexistente, dar guía clara
+      if(error.message && error.message.toLowerCase().includes('curado')){
+        showToast('Falta la columna `curado` en planes_cache. Ejecutá el SQL de migración primero.');
+      } else {
+        showToast('Error al guardar: ' + error.message);
+      }
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
+      return;
+    }
+
+    // Actualizar el plan en MAPA_STATE.planes
+    const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
+    if(idx >= 0) MAPA_STATE.planes[idx] = data;
+
+    showToast('✓ Plan guardado correctamente');
+    mapaCerrarEditor();
+  } catch(err){
+    console.error('[Mapa] Excepción guardando:', err);
+    showToast('Error inesperado: ' + err.message);
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
+  }
 }
 
 /* ====================== CARGA INICIAL DE DATOS ====================== */
