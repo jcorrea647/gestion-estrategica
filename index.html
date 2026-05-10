@@ -910,7 +910,6 @@ async function loadColegio(colegioId) {
   const accionIds = (acciones || []).map(function(a){ return a.id; });
   if(accionIds.length) {
     const { data: evs } = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
-  await planCargarDatos(colegioId);
     evidencias = evs || [];
   }
   DB = {
@@ -919,8 +918,12 @@ async function loadColegio(colegioId) {
     areas:areas||[], objetivos:objetivos||[], acciones:acciones||[],
     accion_responsable:ar||[], seguimiento:segs||[],
     reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]})),
-    evidencias: evidencias
+    evidencias: evidencias,
+    microacciones: [],
+    pasos: []
   };
+  // Cargar microacciones y pasos DESPUÉS de inicializar DB, para no sobreescribirlas
+  await planCargarDatos(colegioId);
 }
 
 function setupColegioUI() {
@@ -8746,9 +8749,25 @@ function _planesActivos(){
   );
 }
 
-function renderMisPlanes(){
+async function renderMisPlanes(){
   const main = document.getElementById('mainContent');
   if(!main) return;
+
+  // Guard de carga: si DB.microacciones no fue inicializado por loadColegio
+  // (sucede en rutas alternativas de entrada, superadmin, etc.), cargarlas ahora.
+  if(!Array.isArray(DB.microacciones)){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">Mis planes</div>
+        <div class="page-sub">Cartera de planes del colegio</div>
+      </div>
+      <div class="card" style="padding:30px;text-align:center;color:var(--muted)">
+        <div style="font-size:13px">Cargando planes…</div>
+      </div>`;
+    const colId = SESSION?.colegioActivo || DB?.colegio?.id;
+    if(colId) await planCargarDatos(colId);
+    else { DB.microacciones = []; DB.pasos = []; }
+  }
 
   const todos = DB.microacciones || [];
   if(!todos.length){
@@ -9040,9 +9059,24 @@ function bibliotecaAbrirVersion(accionId, mes){
   abrirPlan(accionId, mes);
 }
 
-function renderBiblioteca(){
+async function renderBiblioteca(){
   const main = document.getElementById('mainContent');
   if(!main) return;
+
+  // Guard de carga (mismo motivo que en renderMisPlanes)
+  if(!Array.isArray(DB.microacciones)){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">Biblioteca</div>
+        <div class="page-sub">Histórico de planes del colegio</div>
+      </div>
+      <div class="card" style="padding:30px;text-align:center;color:var(--muted)">
+        <div style="font-size:13px">Cargando histórico…</div>
+      </div>`;
+    const colId = SESSION?.colegioActivo || DB?.colegio?.id;
+    if(colId) await planCargarDatos(colId);
+    else { DB.microacciones = []; DB.pasos = []; }
+  }
 
   const grupos = _bibliotecaAgruparPorAccion();
   const accionesIds = Object.keys(grupos);
@@ -9297,22 +9331,79 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
 }
 
 /* ====================== CARGA INICIAL DE DATOS ====================== */
+/* Carga DB.microacciones y DB.pasos con paginación explícita y manejo de
+ * errores. Si Supabase devuelve un error o menos filas de las esperadas,
+ * lo loguea visiblemente para que se pueda diagnosticar. */
 async function planCargarDatos(colegioId){
-  try {
-    const {data:mas} = await sb.from('microacciones').select('*').eq('colegio_id',colegioId);
-    DB.microacciones = mas||[];
-    if(DB.microacciones.length){
-      const ids = DB.microacciones.map(m=>m.id);
-      const {data:ps} = await sb.from('microacciones_pasos').select('*').in('microaccion_id',ids);
-      DB.pasos = ps||[];
-    } else {
-      DB.pasos = [];
-    }
-  } catch(e){
-    console.warn('Tablas microacciones aún no creadas:', e.message);
-    DB.microacciones = [];
-    DB.pasos = [];
+  if(!colegioId){
+    console.error('[planCargarDatos] colegioId vacío — abortando carga');
+    DB.microacciones = []; DB.pasos = [];
+    return;
   }
+
+  // 1. Cargar microacciones con paginación explícita (rompe el cache implícito
+  //    de Supabase que puede limitar a 1000 por consulta sin paginar).
+  let microacciones = [];
+  let pagina = 0;
+  const tamPagina = 500;
+  let hayMas = true;
+
+  while(hayMas){
+    const desde = pagina * tamPagina;
+    const hasta = desde + tamPagina - 1;
+    const { data, error } = await sb
+      .from('microacciones')
+      .select('*')
+      .eq('colegio_id', colegioId)
+      .order('mes', { ascending: false })
+      .range(desde, hasta);
+
+    if(error){
+      console.error('[planCargarDatos] Error en microacciones:', error.message, error);
+      DB.microacciones = microacciones;
+      DB.pasos = [];
+      return;
+    }
+
+    microacciones = microacciones.concat(data || []);
+    hayMas = (data || []).length === tamPagina;
+    pagina++;
+    if(pagina > 20){ // hard stop por seguridad
+      console.warn('[planCargarDatos] Más de 20 páginas, abortando paginación');
+      break;
+    }
+  }
+
+  DB.microacciones = microacciones;
+  console.log('[planCargarDatos] microacciones cargadas:', microacciones.length);
+
+  // 2. Cargar pasos asociados con paginación por chunks de IDs
+  //    (la cláusula .in() tiene límite implícito en URL)
+  if(!microacciones.length){
+    DB.pasos = [];
+    return;
+  }
+
+  const todosIds = microacciones.map(m => m.id);
+  const tamChunkIds = 100;
+  let pasos = [];
+
+  for(let i = 0; i < todosIds.length; i += tamChunkIds){
+    const chunk = todosIds.slice(i, i + tamChunkIds);
+    const { data, error } = await sb
+      .from('microacciones_pasos')
+      .select('*')
+      .in('microaccion_id', chunk);
+
+    if(error){
+      console.error('[planCargarDatos] Error en microacciones_pasos:', error.message, error);
+      continue; // sigue con los demás chunks
+    }
+    pasos = pasos.concat(data || []);
+  }
+
+  DB.pasos = pasos;
+  console.log('[planCargarDatos] pasos cargados:', pasos.length);
 }
 
 /* INSTRUCCIÓN FINAL:
