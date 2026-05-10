@@ -6621,16 +6621,10 @@ function renderBotonPlan(accionId, mes, seg) {
 
 /* ====================== ABRIR / CERRAR ====================== */
 async function abrirPlan(accionId, mes){
-  // Abrir en nueva pestaña con colegio actual
-  const planColegioId = SESSION?.colegioActivo || DB?.colegio?.id || '';
-  const url = window.location.origin + window.location.pathname +
-    '?plan_accion=' + encodeURIComponent(accionId) +
-    '&plan_mes=' + encodeURIComponent(mes) +
-    '&plan_colegio=' + encodeURIComponent(planColegioId);
-  window.open(url, '_blank');
-  return;
-  // ── código original preservado abajo (ejecutado en la pestaña nueva) ──
-  void 0;
+  // Abre el drawer del plan EN LA MISMA PANTALLA. No usa nueva pestaña.
+  // Para planes ACTIVA/COMPLETADA/PROPUESTA → vista pedagógica (resumen).
+  // Para BORRADOR sin contenido → flujo de construcción desde el paso 1.
+  return _abrirPlanInternal(accionId, mes);
 }
 async function _abrirPlanInternal(accionId, mes){
   const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
