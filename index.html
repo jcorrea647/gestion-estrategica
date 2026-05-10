@@ -6989,7 +6989,15 @@ function renderPlanPaso(){
     prog.appendChild(d);
   }
 
-  if(s.paso===99){ renderPasoExistente(); return; }
+  if(s.paso===99){
+    // Sub-vistas para planes ya creados (ACTIVA/COMPLETADA/PROPUESTA):
+    //   'resumen'  → vista pedagógica grande (DEFAULT al entrar desde "Mis planes")
+    //   'edicion'  → vista de edición paso a paso (la anterior)
+    if(!s.vistaActiva) s.vistaActiva = 'resumen';
+    if(s.vistaActiva === 'edicion') renderPasoExistente();
+    else renderPlanResumenPedagogico();
+    return;
+  }
 
   switch(s.paso){
     case 1: renderPaso4MarcoConceptual(); break;
@@ -7645,7 +7653,7 @@ async function renderPaso4MarcoConceptual(){
     const bullets = (c.bullets || []).map(b => `
       <li class="marco-bullet">
         <span class="marco-bullet-icon">→</span>
-        <span>${escapeHtmlPlan(b)}</span>
+        <span>${safeMarkupPlan(b)}</span>
       </li>`).join('');
     const tagLabel = key === 'mbd' ? 'MBD'
       : key === 'mbe' ? 'MBE'
@@ -7657,8 +7665,8 @@ async function renderPaso4MarcoConceptual(){
           <span class="marco-tag">${tagLabel}</span>
           <span class="marco-origen">${escapeHtmlPlan(c.origen || '')}</span>
         </div>
-        ${c.subtitulo ? `<div class="marco-subtitulo">${escapeHtmlPlan(c.subtitulo)}</div>` : ''}
-        <h3 class="marco-titulo">${escapeHtmlPlan(c.titulo || '')}</h3>
+        ${c.subtitulo ? `<div class="marco-subtitulo">${safeMarkupPlan(c.subtitulo)}</div>` : ''}
+        <h3 class="marco-titulo">${safeMarkupPlan(c.titulo || '')}</h3>
         <ul class="marco-bullets">${bullets}</ul>
       </div>`;
   };
@@ -7796,38 +7804,75 @@ function renderPaso4Constructor(){
         <span class="ttl">Mi plan armado</span>
         <span class="cnt">${totalPasos} paso${totalPasos===1?'':'s'} seleccionado${totalPasos===1?'':'s'}</span>
       </div>
+      ${totalPasos > 0 ? `
+        <div style="font-size:11px;color:var(--muted);padding:4px 0 10px 0;display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px">✎</span>
+          <span>Tocá cualquier paso para editarlo. Los cambios se guardan automáticamente.</span>
+        </div>` : ''}
       ${(() => {
         if(!totalPasos) return '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>';
         const items = [];
         s.pasosSeleccionados.forEach((p,i) => {
           const ln = (s.propuestas||[]).find(l=>l.id===p.lineaId);
           const pk = escapeHtmlPlan(p.key||p.id||String(i));
-          items.push(`<div class="plan-resumen-item" style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
-            <span style="color:var(--accent2);flex-shrink:0;margin-top:1px">•</span>
-            <div style="flex:1;min-width:0">
-              <div contenteditable="true" data-paso-key="${pk}"
-                onblur="planGuardarEdicionPasoResumen('${pk}', this.innerText.trim())"
-                onfocus="this.style.background='var(--bg-soft,#f8f9fa)';this.style.borderRadius='4px';this.style.padding='2px 4px'"
-                onblur="this.style.background='';this.style.padding='';planGuardarEdicionPasoResumen('${pk}',this.innerText.trim())"
-                style="font-size:12.5px;color:var(--text);outline:none;cursor:text;line-height:1.45"
-                title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
-              <div style="font-size:10px;color:var(--accent2);margin-top:1px">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
-            </div>
-          </div>`);
+          items.push(`
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
+              <span style="color:var(--accent2);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
+              <div style="flex:1;min-width:0">
+                <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
+                     onmouseover="this.style.borderColor='var(--accent)';this.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'"
+                     onmouseout="if(!this.querySelector('[data-paso-key]:focus')){this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'}">
+                  <div contenteditable="true" data-paso-key="${pk}"
+                    onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
+                    onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionPasoResumen('${pk}',this.innerText.trim())"
+                    style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
+                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                  <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
+                </div>
+                <div style="font-size:10px;color:var(--accent2);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
+              </div>
+            </div>`);
         });
         (s.pasosFocoPropio||[]).forEach((p,i) => {
-          items.push(`<div class="plan-resumen-item" style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
-            <span style="color:var(--muted);flex-shrink:0">•</span>
-            <div style="flex:1"><div style="font-size:12.5px;color:var(--text)">${escapeHtmlPlan(p.descripcion||'')}</div>
-            <div style="font-size:10px;color:var(--muted)">Foco propio</div></div>
-          </div>`);
+          const fpk = 'fp_' + (p.id || i);
+          items.push(`
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
+              <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
+              <div style="flex:1;min-width:0">
+                <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
+                     onmouseover="this.style.borderColor='var(--accent)';this.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'"
+                     onmouseout="if(!this.querySelector('[data-fp-idx]:focus')){this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'}">
+                  <div contenteditable="true" data-fp-idx="${i}"
+                    onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
+                    onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionFocoPropio(${i},this.innerText.trim())"
+                    style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
+                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                  <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
+                </div>
+                <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
+              </div>
+            </div>`);
         });
-        Object.values(s.pasosOtrosLinea||{}).flat().forEach(p => {
-          items.push(`<div class="plan-resumen-item" style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--border-light,#f0f0f0)">
-            <span style="color:var(--muted);flex-shrink:0">•</span>
-            <div style="flex:1"><div style="font-size:12.5px;color:var(--text)">${escapeHtmlPlan(p.descripcion||'')}</div>
-            <div style="font-size:10px;color:var(--muted)">Paso propio</div></div>
-          </div>`);
+        Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
+          (pasos||[]).forEach((p, oi) => {
+            items.push(`
+              <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
+                <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
+                <div style="flex:1;min-width:0">
+                  <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
+                       onmouseover="this.style.borderColor='var(--accent)';this.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'"
+                       onmouseout="if(!this.querySelector('[data-otro-linea]:focus')){this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'}">
+                    <div contenteditable="true" data-otro-linea="${escapeHtmlPlan(lineaId)}" data-otro-idx="${oi}"
+                      onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
+                      onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionOtroLinea('${escapeHtmlPlan(lineaId)}',${oi},this.innerText.trim())"
+                      style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
+                      title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                    <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
+                  </div>
+                  <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">PASO PROPIO</div>
+                </div>
+              </div>`);
+          });
         });
         return items.join('');
       })()}
@@ -8140,6 +8185,31 @@ function planGuardarEdicionPasoResumen(pasoKey, nuevoTexto){
   }
 }
 
+/* Edita paso de "Foco propio" en el resumen */
+function planGuardarEdicionFocoPropio(idx, nuevoTexto){
+  if(!nuevoTexto || !PLAN_STATE) return;
+  const s = PLAN_STATE;
+  if(!Array.isArray(s.pasosFocoPropio) || idx < 0 || idx >= s.pasosFocoPropio.length) return;
+  if(nuevoTexto !== s.pasosFocoPropio[idx].descripcion){
+    s.pasosFocoPropio[idx].descripcion = nuevoTexto;
+    planMarcarCambio();
+    planSyncSupabase();
+  }
+}
+
+/* Edita paso de "Otros línea" en el resumen */
+function planGuardarEdicionOtroLinea(lineaId, idx, nuevoTexto){
+  if(!nuevoTexto || !PLAN_STATE) return;
+  const s = PLAN_STATE;
+  const pasos = s.pasosOtrosLinea?.[lineaId];
+  if(!Array.isArray(pasos) || idx < 0 || idx >= pasos.length) return;
+  if(nuevoTexto !== pasos[idx].descripcion){
+    pasos[idx].descripcion = nuevoTexto;
+    planMarcarCambio();
+    planSyncSupabase();
+  }
+}
+
 function planGuardarEdicionPaso(pasoKey, nuevoTexto){
   const s = PLAN_STATE;
   const idx = (s.pasosSeleccionados||[]).findIndex(p=>(p.key||p.id||p.descripcion)===pasoKey);
@@ -8301,6 +8371,175 @@ function renderPaso7Confirmacion(){
 }
 
 /* ====================== VISTA PLAN EXISTENTE ====================== */
+/* ====================== VISTA PEDAGÓGICA (RESUMEN) ====================== */
+/* Vista de lectura grande, pedagógica, para entender el plan como un todo.
+ * Es la vista por defecto al entrar a un plan ACTIVA/COMPLETADA/PROPUESTA
+ * desde "Mis planes" o "Biblioteca". Para editar pasos hay un botón que
+ * cambia a la vista de edición (renderPasoExistente). */
+function renderPlanResumenPedagogico(){
+  const s = PLAN_STATE;
+  const ma = s.existente;
+  const pasos = (DB.pasos||[]).filter(p=>p.microaccion_id===ma.id);
+  const completos = pasos.filter(p=>p.estado==='COMPLETADO').length;
+  const pct = pasos.length ? Math.round(completos/pasos.length*100) : 0;
+  const accion = (DB.acciones||[]).find(a => a.id === ma.accion_id);
+
+  const maxPlazo = pasos.length ? Math.max(...pasos.map(p => p.plazo_dias||0)) : 0;
+  const fechaObj = ma.fecha_objetivo
+    ? new Date(ma.fecha_objetivo + 'T23:59:59')
+    : (() => { const d = new Date(); d.setDate(d.getDate() + maxPlazo); return d; })();
+  const fechaTxt = fechaObj.toLocaleDateString('es-CL', {day:'numeric', month:'long', year:'numeric'});
+  const dias = Math.round((fechaObj - new Date(new Date().setHours(0,0,0,0))) / (1000*60*60*24));
+
+  const causasNombres = (ma.causas||[]).map(c => c.etiqueta || c.nombre).filter(Boolean);
+  const causasOtras = (ma.causas_otros||[]).map(c => c.etiqueta || c).filter(Boolean);
+  const todasCausas = [...causasNombres, ...causasOtras];
+
+  const estadoMap = {
+    'ACTIVA':     { bg:'#d1fae5', fg:'#065f46', label:'ACTIVA' },
+    'COMPLETADA': { bg:'#e0e7ff', fg:'#3730a3', label:'COMPLETADA' },
+    'PROPUESTA':  { bg:'#dbeafe', fg:'#1e40af', label:'PROPUESTA' }
+  };
+  const est = estadoMap[ma.estado] || { bg:'#f3f4f6', fg:'#4b5563', label:ma.estado };
+  const colorPct = pct>=70?'#10b981':pct>=40?'#f59e0b':'#ef4444';
+
+  let plazoLabel, plazoColor;
+  if(dias < 0){ plazoLabel = `Vencido hace ${Math.abs(dias)} días`; plazoColor = '#dc2626'; }
+  else if(dias === 0){ plazoLabel = 'Vence HOY'; plazoColor = '#dc2626'; }
+  else if(dias <= 7){ plazoLabel = `Vence en ${dias} días`; plazoColor = '#d97706'; }
+  else { plazoLabel = `${dias} días restantes`; plazoColor = '#374151'; }
+
+  const pasosHtml = pasos.length ? pasos.map((p,i) => {
+    const done = p.estado === 'COMPLETADO';
+    const numColor = done ? '#10b981' : '#1f5f47';
+    return `
+      <div style="display:flex;gap:18px;padding:20px 0;border-bottom:1px solid var(--border-light,#e8e8e8);${done?'opacity:0.55':''}">
+        <div style="flex-shrink:0;width:44px;height:44px;border-radius:50%;background:${numColor};color:white;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700">
+          ${done ? '✓' : (i+1)}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:17px;line-height:1.55;color:var(--text);margin-bottom:10px;${done?'text-decoration:line-through':''}">
+            ${escapeHtmlPlan(p.descripcion)}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)">
+            <span>👤 <strong style="color:var(--text)">${escapeHtmlPlan(p.responsable||'Sin asignar')}</strong></span>
+            <span>📅 <strong style="color:var(--text)">${p.plazo_dias} días</strong></span>
+            <span>⚡ ${escapeHtmlPlan(p.esfuerzo||'MEDIO')}</span>
+            ${p.linea_foco ? `<span style="color:var(--muted)">· ${escapeHtmlPlan(p.linea_foco)}</span>` : ''}
+          </div>
+          ${!done ? `
+            <button onclick="planMarcarPasoCompleto('${p.id}')" 
+                    style="margin-top:12px;background:transparent;border:1.5px solid var(--accent);color:var(--accent);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s"
+                    onmouseover="this.style.background='var(--accent)';this.style.color='white'"
+                    onmouseout="this.style.background='transparent';this.style.color='var(--accent)'">
+              ✓ Marcar como completado
+            </button>` : `
+            <div style="margin-top:8px;font-size:11px;color:var(--green,#10b981);font-weight:600">
+              ✓ Completado${p.fecha_completado?' · '+new Date(p.fecha_completado).toLocaleDateString('es-CL'):''}
+            </div>`}
+        </div>
+      </div>`;
+  }).join('') : '<p style="color:var(--muted);font-style:italic;padding:20px 0">No hay pasos registrados aún en este plan.</p>';
+
+  document.getElementById('planBody').innerHTML = `
+    <div style="text-align:center;padding:20px 0 28px 0;border-bottom:2px solid var(--border-light,#e8e8e8);margin-bottom:28px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:8px">
+        Plan de mejora · ${typeof fmtMes==='function' ? fmtMes(ma.mes) : ma.mes}
+      </div>
+      <h1 style="font-size:32px;font-weight:700;color:var(--text);line-height:1.2;margin:0 0 12px 0">
+        ${escapeHtmlPlan(accion?.nombre || 'Plan')}
+      </h1>
+      <div style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center">
+        <span style="background:${est.bg};color:${est.fg};font-size:12px;font-weight:700;padding:5px 12px;border-radius:14px;letter-spacing:.04em">
+          ${est.label}
+        </span>
+        <span style="color:var(--muted);font-size:14px">·</span>
+        <span style="font-size:14px;color:var(--text)">
+          <strong style="color:${colorPct}">${pct}%</strong> completado (${completos}/${pasos.length} pasos)
+        </span>
+        <span style="color:var(--muted);font-size:14px">·</span>
+        <span style="font-size:14px;color:${plazoColor};font-weight:600">📅 ${escapeHtmlPlan(plazoLabel)}</span>
+      </div>
+    </div>
+
+    <div style="margin-bottom:28px">
+      <div style="height:10px;background:var(--border-light,#e5e7eb);border-radius:5px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${colorPct};transition:width .4s"></div>
+      </div>
+    </div>
+
+    ${todasCausas.length > 0 ? `
+      <div style="margin-bottom:32px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">
+          Por qué este plan
+        </div>
+        <div style="font-size:15px;color:var(--text);line-height:1.6;margin-bottom:14px">
+          Identificamos las siguientes causas que explican por qué esta acción no se había logrado:
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${todasCausas.map(c => `<span style="background:var(--bg-soft,#f8f9fa);color:var(--text);font-size:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--border-light,#e8e8e8)">${escapeHtmlPlan(c)}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <div style="margin-bottom:32px">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
+        Qué nos comprometimos a hacer
+      </div>
+      <div style="font-size:15px;color:var(--muted);margin-bottom:18px">
+        ${pasos.length} paso(s) · plazo total ${maxPlazo} días · objetivo: ${fechaTxt}
+      </div>
+      <div>
+        ${pasosHtml}
+      </div>
+    </div>
+
+    ${ma.acuerdo_como ? `
+      <div style="margin-bottom:24px;padding:20px;background:#fef9e7;border-left:4px solid #d4a017;border-radius:6px">
+        <div style="font-size:13px;font-weight:700;color:#92580a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+          Cómo sabremos que avanzamos
+        </div>
+        <div style="font-size:16px;line-height:1.6;color:var(--text)">
+          ${escapeHtmlPlan(ma.acuerdo_como)}
+        </div>
+      </div>` : ''}
+
+    ${ma.acuerdo_quien ? `
+      <div style="margin-bottom:24px;padding:16px;background:var(--bg-soft,#f8f9fa);border-radius:6px;display:flex;align-items:center;gap:14px">
+        <div style="font-size:24px">👤</div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;font-weight:600">Responsable principal</div>
+          <div style="font-size:16px;font-weight:600;color:var(--text)">${escapeHtmlPlan(ma.acuerdo_quien)}</div>
+          ${ma.acuerdo_co ? `<div style="font-size:13px;color:var(--muted);margin-top:2px">Co-responsable: ${escapeHtmlPlan(ma.acuerdo_co)}</div>` : ''}
+        </div>
+      </div>` : ''}
+  `;
+
+  document.getElementById('planFooter').innerHTML = `
+    <span class="info">${ma.estado==='COMPLETADA'?'Plan completado':ma.estado==='ACTIVA'?'Plan activo':'Plan'}</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="plan-btn-back" onclick="planVerEdicionPasos()" title="Editar pasos individualmente">
+        ✏ Trabajar paso a paso
+      </button>
+      ${ma.estado!=='COMPLETADA' && pasos.length>0 && completos===pasos.length ?
+        '<button class="plan-btn-next" onclick="planCerrarMicroaccion()">Cerrar plan ✓</button>':''}
+      <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
+    </div>`;
+}
+
+/* Cambia a vista de edición paso a paso (la anterior) */
+function planVerEdicionPasos(){
+  if(!PLAN_STATE) return;
+  PLAN_STATE.vistaActiva = 'edicion';
+  renderPlanPaso();
+}
+
+/* Vuelve a vista pedagógica desde la edición */
+function planVerResumen(){
+  if(!PLAN_STATE) return;
+  PLAN_STATE.vistaActiva = 'resumen';
+  renderPlanPaso();
+}
+
 function renderPasoExistente(){
   const s = PLAN_STATE;
   const ma = s.existente;
@@ -8337,8 +8576,11 @@ function renderPasoExistente(){
     ${ma.acuerdo_como ? `<div class="plan-brecha"><h4>Cómo sabremos que avanzamos</h4><p style="font-size:13px">${escapeHtmlPlan(ma.acuerdo_como)}</p></div>` : ''}
   `;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">${ma.estado==='COMPLETADA'?'Plan completado':'Plan activo'}</span>
-    <div style="display:flex;gap:8px">
+    <span class="info">${ma.estado==='COMPLETADA'?'Plan completado · vista edición':'Plan activo · vista edición'}</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="plan-btn-back" onclick="planVerResumen()" title="Volver a la vista de resumen">
+        ← Volver al resumen
+      </button>
       ${ma.estado!=='COMPLETADA' && completos===pasos.length && pasos.length>0 ?
         '<button class="plan-btn-next" onclick="planCerrarMicroaccion()">Cerrar plan</button>':''}
       <button class="plan-btn-back" onclick="cerrarPlan()">Cerrar</button>
@@ -8422,6 +8664,18 @@ async function planBack(){
 function escapeHtmlPlan(s){
   if(s==null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* Permite solo etiquetas de formato pedagógico inline (negrita, cursiva).
+ * Primero escapa TODO el HTML (anti-XSS), después rehabilita las etiquetas seguras.
+ * Usar para campos cargados desde la base de conocimiento donde el editor
+ * pedagógico marcó intencionalmente énfasis con <strong> o <em>. */
+function safeMarkupPlan(s){
+  if(s==null) return '';
+  let out = escapeHtmlPlan(s);
+  // Rehabilitar solo etiquetas inline de énfasis. Atributos NO permitidos.
+  out = out.replace(/&lt;(\/?)(strong|em|b|i)&gt;/gi, '<$1$2>');
+  return out;
 }
 
 /* ====================== PANEL "MIS PLANES" ============================ */
