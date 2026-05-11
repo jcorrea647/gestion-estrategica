@@ -9945,203 +9945,133 @@ async function mapaAbrirEditor(cacheKey){
 function _mapaRenderEditor(){
   const e = MAPA_STATE.edicionActual;
   if(!e) return;
-  const k = _mapaParsearKey(e.cache_key) || {};
-  const linea = e.plan_data[0];
-  const pasos = linea.pasos || [];
-  const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
-  const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
+  const curado = e.curado === true;
 
-  // Título y subtítulo del drawer
-  document.getElementById('planTitle').textContent = k.accion || 'Plan';
-  document.getElementById('planSubtitle').textContent = `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
+  // Título y subtítulo según tipo
+  let titulo = '', subtitulo = '';
+  if(e.tipo === 'ficha'){
+    titulo = '📋 Ficha de la acción';
+    subtitulo = e.ficha?.accion_nombre || e.accionId;
+  } else if(e.tipo === 'nivel'){
+    const info = MAPA_NIVELES_INFO[e.nivel] || {etiqueta:e.nivel};
+    titulo = `🎯 ${e.nivel} ${info.etiqueta} · ${e.ambito}`;
+    subtitulo = `Pasos del ámbito ${e.ambito} para nivel ${e.nivel} (${info.rango || ''})`;
+  } else if(e.tipo === 'causal'){
+    const infoCausal = MAPA_CAUSAS_INFO[e.causal] || {nombre:e.causal};
+    const infoNivel = MAPA_NIVELES_INFO[e.nivel] || {etiqueta:e.nivel};
+    titulo = `⚙️ ${e.causal} ${infoCausal.nombre} · ${e.nivel} ${infoNivel.etiqueta}`;
+    subtitulo = `Alternativas A/B/C para la causal ${infoCausal.nombre} en nivel ${e.nivel}`;
+  }
+
+  const titleEl = document.getElementById('planTitle');
+  if(titleEl) titleEl.textContent = titulo;
+  const subEl = document.getElementById('planSubtitle');
+  if(subEl) subEl.textContent = subtitulo;
 
   const prog = document.getElementById('planProgress');
   if(prog) prog.innerHTML = '';
 
-  // Render del editor
-  const curado = e.curado === true;
+  // Construir contenido según tipo
+  let contenidoHtml = '';
 
-  const pasosHtml = pasos.map((p, idx) => `
-    <div style="background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px;padding:18px;margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${idx+1}</div>
-        <div style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
-        <div style="flex:1"></div>
-        ${pasos.length > 1 ? `<button onclick="mapaEliminarPaso(${idx})" style="background:transparent;border:1px solid #fca5a5;color:#dc2626;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit" title="Eliminar este paso">✕ Eliminar</button>` : ''}
+  if(e.tipo === 'ficha' && e.ficha){
+    const f = e.ficha;
+    contenidoHtml = `
+      <div style="margin-bottom:18px;padding:14px;background:var(--bg-soft,#f8f9fa);border-radius:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Acción</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">${escapeHtmlPlan(f.accion_nombre || '')}</div>
       </div>
 
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción del paso</label>
-        <textarea
-          oninput="mapaActualizarPaso(${idx}, 'descripcion', this.value)"
-          style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-        >${escapeHtmlPlan(p.descripcion || '')}</textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+        <div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Área</div><div style="font-size:13px">${escapeHtmlPlan(f.area || '—')}</div></div>
+        <div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Responsables</div><div style="font-size:13px">${escapeHtmlPlan((f.responsables || []).join(', ') || '—')}</div></div>
       </div>
 
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px">
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsable sugerido</label>
-          <input type="text" value="${escapeHtmlPlan(p.responsable_sugerido || '')}"
-            oninput="mapaActualizarPaso(${idx}, 'responsable_sugerido', this.value)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Objetivo</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.objetivo || '—')}</div></div>
+
+      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fórmula</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.formula || '—')}</div></div>
+
+      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Evidencia</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.evidencia || '—')}</div></div>
+
+      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Período de evaluación</div><div style="font-size:13px">${escapeHtmlPlan((f.periodo_evaluacion || []).join(' · ') || '—')}</div></div>
+
+      ${f.marco_normativo ? `
+        <div style="margin-bottom:18px;padding:14px;background:#fef9e7;border-left:3px solid #d4a017;border-radius:6px">
+          <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Marco normativo</div>
+          ${f.marco_normativo.principal ? `<div style="font-size:12px;margin-bottom:4px"><strong>Principal:</strong> ${escapeHtmlPlan(f.marco_normativo.principal)}</div>` : ''}
+          ${f.marco_normativo.tecnico ? `<div style="font-size:12px;margin-bottom:4px"><strong>Técnico:</strong> ${escapeHtmlPlan(f.marco_normativo.tecnico)}</div>` : ''}
+          ${f.marco_normativo.vinculo_mbd ? `<div style="font-size:12px;margin-bottom:4px"><strong>MBD:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_mbd)}</div>` : ''}
+          ${f.marco_normativo.vinculo_mbe ? `<div style="font-size:12px;margin-bottom:4px"><strong>MBE:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_mbe)}</div>` : ''}
+          ${f.marco_normativo.vinculo_eid ? `<div style="font-size:12px;margin-bottom:4px"><strong>EID:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_eid)}</div>` : ''}
         </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Plazo (días)</label>
-          <input type="number" min="1" max="90" value="${p.plazo_dias || 14}"
-            oninput="mapaActualizarPaso(${idx}, 'plazo_dias', parseInt(this.value)||14)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      ` : ''}
+    `;
+  } else if(e.tipo === 'nivel' && e.plan_data){
+    const pasos = e.plan_data?.[0]?.pasos || [];
+    contenidoHtml = `
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 pasos para ${e.ambito} en nivel ${e.nivel}</div>
+      ${pasos.map((p, i) => `
+        <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="background:var(--accent,#1F5F47);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</div>
+            <div style="flex:1;font-size:13px;line-height:1.6;color:var(--text)">${escapeHtmlPlan(p)}</div>
+          </div>
         </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Esfuerzo</label>
-          <select onchange="mapaActualizarPaso(${idx}, 'esfuerzo', this.value)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;background:#fff">
-            <option value="BAJO"${(p.esfuerzo||'')==='BAJO'?' selected':''}>BAJO</option>
-            <option value="MEDIO"${(p.esfuerzo||'MEDIO')==='MEDIO'?' selected':''}>MEDIO</option>
-            <option value="ALTO"${(p.esfuerzo||'')==='ALTO'?' selected':''}>ALTO</option>
-          </select>
+      `).join('')}
+    `;
+  } else if(e.tipo === 'causal' && e.plan_data){
+    const dato = e.plan_data?.[0] || {};
+    const alt = dato.alternativas || {};
+    contenidoHtml = `
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 alternativas — el equipo elige una</div>
+      ${['A','B','C'].map(letra => `
+        <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="background:#fef9e7;color:#92400e;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;border:1px solid #d4a017">${letra}</div>
+            <div style="flex:1;font-size:13px;line-height:1.6;color:var(--text)">${escapeHtmlPlan(alt[letra] || '—')}</div>
+          </div>
         </div>
-      </div>
-    </div>
-  `).join('');
+      `).join('')}
+    `;
+  } else {
+    contenidoHtml = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Sin contenido disponible para este registro.</div>';
+  }
 
   document.getElementById('planBody').innerHTML = `
-    <!-- Header con clave del plan -->
-    <div style="margin-bottom:24px;padding:14px 16px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
+    <div style="margin-bottom:18px;padding:10px 12px;background:var(--bg-soft,#f8f9fa);border-radius:6px;font-size:11px;font-family:ui-monospace,monospace;color:var(--muted);word-break:break-all">
       ${escapeHtmlPlan(e.cache_key)}
     </div>
 
-    <!-- Toggle de curado -->
-    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
+    <div style="margin-bottom:20px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
          onclick="mapaToggleCurado()">
       <div style="font-size:24px">${curado?'✅':'⚪'}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
-          ${curado ? 'Plan curado' : 'Plan sin curar'}
+          ${curado ? 'Registro curado' : 'Registro sin curar'}
         </div>
         <div style="font-size:12px;color:var(--muted)">
-          ${curado ? 'Este plan fue revisado por superadmin y está listo para mostrarse a los colegios.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
+          ${curado ? 'Revisado por superadmin y listo para mostrarse a los colegios.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
         </div>
       </div>
     </div>
 
-    <!-- Metadatos de la línea -->
-    <div style="margin-bottom:24px">
-      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
-        Metadatos del plan
-      </div>
+    ${contenidoHtml}
 
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Título de la línea</label>
-        <input type="text" value="${escapeHtmlPlan(linea.titulo || '')}"
-          oninput="mapaActualizarLinea('titulo', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:14px;outline:none;font-weight:600"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-      </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Foco (encabezado pedagógico)</label>
-        <input type="text" value="${escapeHtmlPlan(linea.foco || '')}"
-          oninput="mapaActualizarLinea('foco', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-      </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción corta</label>
-        <textarea
-          oninput="mapaActualizarLinea('descripcion_corta', this.value)"
-          style="width:100%;min-height:60px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-        >${escapeHtmlPlan(linea.descripcion_corta || '')}</textarea>
-      </div>
-
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Causa atacada (etiqueta visible)</label>
-        <input type="text" value="${escapeHtmlPlan(linea.causa_atacada || '')}"
-          oninput="mapaActualizarLinea('causa_atacada', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-      </div>
-    </div>
-
-    <!-- Pasos -->
-    <div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
-          Pasos del plan (${pasos.length})
-        </div>
-        <button onclick="mapaAgregarPaso()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s"
-          onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
-          onmouseout="this.style.background='transparent';this.style.color='var(--accent)'">
-          + Agregar paso
-        </button>
-      </div>
-      ${pasosHtml || '<p style="color:var(--muted);font-style:italic;padding:20px;text-align:center;background:var(--bg-soft,#f8f9fa);border-radius:8px">Sin pasos. Hacé click en "Agregar paso" para comenzar.</p>'}
+    <div style="margin-top:20px;padding:14px 16px;background:#fff3cd;border-left:3px solid #d4a017;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
+      <strong>📝 Vista de solo lectura</strong> — la edición de contenido se hará en una próxima iteración. Por ahora puedes navegar el catálogo, ver el contenido y marcar curados.
     </div>
   `;
 
   document.getElementById('planFooter').innerHTML = `
-    <span class="info" style="font-size:12px;color:var(--muted)">${k.accion || ''} · ${k.nivel} · ${k.causal}</span>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
-      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;width:100%">
+      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cerrar</button>
+      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar estado curado</button>
     </div>`;
-}
-
-/* Actualizaciones en memoria (no guardan hasta apretar "Guardar cambios") */
-function mapaActualizarLinea(campo, valor){
-  if(!MAPA_STATE.edicionActual) return;
-  MAPA_STATE.edicionActual.plan_data[0][campo] = valor;
-}
-
-function mapaActualizarPaso(idx, campo, valor){
-  if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  if(!pasos[idx]) return;
-  pasos[idx][campo] = valor;
 }
 
 function mapaToggleCurado(){
   if(!MAPA_STATE.edicionActual) return;
   MAPA_STATE.edicionActual.curado = !MAPA_STATE.edicionActual.curado;
-  _mapaRenderEditor();
-}
-
-function mapaAgregarPaso(){
-  if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  const nuevoId = '1.' + (pasos.length + 1);
-  pasos.push({
-    id: nuevoId,
-    descripcion: '',
-    responsable_sugerido: '',
-    plazo_dias: 14,
-    esfuerzo: 'MEDIO'
-  });
-  _mapaRenderEditor();
-}
-
-function mapaEliminarPaso(idx){
-  if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  if(pasos.length <= 1){
-    showToast('Debe haber al menos un paso');
-    return;
-  }
-  if(!confirm('¿Eliminar este paso? Esta acción no se puede deshacer hasta que recargues sin guardar.')) return;
-  pasos.splice(idx, 1);
-  // Re-numerar IDs internos
-  pasos.forEach((p, i) => p.id = '1.' + (i+1));
   _mapaRenderEditor();
 }
 
