@@ -9415,21 +9415,44 @@ const MAPA_NIVELES_INFO = {
   L5: { etiqueta:'Cultura institucional',    rango:'90-100%' }
 };
 
+const MAPA_NIVELES_INFO = {
+  L1: { etiqueta:'Inicial',       rango:'1-25%',  min: 1,  max: 25,  descripcion:'El proceso no existe o tiene debilidades críticas.' },
+  L2: { etiqueta:'Básico',        rango:'25-50%', min: 25, max: 50,  descripcion:'El proceso se realiza pero de forma irregular o mínima.' },
+  L3: { etiqueta:'En Desarrollo', rango:'50-70%', min: 50, max: 70,  descripcion:'Se están instalando prácticas sistemáticas de mejora.' },
+  L4: { etiqueta:'Satisfactorio', rango:'70-90%', min: 70, max: 90,  descripcion:'El proceso cumple con el estándar esperado de forma regular.' },
+  L5: { etiqueta:'Consolidado',   rango:'≥90%',   min: 90, max: 100, descripcion:'Práctica institucionalizada y de alta calidad que sirve de modelo.' }
+};
+
+// Helper único: convierte pct → código de nivel (regla: borde superior pertenece al nivel inferior, L5 es ≥90%)
+function pctANivel(pct){
+  const p = pct || 0;
+  if (p <= 25) return 'L1';
+  if (p <= 50) return 'L2';
+  if (p <= 70) return 'L3';
+  if (p <  90) return 'L4';
+  return 'L5';
+}
+
 const MAPA_CAUSAS_INFO = {
-  C1:  { grupo:'estructural', nombre:'Tiempo' },
-  C2:  { grupo:'estructural', nombre:'Recursos materiales' },
-  C3:  { grupo:'estructural', nombre:'Recursos humanos' },
-  C4:  { grupo:'estructural', nombre:'Competencias técnicas' },
-  C5:  { grupo:'estructural', nombre:'Coordinación entre cargos' },
-  C6:  { grupo:'estructural', nombre:'Definición poco clara' },
-  C7:  { grupo:'estructural', nombre:'Datos / información' },
-  C8:  { grupo:'estructural', nombre:'Causa externa' },
-  C9:  { grupo:'relacional',  nombre:'Falta de compromiso docente' },
-  C10: { grupo:'relacional',  nombre:'Resistencia o cultura instalada' },
-  C11: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
-  C12: { grupo:'relacional',  nombre:'Bajo involucramiento estudiantes' },
-  C13: { grupo:'relacional',  nombre:'Conflictos entre estamentos' },
-  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' }
+  // Estructurales (9)
+  C1:  { grupo:'estructural', nombre:'Tiempo',                       descripcion:'La acción no se ejecuta o se ejecuta parcialmente porque las horas disponibles del equipo son insuficientes o están saturadas con otras prioridades.' },
+  C2:  { grupo:'estructural', nombre:'Recursos materiales',          descripcion:'Faltan los insumos físicos, tecnológicos o financieros necesarios para implementar la acción.' },
+  C3:  { grupo:'estructural', nombre:'Recursos humanos',             descripcion:'No hay personas suficientes o disponibles para ejecutar la acción, o las que están tienen carga excesiva por otros frentes.' },
+  C4:  { grupo:'estructural', nombre:'Competencias técnicas',        descripcion:'El equipo responsable no domina las habilidades, metodologías o conocimientos específicos que la acción requiere.' },
+  C5:  { grupo:'estructural', nombre:'Coordinación entre cargos',    descripcion:'La acción involucra a varios roles que no logran articularse para definir quién hace qué, cuándo y cómo.' },
+  C6:  { grupo:'estructural', nombre:'Definición poco clara',        descripcion:'La acción está formulada de forma ambigua: no se sabe qué cuenta como cumplida, quién es responsable, ni cuál es el estado de éxito.' },
+  C7:  { grupo:'estructural', nombre:'Datos o información',          descripcion:'No se cuenta con la información necesaria para tomar decisiones sobre la acción, o los datos no son confiables.' },
+  C8:  { grupo:'estructural', nombre:'Evaluación y monitoreo',       descripcion:'No existen mecanismos sistemáticos para revisar si la acción está avanzando, lo que impide ajustar a tiempo.' },
+  C9:  { grupo:'estructural', nombre:'Causas externas',              descripcion:'Factores fuera del control directo del establecimiento: normativas, decisiones del sostenedor, contexto territorial.' },
+  // Relacionales (8)
+  C10: { grupo:'relacional',  nombre:'Liderazgo Intermedio',         descripcion:'Los jefes técnicos, de departamento o de ciclo no logran instalar, sostener o supervisar la acción en sus equipos.' },
+  C11: { grupo:'relacional',  nombre:'Clima Laboral',                descripcion:'Las tensiones, conflictos o desmotivación entre los adultos del establecimiento dificultan trabajar juntos en la acción.' },
+  C12: { grupo:'relacional',  nombre:'Comunicación interna',         descripcion:'Los mensajes, decisiones y lineamientos no circulan bien dentro del establecimiento entre los distintos actores.' },
+  C13: { grupo:'relacional',  nombre:'Resistencia cultural',         descripcion:'La práctica propuesta choca con creencias o costumbres instaladas en el establecimiento.' },
+  C14: { grupo:'relacional',  nombre:'Compromiso docente',           descripcion:'Un grupo significativo de docentes no se involucra activamente con la acción.' },
+  C15: { grupo:'relacional',  nombre:'Involucramiento Estudiantes',  descripcion:'Los estudiantes no se vinculan con la acción, la ven ajena a su experiencia o no se sienten convocados.' },
+  C16: { grupo:'relacional',  nombre:'Comunicación con apoderados',  descripcion:'Las familias no reciben información clara sobre la acción o no responden a los canales habituales.' },
+  C17: { grupo:'relacional',  nombre:'Compromiso de apoderados',     descripcion:'Las familias no se vinculan con la acción o asumen una postura contraria a lo que promueve el establecimiento.' }
 };
 
 // Estado del módulo
