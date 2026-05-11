@@ -9920,11 +9920,13 @@ async function mapaAbrirEditor(cacheKey){
   const registro = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
   if(!registro){ showToast('Registro no encontrado'); return; }
 
-  // Parsear el cache_key para identificar tipo y dimensiones
   const k = _mapaParsearKey(cacheKey);
   if(!k){ showToast('Formato cache_key no reconocido'); return; }
 
-  // Construir edicionActual con la estructura que espera _mapaRenderEditor
+  // Clonar plan_data y ficha para que editar no toque el original hasta guardar
+  const planDataClonado = registro.plan_data ? JSON.parse(JSON.stringify(registro.plan_data)) : null;
+  const fichaClonada = registro.ficha ? JSON.parse(JSON.stringify(registro.ficha)) : null;
+
   MAPA_STATE.edicionActual = {
     cache_key: cacheKey,
     tipo:      k.tipo,
@@ -9932,12 +9934,13 @@ async function mapaAbrirEditor(cacheKey){
     nivel:     k.nivel || null,
     ambito:    k.ambito || null,
     causal:    k.causal || null,
-    plan_data: registro.plan_data,
-    ficha:     registro.ficha,
-    curado:    registro.curado === true
+    plan_data: planDataClonado,
+    ficha:     fichaClonada,
+    curado:    registro.curado === true,
+    _updatedAt: registro.updated_at || null,
+    _dirty:    false
   };
 
-  // Asegurar que el drawer existe (reusamos el del módulo plan)
   if(typeof asegurarDrawer === 'function') asegurarDrawer();
   document.getElementById('planOverlay').classList.add('show');
   document.getElementById('planDrawer').classList.add('show');
@@ -9975,40 +9978,97 @@ function _mapaRenderEditor(){
   const prog = document.getElementById('planProgress');
   if(prog) prog.innerHTML = '';
 
-  // Construir contenido según tipo
+  // Estilo común para textareas
+  const taStyle = 'width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.6;resize:vertical;outline:none;color:var(--text);box-sizing:border-box';
+  const inputStyle = 'width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;color:var(--text);box-sizing:border-box';
+
+  // Última edición (usando updated_at de Supabase)
+  let ultimaEdicion = '';
+  if(e._updatedAt){
+    const fecha = new Date(e._updatedAt);
+    const diff = Date.now() - fecha.getTime();
+    const min = Math.floor(diff / 60000);
+    const hrs = Math.floor(min / 60);
+    const dias = Math.floor(hrs / 24);
+    let hace = '';
+    if(dias > 0) hace = `hace ${dias} día${dias>1?'s':''}`;
+    else if(hrs > 0) hace = `hace ${hrs} hora${hrs>1?'s':''}`;
+    else if(min > 0) hace = `hace ${min} min`;
+    else hace = 'recién';
+    ultimaEdicion = `<div style="font-size:11px;color:var(--muted);margin-top:6px">🕐 Última edición: ${hace}</div>`;
+  }
+
+  // Construir contenido editable según tipo
   let contenidoHtml = '';
 
   if(e.tipo === 'ficha' && e.ficha){
     const f = e.ficha;
+    const mn = f.marco_normativo || {};
     contenidoHtml = `
-      <div style="margin-bottom:18px;padding:14px;background:var(--bg-soft,#f8f9fa);border-radius:8px">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Acción</div>
-        <div style="font-size:15px;font-weight:600;color:var(--text)">${escapeHtmlPlan(f.accion_nombre || '')}</div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Nombre de la acción</label>
+        <input type="text" value="${escapeHtmlAttr(f.accion_nombre || '')}" oninput="mapaActualizarCampo('ficha.accion_nombre', this.value)" style="${inputStyle}">
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-        <div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Área</div><div style="font-size:13px">${escapeHtmlPlan(f.area || '—')}</div></div>
-        <div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Responsables</div><div style="font-size:13px">${escapeHtmlPlan((f.responsables || []).join(', ') || '—')}</div></div>
-      </div>
-
-      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Objetivo</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.objetivo || '—')}</div></div>
-
-      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fórmula</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.formula || '—')}</div></div>
-
-      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Evidencia</div><div style="font-size:13px;line-height:1.5">${escapeHtmlPlan(f.evidencia || '—')}</div></div>
-
-      <div style="margin-bottom:18px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Período de evaluación</div><div style="font-size:13px">${escapeHtmlPlan((f.periodo_evaluacion || []).join(' · ') || '—')}</div></div>
-
-      ${f.marco_normativo ? `
-        <div style="margin-bottom:18px;padding:14px;background:#fef9e7;border-left:3px solid #d4a017;border-radius:6px">
-          <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Marco normativo</div>
-          ${f.marco_normativo.principal ? `<div style="font-size:12px;margin-bottom:4px"><strong>Principal:</strong> ${escapeHtmlPlan(f.marco_normativo.principal)}</div>` : ''}
-          ${f.marco_normativo.tecnico ? `<div style="font-size:12px;margin-bottom:4px"><strong>Técnico:</strong> ${escapeHtmlPlan(f.marco_normativo.tecnico)}</div>` : ''}
-          ${f.marco_normativo.vinculo_mbd ? `<div style="font-size:12px;margin-bottom:4px"><strong>MBD:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_mbd)}</div>` : ''}
-          ${f.marco_normativo.vinculo_mbe ? `<div style="font-size:12px;margin-bottom:4px"><strong>MBE:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_mbe)}</div>` : ''}
-          ${f.marco_normativo.vinculo_eid ? `<div style="font-size:12px;margin-bottom:4px"><strong>EID:</strong> ${escapeHtmlPlan(f.marco_normativo.vinculo_eid)}</div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Área</label>
+          <input type="text" value="${escapeHtmlAttr(f.area || '')}" oninput="mapaActualizarCampo('ficha.area', this.value)" style="${inputStyle}">
         </div>
-      ` : ''}
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsables (separados por coma)</label>
+          <input type="text" value="${escapeHtmlAttr((f.responsables || []).join(', '))}" oninput="mapaActualizarCampo('ficha.responsables', this.value.split(',').map(s=>s.trim()).filter(Boolean))" style="${inputStyle}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Objetivo</label>
+        <textarea oninput="mapaActualizarCampo('ficha.objetivo', this.value)" style="${taStyle}">${escapeHtmlPlan(f.objetivo || '')}</textarea>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Fórmula</label>
+        <textarea oninput="mapaActualizarCampo('ficha.formula', this.value)" style="${taStyle}">${escapeHtmlPlan(f.formula || '')}</textarea>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Evidencia</label>
+        <textarea oninput="mapaActualizarCampo('ficha.evidencia', this.value)" style="${taStyle}">${escapeHtmlPlan(f.evidencia || '')}</textarea>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Período de evaluación (separados por coma)</label>
+        <input type="text" value="${escapeHtmlAttr((f.periodo_evaluacion || []).join(', '))}" oninput="mapaActualizarCampo('ficha.periodo_evaluacion', this.value.split(',').map(s=>s.trim()).filter(Boolean))" style="${inputStyle}">
+      </div>
+
+      <div style="padding:14px;background:#fef9e7;border-left:3px solid #d4a017;border-radius:6px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Marco normativo</div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Principal (ley)</label>
+          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.principal', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.principal || '')}</textarea>
+        </div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Técnico (CPEIP / agencia / etc)</label>
+          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.tecnico', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.tecnico || '')}</textarea>
+        </div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo MBD</label>
+          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_mbd', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_mbd || '')}</textarea>
+        </div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo MBE</label>
+          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_mbe', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_mbe || '')}</textarea>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo EID</label>
+          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_eid', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_eid || '')}</textarea>
+        </div>
+      </div>
     `;
   } else if(e.tipo === 'nivel' && e.plan_data){
     const pasos = e.plan_data?.[0]?.pasos || [];
@@ -10016,10 +10076,11 @@ function _mapaRenderEditor(){
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 pasos para ${e.ambito} en nivel ${e.nivel}</div>
       ${pasos.map((p, i) => `
         <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
-          <div style="display:flex;gap:10px;align-items:flex-start">
+          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">
             <div style="background:var(--accent,#1F5F47);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</div>
-            <div style="flex:1;font-size:13px;line-height:1.6;color:var(--text)">${escapeHtmlPlan(p)}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Paso ${i+1}</div>
           </div>
+          <textarea oninput="mapaActualizarCampo('plan_data.0.pasos.${i}', this.value)" style="${taStyle};min-height:100px">${escapeHtmlPlan(p)}</textarea>
         </div>
       `).join('')}
     `;
@@ -10030,10 +10091,11 @@ function _mapaRenderEditor(){
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 alternativas — el equipo elige una</div>
       ${['A','B','C'].map(letra => `
         <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
-          <div style="display:flex;gap:10px;align-items:flex-start">
+          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">
             <div style="background:#fef9e7;color:#92400e;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;border:1px solid #d4a017">${letra}</div>
-            <div style="flex:1;font-size:13px;line-height:1.6;color:var(--text)">${escapeHtmlPlan(alt[letra] || '—')}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Alternativa ${letra}</div>
           </div>
+          <textarea oninput="mapaActualizarCampo('plan_data.0.alternativas.${letra}', this.value)" style="${taStyle};min-height:100px">${escapeHtmlPlan(alt[letra] || '')}</textarea>
         </div>
       `).join('')}
     `;
@@ -10044,6 +10106,7 @@ function _mapaRenderEditor(){
   document.getElementById('planBody').innerHTML = `
     <div style="margin-bottom:18px;padding:10px 12px;background:var(--bg-soft,#f8f9fa);border-radius:6px;font-size:11px;font-family:ui-monospace,monospace;color:var(--muted);word-break:break-all">
       ${escapeHtmlPlan(e.cache_key)}
+      ${ultimaEdicion}
     </div>
 
     <div style="margin-bottom:20px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
@@ -10061,16 +10124,81 @@ function _mapaRenderEditor(){
 
     ${contenidoHtml}
 
-    <div style="margin-top:20px;padding:14px 16px;background:#fff3cd;border-left:3px solid #d4a017;border-radius:6px;font-size:12px;color:#92400e;line-height:1.5">
-      <strong>📝 Vista de solo lectura</strong> — la edición de contenido se hará en una próxima iteración. Por ahora puedes navegar el catálogo, ver el contenido y marcar curados.
+    <div style="margin-top:20px;padding:14px 16px;background:#e0f2fe;border-left:3px solid #0284c7;border-radius:6px;font-size:12px;color:#075985;line-height:1.5">
+      <strong>✏️ Modo edición</strong> — los cambios afectarán a <strong>todos los colegios</strong> la próxima vez que generen un plan. Se te pedirá confirmación al guardar.
     </div>
   `;
 
   document.getElementById('planFooter').innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;width:100%">
       <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cerrar</button>
-      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar estado curado</button>
+      <button class="plan-btn-next" onclick="mapaConfirmarGuardar()" id="mapaBtnGuardar">💾 Guardar cambios</button>
     </div>`;
+}
+
+/* Helper: escape para atributos HTML (más estricto que escapeHtmlPlan) */
+function escapeHtmlAttr(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* Actualiza un campo de edicionActual usando una ruta tipo 'plan_data.0.pasos.2' o 'ficha.marco_normativo.principal' */
+function mapaActualizarCampo(ruta, valor){
+  if(!MAPA_STATE.edicionActual) return;
+  const partes = ruta.split('.');
+  let obj = MAPA_STATE.edicionActual;
+  for(let i = 0; i < partes.length - 1; i++){
+    const k = partes[i];
+    // Si es un índice numérico, asegurar que el padre es un array
+    if(!obj[k]){
+      const sigK = partes[i+1];
+      obj[k] = /^\d+$/.test(sigK) ? [] : {};
+    }
+    obj = obj[k];
+  }
+  obj[partes[partes.length - 1]] = valor;
+  MAPA_STATE.edicionActual._dirty = true;
+}
+
+/* Muestra modal de confirmación antes de guardar */
+function mapaConfirmarGuardar(){
+  const e = MAPA_STATE.edicionActual;
+  if(!e) return;
+
+  // Construir descripción según tipo
+  let desc = '';
+  if(e.tipo === 'ficha'){
+    desc = `Ficha de la acción "${e.ficha?.accion_nombre || e.accionId}"`;
+  } else if(e.tipo === 'nivel'){
+    desc = `Pasos del ámbito ${e.ambito} para nivel ${e.nivel}`;
+  } else if(e.tipo === 'causal'){
+    desc = `Alternativas A/B/C de causal ${e.causal} en nivel ${e.nivel}`;
+  }
+
+  // Crear modal de confirmación
+  const modalId = 'mapaConfirmModal';
+  document.getElementById(modalId)?.remove();
+  const modal = document.createElement('div');
+  modal.id = modalId;
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;max-width:480px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.2)">
+      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px">¿Reemplazar el contenido?</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">
+        Estás a punto de actualizar el siguiente registro del catálogo institucional:
+      </div>
+      <div style="padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:6px;font-size:13px;color:var(--text);margin-bottom:18px;border-left:3px solid var(--accent,#1F5F47)">
+        ${escapeHtmlPlan(desc)}
+      </div>
+      <div style="font-size:12px;color:#92400e;background:#fef9e7;border-left:3px solid #d4a017;border-radius:4px;padding:10px 12px;margin-bottom:18px;line-height:1.5">
+        ⚠️ Este cambio afectará a <strong>todos los colegios</strong> la próxima vez que generen un plan con esta combinación. Los planes ya guardados (en <code>microacciones</code>) NO se modifican retroactivamente.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="document.getElementById('${modalId}').remove()" class="plan-btn-back">Cancelar</button>
+        <button onclick="document.getElementById('${modalId}').remove();mapaGuardarPlan()" class="plan-btn-next">✓ Sí, reemplazar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 function mapaToggleCurado(){
@@ -10096,13 +10224,23 @@ async function mapaGuardarPlan(){
   if(btn){ btn.disabled = true; btn.textContent = '💾 Guardando…'; }
 
   try {
-    // Por ahora solo actualizamos el flag de curado (la edición de contenido viene después)
+    // Construir el update según el tipo de registro
+    const updatePayload = {
+      curado: e.curado === true,
+      updated_at: new Date().toISOString()
+    };
+
+    if(e.tipo === 'ficha'){
+      // Para ficha: guardar el objeto ficha actualizado
+      updatePayload.ficha = e.ficha;
+    } else if(e.tipo === 'nivel' || e.tipo === 'causal'){
+      // Para nivel y causal: guardar plan_data
+      updatePayload.plan_data = e.plan_data;
+    }
+
     const { data, error } = await sb
       .from('planes_cache')
-      .update({
-        curado: e.curado === true,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('cache_key', e.cache_key)
       .select()
       .single();
@@ -10110,22 +10248,28 @@ async function mapaGuardarPlan(){
     if(error){
       console.error('[Mapa] Error guardando:', error);
       showToast('Error al guardar: ' + error.message);
-      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar estado curado'; }
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
       return;
     }
 
+    // Actualizar en memoria
     const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
     if(idx >= 0) MAPA_STATE.planes[idx] = data;
 
-    showToast('✓ Estado curado guardado');
+    // Marcar última edición en edicionActual por si el editor sigue abierto
+    if(MAPA_STATE.edicionActual){
+      MAPA_STATE.edicionActual._updatedAt = data.updated_at;
+      MAPA_STATE.edicionActual._dirty = false;
+    }
+
+    showToast('✓ Cambios guardados correctamente');
     mapaCerrarEditor();
   } catch(err){
     console.error('[Mapa] Excepción guardando:', err);
     showToast('Error inesperado: ' + err.message);
-    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar estado curado'; }
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
   }
 }
-
 /* ====================== CARGA INICIAL DE DATOS ====================== */
 /* Carga DB.microacciones y DB.pasos con paginación explícita y manejo de
  * errores. Si Supabase devuelve un error o menos filas de las esperadas,
