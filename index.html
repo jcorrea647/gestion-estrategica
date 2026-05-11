@@ -9645,62 +9645,60 @@ async function renderMapaAcciones(){
   const main = document.getElementById('mainContent');
   if(!main) return;
 
-  // Loading inicial
   main.innerHTML = `
     <div class="page-header">
       <div class="page-title">🗺 Mapa de Acciones</div>
-      <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
+      <div class="page-sub">Catálogo institucional · Ficha + 5 niveles × 2 ámbitos + 17 causales × 5 niveles</div>
     </div>
     <div class="card" style="padding:30px;text-align:center;color:var(--muted)">
-      <div style="font-size:13px">Cargando planes pre-computados…</div>
+      <div style="font-size:13px">Cargando catálogo de acciones…</div>
     </div>`;
 
-  // Cargar planes si no están en memoria
   if(!MAPA_STATE.planes.length){
     MAPA_STATE.planes = await _mapaCargarPlanes();
   }
-  const planes = MAPA_STATE.planes;
+  const registros = MAPA_STATE.planes;
 
-  if(!planes.length){
+  if(!registros.length){
     main.innerHTML = `
       <div class="page-header">
         <div class="page-title">🗺 Mapa de Acciones</div>
-        <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
+        <div class="page-sub">Catálogo institucional</div>
       </div>
       <div class="card">
         <div class="empty-state">
           <div class="icon">📋</div>
-          <div style="font-weight:500;margin-bottom:8px">No hay planes pre-computados en la base</div>
-          <div style="font-size:12px;color:var(--muted)">Asegurate de haber cargado los 1.470 planes en la tabla <code>planes_cache</code>.</div>
+          <div style="font-weight:500;margin-bottom:8px">No hay acciones cargadas en el catálogo</div>
+          <div style="font-size:12px;color:var(--muted)">Ejecutá los SQL de carga de acciones para poblar la tabla <code>planes_cache</code>.</div>
         </div>
       </div>`;
     return;
   }
 
-  const grupos = _mapaAgrupar(planes);
-  const accionesOrdenadas = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
+  const grupos = _mapaAgrupar(registros);
+  const accionesOrdenadas = Object.values(grupos).sort((a,b) => a.accionNombre.localeCompare(b.accionNombre));
 
-  // Stats globales
-  const totalPlanes = planes.length;
-  const totalCurados = planes.filter(p => p.curado === true).length;
-  const pctCurado = totalPlanes > 0 ? Math.round(totalCurados / totalPlanes * 100) : 0;
+  const totalRegistros = registros.length;
+  const totalCurados = registros.filter(r => r.curado === true).length;
+  const pctCurado = totalRegistros > 0 ? Math.round(totalCurados / totalRegistros * 100) : 0;
+  const accionesCompletas = accionesOrdenadas.filter(g => _mapaContarCurados(g).total >= 96).length;
 
   let html = `
     <div class="page-header">
       <div class="page-title">🗺 Mapa de Acciones</div>
-      <div class="page-sub">Curación institucional · ${totalPlanes} planes · todos los colegios ven la versión curada</div>
+      <div class="page-sub">Catálogo institucional · ${totalRegistros} registros · todos los colegios ven la versión curada</div>
     </div>
 
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-val">${accionesOrdenadas.length}</div>
-        <div class="kpi-label">Acciones</div>
-        <div class="kpi-badge">21 acciones del PME</div>
+        <div class="kpi-label">Acciones cargadas</div>
+        <div class="kpi-badge">de 20 totales del PME</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-val">${totalPlanes}</div>
-        <div class="kpi-label">Planes pre-computados</div>
-        <div class="kpi-badge">21 × 5 niveles × 14 causales</div>
+        <div class="kpi-val">${accionesCompletas}</div>
+        <div class="kpi-label">Acciones completas</div>
+        <div class="kpi-badge">≥96 registros cada una</div>
       </div>
       <div class="kpi-card verde">
         <div class="kpi-val">${totalCurados}</div>
@@ -9710,7 +9708,7 @@ async function renderMapaAcciones(){
       <div class="kpi-card ${pctCurado>=70?'verde':pctCurado>=40?'amarillo':'rojo'}">
         <div class="kpi-val">${pctCurado}%</div>
         <div class="kpi-label">Avance curación</div>
-        <div class="kpi-badge">${totalPlanes - totalCurados} pendientes</div>
+        <div class="kpi-badge">${totalRegistros - totalCurados} pendientes</div>
       </div>
     </div>
 
@@ -9722,95 +9720,165 @@ async function renderMapaAcciones(){
     </div>
   `;
 
-  // Vista jerárquica: acción → nivel → causal
-  accionesOrdenadas.forEach(accionNombre => {
-    const porNivel = grupos[accionNombre];
-    const totalAccion = Object.values(porNivel).reduce((s,arr) => s + arr.length, 0);
-    const curadosAccion = Object.values(porNivel).reduce((s,arr) => s + _mapaContarCurados(arr), 0);
-    const expandidaAccion = MAPA_STATE.accionesExpandidas.has(accionNombre);
-    const pctAccion = totalAccion > 0 ? Math.round(curadosAccion/totalAccion*100) : 0;
+  accionesOrdenadas.forEach(grupo => {
+    const c = _mapaContarCurados(grupo);
+    const expandidaAccion = MAPA_STATE.accionesExpandidas.has(grupo.accionId);
 
     html += `
       <div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
-        <div onclick="mapaToggleAccion('${escapeAttr(accionNombre)}')" style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;background:${expandidaAccion?'var(--bg-soft,#f8f9fa)':'#fff'};border-bottom:${expandidaAccion?'1px solid var(--border)':'none'};transition:background .12s"
-             onmouseover="if(!${expandidaAccion})this.style.background='var(--bg-soft,#f8f9fa)'"
-             onmouseout="if(!${expandidaAccion})this.style.background='#fff'">
+        <div onclick="mapaToggleAccion('${escapeAttr(grupo.accionId)}')" style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;background:${expandidaAccion?'var(--bg-soft,#f8f9fa)':'#fff'};border-bottom:${expandidaAccion?'1px solid var(--border)':'none'};transition:background .12s">
           <div style="font-size:18px;color:var(--muted);transform:${expandidaAccion?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:18px">›</div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${Object.keys(porNivel).length} niveles activos</div>
+            <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(grupo.accionNombre)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${escapeHtmlPlan(grupo.area || 'Sin área')} · ${c.total} registros</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:200px">
             <div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
-              <div style="width:${pctAccion}%;height:100%;background:${pctAccion>=70?'#10b981':pctAccion>=40?'#f59e0b':'#9ca3af'};transition:width .3s"></div>
+              <div style="width:${c.pct}%;height:100%;background:${c.pct>=70?'#10b981':c.pct>=40?'#f59e0b':'#9ca3af'};transition:width .3s"></div>
             </div>
-            <div style="font-size:12px;font-weight:600;color:var(--text);min-width:60px;text-align:right">
-              ${curadosAccion}/${totalAccion}
-            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);min-width:60px;text-align:right">${c.curados}/${c.total}</div>
           </div>
         </div>
-        ${expandidaAccion ? _mapaRenderNiveles(accionNombre, porNivel) : ''}
+        ${expandidaAccion ? _mapaRenderContenidoAccion(grupo) : ''}
       </div>`;
   });
 
   main.innerHTML = html;
 }
 
-/* Renderiza los niveles de una acción expandida */
-function _mapaRenderNiveles(accionNombre, porNivel){
-  const nivelesOrdenados = ['L1','L2','L3','L4','L5'].filter(n => porNivel[n]?.length);
+/* Renderiza el contenido completo de una acción expandida: ficha + niveles + causales */
+function _mapaRenderContenidoAccion(grupo){
   let html = '<div style="padding:0">';
-  nivelesOrdenados.forEach(nivelCodigo => {
-    const arr = porNivel[nivelCodigo];
+
+  if(grupo.ficha){
+    const curado = grupo.ficha.curado === true;
+    html += `
+      <div style="border-top:1px solid var(--border-light,#f0f0f0);background:#f9fafb">
+        <div onclick="mapaAbrirEditor('${escapeAttr(grupo.ficha.cache_key)}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
+          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text)">📋 Ficha de la acción</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Área, objetivo, fórmula, evidencia, marco normativo</div>
+          </div>
+          <div style="color:var(--muted);font-size:14px">›</div>
+        </div>
+      </div>`;
+  }
+
+  const nivelesConContenido = ['L1','L2','L3','L4','L5'].filter(n =>
+    Object.keys(grupo.niveles[n] || {}).length > 0
+  );
+
+  nivelesConContenido.forEach(nivelCodigo => {
+    const porAmbito = grupo.niveles[nivelCodigo];
     const info = MAPA_NIVELES_INFO[nivelCodigo];
-    const total = arr.length;
-    const curados = _mapaContarCurados(arr);
+    const ambitos = Object.keys(porAmbito);
+    const total = ambitos.length;
+    const curados = ambitos.filter(a => porAmbito[a].curado === true).length;
     const pct = total > 0 ? Math.round(curados/total*100) : 0;
-    const claveNivel = accionNombre + '::' + nivelCodigo;
+    const claveNivel = grupo.accionId + '::nivel::' + nivelCodigo;
     const expandida = MAPA_STATE.nivelesExpandidos.has(claveNivel);
 
     html += `
       <div style="border-top:1px solid var(--border-light,#f0f0f0)">
-        <div onclick="mapaToggleNivel('${escapeAttr(accionNombre)}','${nivelCodigo}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s"
-             onmouseover="if(!${expandida})this.style.background='#fafafa'"
-             onmouseout="if(!${expandida})this.style.background='#fff'">
+        <div onclick="mapaToggleNivel('${escapeAttr(grupo.accionId)}','nivel::${nivelCodigo}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s">
           <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:var(--text)">${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${total} causales</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">🎯 ${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Pasos por ámbito · Rango ${info.rango}</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:180px">
             <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
               <div style="width:${pct}%;height:100%;background:${pct>=70?'#10b981':pct>=40?'#f59e0b':'#9ca3af'}"></div>
             </div>
-            <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">
-              ${curados}/${total}
-            </div>
+            <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">${curados}/${total}</div>
           </div>
         </div>
-        ${expandida ? _mapaRenderCausales(accionNombre, nivelCodigo, arr) : ''}
+        ${expandida ? _mapaRenderAmbitos(grupo.accionId, nivelCodigo, porAmbito) : ''}
+      </div>`;
+  });
+
+  const causalesPresentes = new Set();
+  ['L1','L2','L3','L4','L5'].forEach(n => {
+    Object.keys(grupo.causales[n] || {}).forEach(c => causalesPresentes.add(c));
+  });
+  const causalesOrdenadas = Array.from(causalesPresentes).sort((a,b) => {
+    const na = parseInt(a.replace('C',''), 10) || 99;
+    const nb = parseInt(b.replace('C',''), 10) || 99;
+    return na - nb;
+  });
+
+  if(causalesOrdenadas.length){
+    html += `<div style="padding:11px 18px 6px 50px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:#fafafa;border-top:1px solid var(--border-light,#f0f0f0)">⚙️ Causales × Niveles (3 alternativas A/B/C por celda)</div>`;
+    causalesOrdenadas.forEach(causalCodigo => {
+      const info = MAPA_CAUSAS_INFO[causalCodigo] || { nombre: causalCodigo, grupo: '' };
+      let totalCausal = 0, curadosCausal = 0;
+      ['L1','L2','L3','L4','L5'].forEach(n => {
+        if(grupo.causales[n][causalCodigo]){
+          totalCausal++;
+          if(grupo.causales[n][causalCodigo].curado === true) curadosCausal++;
+        }
+      });
+      const pct = totalCausal > 0 ? Math.round(curadosCausal/totalCausal*100) : 0;
+      const claveCausal = grupo.accionId + '::causal::' + causalCodigo;
+      const expandida = MAPA_STATE.nivelesExpandidos.has(claveCausal);
+
+      html += `
+        <div style="border-top:1px solid var(--border-light,#f0f0f0)">
+          <div onclick="mapaToggleNivel('${escapeAttr(grupo.accionId)}','causal::${causalCodigo}')" style="padding:9px 18px 9px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s">
+            <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causalCodigo}</div>
+            <div style="flex:1">
+              <div style="font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:1px">${info.grupo || ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;min-width:180px">
+              <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:${pct>=70?'#10b981':pct>=40?'#f59e0b':'#9ca3af'}"></div>
+              </div>
+              <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">${curadosCausal}/${totalCausal}</div>
+            </div>
+          </div>
+          ${expandida ? _mapaRenderCausalNiveles(grupo.accionId, causalCodigo, grupo.causales) : ''}
+        </div>`;
+    });
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* Renderiza los ámbitos de un nivel expandido */
+function _mapaRenderAmbitos(accionId, nivelCodigo, porAmbito){
+  let html = '<div style="background:#fcfcfc">';
+  Object.entries(porAmbito).forEach(([ambito, plan]) => {
+    const curado = plan.curado === true;
+    html += `
+      <div onclick="mapaAbrirEditor('${escapeAttr(plan.cache_key)}')" style="padding:9px 18px 9px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
+        <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(ambito)}</div>
+        <div style="font-size:10px;color:var(--muted)">3 pasos</div>
+        <div style="color:var(--muted);font-size:14px">›</div>
       </div>`;
   });
   html += '</div>';
   return html;
 }
 
-/* Renderiza las causales (filas finales clickeables que abren editor) */
-function _mapaRenderCausales(accionNombre, nivelCodigo, arr){
+/* Renderiza los 5 niveles de una causal expandida */
+function _mapaRenderCausalNiveles(accionId, causalCodigo, causalesPorNivel){
   let html = '<div style="background:#fcfcfc">';
-  arr.forEach(({plan, causal}) => {
-    const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
+  ['L1','L2','L3','L4','L5'].forEach(nivelCodigo => {
+    const plan = causalesPorNivel[nivelCodigo]?.[causalCodigo];
+    if(!plan) return;
+    const info = MAPA_NIVELES_INFO[nivelCodigo];
     const curado = plan.curado === true;
-    const cacheKey = plan.cache_key;
-
     html += `
-      <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
-           onmouseover="this.style.background='#f3f4f6'"
-           onmouseout="this.style.background='transparent'">
+      <div onclick="mapaAbrirEditor('${escapeAttr(plan.cache_key)}')" style="padding:9px 18px 9px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
         <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
-        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${nivelCodigo}</div>
+        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.etiqueta)} · ${info.rango}</div>
+        <div style="font-size:10px;color:var(--muted)">3 alternativas A/B/C</div>
         <div style="color:var(--muted);font-size:14px">›</div>
       </div>`;
   });
@@ -10094,10 +10162,10 @@ async function mapaGuardarPlan(){
   if(btn){ btn.disabled = true; btn.textContent = '💾 Guardando…'; }
 
   try {
+    // Por ahora solo actualizamos el flag de curado (la edición de contenido viene después)
     const { data, error } = await sb
       .from('planes_cache')
       .update({
-        plan_data: e.plan_data,
         curado: e.curado === true,
         updated_at: new Date().toISOString()
       })
@@ -10107,26 +10175,20 @@ async function mapaGuardarPlan(){
 
     if(error){
       console.error('[Mapa] Error guardando:', error);
-      // Si el error es por columna `curado` inexistente, dar guía clara
-      if(error.message && error.message.toLowerCase().includes('curado')){
-        showToast('Falta la columna `curado` en planes_cache. Ejecutá el SQL de migración primero.');
-      } else {
-        showToast('Error al guardar: ' + error.message);
-      }
-      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
+      showToast('Error al guardar: ' + error.message);
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar estado curado'; }
       return;
     }
 
-    // Actualizar el plan en MAPA_STATE.planes
     const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
     if(idx >= 0) MAPA_STATE.planes[idx] = data;
 
-    showToast('✓ Plan guardado correctamente');
+    showToast('✓ Estado curado guardado');
     mapaCerrarEditor();
   } catch(err){
     console.error('[Mapa] Excepción guardando:', err);
     showToast('Error inesperado: ' + err.message);
-    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar estado curado'; }
   }
 }
 
