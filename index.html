@@ -6276,23 +6276,12 @@ const CAUSAS_LEGACY_MAP = {
   'RESISTENCIA' : 'C13',  // Antes C10, ahora C13 (Resistencia cultural)
   'COMUNIC_APOD': 'C16',  // Antes C11, ahora C16 (Comunicación con apoderados)
   'INVOL_EST'   : 'C15',  // Antes C12, ahora C15 (Involucramiento Estudiantes)
-  'CONFLICTOS'  : 'C11',  // Antes C13 (Conflictos entre estamentos eliminada), se mapea a C11 (Clima Laboral) por similitud
-  'LIDERAZGO'   : 'C10',  // Antes C14, ahora C10 (Liderazgo Intermedio)
-
-  // Códigos numéricos antiguos C8-C14 → nuevos códigos C9-C17
-  // (planes guardados entre Feb-May 2026 con los códigos C1-C14)
-  'C8_OLD' : 'C9',   // Causa externa → Causas externas
-  'C9_OLD' : 'C14',  // Falta de compromiso docente → Compromiso docente
-  'C10_OLD': 'C13',  // Resistencia o cultura instalada → Resistencia cultural
-  'C11_OLD': 'C16',  // Comunicación con apoderados (sin cambio de nombre)
-  'C12_OLD': 'C15',  // Bajo involucramiento estudiantes → Involucramiento Estudiantes
-  'C13_OLD': 'C11',  // Conflictos entre estamentos → mapeado a Clima Laboral
-  'C14_OLD': 'C10'   // Liderazgo intermedio débil → Liderazgo Intermedio
+  'CONFLICTOS'  : 'C11',  // Antes C13 (eliminada), se mapea a C11 (Clima Laboral)
+  'LIDERAZGO'   : 'C10'   // Antes C14, ahora C10 (Liderazgo Intermedio)
 };
 
 /* Mapa de retro-compatibilidad por NOMBRE de causal.
- * Para planes guardados que tienen la etiqueta textual en vez del código.
- * Más confiable que el código porque los nombres se preservan al guardar. */
+ * Para planes guardados que tienen la etiqueta textual en vez del código. */
 const CAUSAS_LEGACY_NOMBRES = {
   'causa externa'                       : 'C9',
   'causas externas'                     : 'C9',
@@ -6304,7 +6293,7 @@ const CAUSAS_LEGACY_NOMBRES = {
   'comunicacion con apoderados'         : 'C16',
   'bajo involucramiento estudiantes'    : 'C15',
   'involucramiento estudiantes'         : 'C15',
-  'conflictos entre estamentos'         : 'C11',  // mapeada a Clima Laboral
+  'conflictos entre estamentos'         : 'C11',
   'liderazgo intermedio débil'          : 'C10',
   'liderazgo intermedio'                : 'C10',
   'tiempo'                              : 'C1',
@@ -6322,16 +6311,12 @@ const CAUSAS_LEGACY_NOMBRES = {
 
 function planNormalizarCodigoCausa(codigo, etiqueta){
   if(!codigo && !etiqueta) return codigo;
-  // 1. Intentar match exacto en LEGACY_MAP (códigos string viejos y C8-C14 con sufijo _OLD)
   if(codigo && CAUSAS_LEGACY_MAP[codigo]) return CAUSAS_LEGACY_MAP[codigo];
-  // 2. Si tiene etiqueta, intentar match por nombre normalizado (más robusto)
   if(etiqueta){
     const norm = etiqueta.toLowerCase().trim();
     if(CAUSAS_LEGACY_NOMBRES[norm]) return CAUSAS_LEGACY_NOMBRES[norm];
   }
-  // 3. Si el código ya es C1-C17, devolverlo tal cual
   if(codigo && /^C(1[0-7]|[1-9])$/.test(codigo)) return codigo;
-  // 4. Sin match: devolver el original (puede ser un código nuevo que aún no conocemos)
   return codigo;
 }
 
@@ -9470,14 +9455,6 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
  */
 
 const MAPA_NIVELES_INFO = {
-  L1: { etiqueta:'Inicial',                  rango:'0-30%'  },
-  L2: { etiqueta:'Estandarización inicial',  rango:'31-50%' },
-  L3: { etiqueta:'Articulación institucional', rango:'51-70%' },
-  L4: { etiqueta:'Análisis y mejora',        rango:'71-89%' },
-  L5: { etiqueta:'Cultura institucional',    rango:'90-100%' }
-};
-
-const MAPA_NIVELES_INFO = {
   L1: { etiqueta:'Inicial',       rango:'1-25%',  min: 1,  max: 25,  descripcion:'El proceso no existe o tiene debilidades críticas.' },
   L2: { etiqueta:'Básico',        rango:'25-50%', min: 25, max: 50,  descripcion:'El proceso se realiza pero de forma irregular o mínima.' },
   L3: { etiqueta:'En Desarrollo', rango:'50-70%', min: 50, max: 70,  descripcion:'Se están instalando prácticas sistemáticas de mejora.' },
@@ -9542,7 +9519,7 @@ async function abrirMapaAcciones(){
 async function _mapaCargarPlanes(){
   let planes = [];
   let pagina = 0;
-  const tamPagina = 500;
+  const tamPagina = 1000;
   let hayMas = true;
 
   while(hayMas){
@@ -9551,7 +9528,7 @@ async function _mapaCargarPlanes(){
     const { data, error } = await sb
       .from('planes_cache')
       .select('*')
-      .like('cache_key', 'precomp|%')
+      .or('cache_key.like.ficha|%,cache_key.like.nivel|%,cache_key.like.causal|%')
       .order('cache_key', { ascending: true })
       .range(desde, hasta);
 
@@ -9569,43 +9546,96 @@ async function _mapaCargarPlanes(){
     }
   }
 
-  console.log('[Mapa] planes_cache cargados:', planes.length);
+  console.log('[Mapa] Registros cargados:', planes.length);
   return planes;
 }
 
-/* Parsea cache_key → {accion, nivel, causal} */
+/* Parsea cache_key del nuevo modelo → estructura tipada
+ * Formatos soportados:
+ *   ficha|{accion_id}                          → {tipo:'ficha', accionId}
+ *   nivel|{accion_id}|{L1-L5}|{ambito}         → {tipo:'nivel', accionId, nivel, ambito}
+ *   causal|{accion_id}|{L1-L5}|{C1-C17}        → {tipo:'causal', accionId, nivel, causal}
+ */
 function _mapaParsearKey(cacheKey){
   const partes = (cacheKey || '').split('|');
-  if(partes.length !== 4 || partes[0] !== 'precomp') return null;
-  return { accion: partes[1], nivel: partes[2], causal: partes[3] };
+  if(partes.length < 2) return null;
+  const tipo = partes[0];
+  if(tipo === 'ficha' && partes.length === 2){
+    return { tipo:'ficha', accionId: partes[1] };
+  }
+  if(tipo === 'nivel' && partes.length === 4){
+    return { tipo:'nivel', accionId: partes[1], nivel: partes[2], ambito: partes[3] };
+  }
+  if(tipo === 'causal' && partes.length === 4){
+    return { tipo:'causal', accionId: partes[1], nivel: partes[2], causal: partes[3] };
+  }
+  return null;
 }
 
-/* Agrupa planes por acción y nivel */
-function _mapaAgrupar(planes){
-  const grupos = {}; // { accionNombre: { L1: [{plan, causal}, ...], L2: [...] } }
-  planes.forEach(p => {
-    const k = _mapaParsearKey(p.cache_key);
+/* Agrupa registros por acción con estructura jerárquica:
+ *   grupos[accionId] = { accionId, accionNombre, area, ficha,
+ *     niveles: { L1: { 'Gestión':r, 'Aula':r }, ... },
+ *     causales: { L1: { C1:r, C2:r, ... }, ... } }
+ */
+function _mapaAgrupar(registros){
+  const grupos = {};
+
+  registros.forEach(r => {
+    const k = _mapaParsearKey(r.cache_key);
     if(!k) return;
-    if(!grupos[k.accion]) grupos[k.accion] = {};
-    if(!grupos[k.accion][k.nivel]) grupos[k.accion][k.nivel] = [];
-    grupos[k.accion][k.nivel].push({ plan: p, causal: k.causal });
+
+    if(!grupos[k.accionId]){
+      grupos[k.accionId] = {
+        accionId: k.accionId,
+        accionNombre: k.accionId,
+        area: '',
+        ficha: null,
+        niveles: { L1:{}, L2:{}, L3:{}, L4:{}, L5:{} },
+        causales: { L1:{}, L2:{}, L3:{}, L4:{}, L5:{} }
+      };
+    }
+
+    const g = grupos[k.accionId];
+
+    if(k.tipo === 'ficha'){
+      g.ficha = r;
+      g.accionNombre = r.ficha?.accion_nombre || k.accionId;
+      g.area = r.ficha?.area || '';
+    } else if(k.tipo === 'nivel'){
+      if(g.niveles[k.nivel]) g.niveles[k.nivel][k.ambito] = r;
+    } else if(k.tipo === 'causal'){
+      if(g.causales[k.nivel]) g.causales[k.nivel][k.causal] = r;
+    }
   });
-  // Ordenar causales dentro de cada nivel: C1, C2, ..., C14
-  Object.values(grupos).forEach(porNivel => {
-    Object.values(porNivel).forEach(arr => {
-      arr.sort((a,b) => {
-        const na = parseInt((a.causal||'').replace('C',''), 10) || 99;
-        const nb = parseInt((b.causal||'').replace('C',''), 10) || 99;
-        return na - nb;
-      });
-    });
-  });
+
   return grupos;
 }
 
-/* Cuenta curados en un array de {plan, causal} */
-function _mapaContarCurados(arr){
-  return (arr || []).filter(x => x.plan?.curado === true).length;
+/* Cuenta cuántos registros de un grupo están curados.
+ * Retorna { curados, total, pct } */
+function _mapaContarCurados(grupo){
+  let curados = 0;
+  let total = 0;
+
+  if(grupo.ficha){
+    total++;
+    if(grupo.ficha.curado === true) curados++;
+  }
+  Object.values(grupo.niveles || {}).forEach(porAmbito => {
+    Object.values(porAmbito).forEach(r => {
+      total++;
+      if(r.curado === true) curados++;
+    });
+  });
+  Object.values(grupo.causales || {}).forEach(porCausal => {
+    Object.values(porCausal).forEach(r => {
+      total++;
+      if(r.curado === true) curados++;
+    });
+  });
+
+  const pct = total > 0 ? Math.round(curados / total * 100) : 0;
+  return { curados, total, pct };
 }
 
 /* Render principal del Mapa de Acciones */
