@@ -5856,7 +5856,7 @@ const PLAN_CSS = `
 .plan-progress-bar{width:100%;height:3px;border-radius:2px;background:var(--border);transition:background .25s}
 .plan-progress-step.done .plan-progress-bar{background:#7ED4A0}
 .plan-progress-step.current .plan-progress-bar{background:var(--accent2)}
-.plan-progress-label{font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
+.plan-progress-label{font-size:14px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
 .plan-progress-step.done .plan-progress-label{color:#2C7A4B}
 .plan-progress-step.current .plan-progress-label{color:var(--accent2);font-weight:600}
 
@@ -7241,10 +7241,10 @@ async function renderPaso1Contexto(){
 
   // ── Configuración visual por tipo de fuente ──────────────────────────────
   const BRECHA_THEME = {
-    eid:     { headBg:'#E6F1FB', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
-    uc:      { headBg:'#E1F5EE', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
-    harvard: { headBg:'#FAEEDA', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
-    default: { headBg:'#F1EFE8', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
+    eid:     { headBg:'#E6F1FB', bodyBg:'#F3F8FD', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
+    uc:      { headBg:'#E1F5EE', bodyBg:'#F0FAF6', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
+    harvard: { headBg:'#FAEEDA', bodyBg:'#FDF7EC', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
+    default: { headBg:'#F1EFE8', bodyBg:'#F8F7F3', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
   };
   const BRECHA_ICON = { eid:'ti-certificate', uc:'ti-school', harvard:'ti-brain', default:'ti-chart-bar' };
 
@@ -7268,7 +7268,7 @@ async function renderPaso1Contexto(){
         ${stdPill}
         <span class="plan-brecha-diag" style="color:${th.diagColor}">${escapeHtmlPlan(b.diagnostico||'')}</span>
       </div>
-      <div class="plan-brecha-cuerpo">
+      <div class="plan-brecha-cuerpo" style="background:${th.bodyBg}">
         <div>
           <p class="plan-brecha-q">${qLabel}</p>
           <p class="plan-brecha-quote">${escapeHtmlPlan(b.que_dice||b.texto||'')}</p>
@@ -7289,7 +7289,7 @@ async function renderPaso1Contexto(){
         <span class="plan-brecha-source-badge" style="background:#B5D4F4;color:#042C53">Brecha ${i+1}</span>
         <span class="plan-brecha-diag" style="color:#0C447C">${escapeHtmlPlan((b.texto||'').split('.')[0].slice(0,60))}</span>
       </div>
-      <div class="plan-brecha-cuerpo">
+      <div class="plan-brecha-cuerpo" style="background:#F3F8FD">
         <p class="plan-brecha-quote">${escapeHtmlPlan(b.texto||'')}</p>
       </div>
     </div>`;
