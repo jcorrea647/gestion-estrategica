@@ -6259,18 +6259,80 @@ const CAUSAS_TAXONOMIA = {
   ]
 };
 
-/* Mapa de retro-compatibilidad: traduce códigos legacy a C1-C14
- * Usado al cargar borradores guardados con códigos antiguos. */
+/* Mapa de retro-compatibilidad: traduce códigos legacy y códigos antiguos C1-C14
+ * a los nuevos códigos C1-C17 (vigentes desde Mayo 2026).
+ * Usado al cargar borradores guardados con códigos o nombres antiguos. */
 const CAUSAS_LEGACY_MAP = {
-  'TIEMPO':'C1', 'RECURSOS_MAT':'C2', 'RECURSOS_HUM':'C3',
-  'COMPETENCIAS':'C4', 'COORDINACION':'C5', 'DEFINICION':'C6',
-  'DATOS':'C7', 'EXTERNA':'C8',
-  'COMPROMISO':'C9', 'RESISTENCIA':'C10', 'COMUNIC_APOD':'C11',
-  'INVOL_EST':'C12', 'CONFLICTOS':'C13', 'LIDERAZGO':'C14'
+  // Códigos string antiguos → nuevos C1-C17
+  'TIEMPO'      : 'C1',
+  'RECURSOS_MAT': 'C2',
+  'RECURSOS_HUM': 'C3',
+  'COMPETENCIAS': 'C4',
+  'COORDINACION': 'C5',
+  'DEFINICION'  : 'C6',
+  'DATOS'       : 'C7',
+  'EXTERNA'     : 'C9',   // Antes C8, ahora C9 (Causas externas)
+  'COMPROMISO'  : 'C14',  // Antes C9, ahora C14 (Compromiso docente)
+  'RESISTENCIA' : 'C13',  // Antes C10, ahora C13 (Resistencia cultural)
+  'COMUNIC_APOD': 'C16',  // Antes C11, ahora C16 (Comunicación con apoderados)
+  'INVOL_EST'   : 'C15',  // Antes C12, ahora C15 (Involucramiento Estudiantes)
+  'CONFLICTOS'  : 'C11',  // Antes C13 (Conflictos entre estamentos eliminada), se mapea a C11 (Clima Laboral) por similitud
+  'LIDERAZGO'   : 'C10',  // Antes C14, ahora C10 (Liderazgo Intermedio)
+
+  // Códigos numéricos antiguos C8-C14 → nuevos códigos C9-C17
+  // (planes guardados entre Feb-May 2026 con los códigos C1-C14)
+  'C8_OLD' : 'C9',   // Causa externa → Causas externas
+  'C9_OLD' : 'C14',  // Falta de compromiso docente → Compromiso docente
+  'C10_OLD': 'C13',  // Resistencia o cultura instalada → Resistencia cultural
+  'C11_OLD': 'C16',  // Comunicación con apoderados (sin cambio de nombre)
+  'C12_OLD': 'C15',  // Bajo involucramiento estudiantes → Involucramiento Estudiantes
+  'C13_OLD': 'C11',  // Conflictos entre estamentos → mapeado a Clima Laboral
+  'C14_OLD': 'C10'   // Liderazgo intermedio débil → Liderazgo Intermedio
 };
-function planNormalizarCodigoCausa(codigo){
-  if(!codigo) return codigo;
-  return CAUSAS_LEGACY_MAP[codigo] || codigo;
+
+/* Mapa de retro-compatibilidad por NOMBRE de causal.
+ * Para planes guardados que tienen la etiqueta textual en vez del código.
+ * Más confiable que el código porque los nombres se preservan al guardar. */
+const CAUSAS_LEGACY_NOMBRES = {
+  'causa externa'                       : 'C9',
+  'causas externas'                     : 'C9',
+  'falta de compromiso docente'         : 'C14',
+  'compromiso docente'                  : 'C14',
+  'resistencia o cultura instalada'     : 'C13',
+  'resistencia cultural'                : 'C13',
+  'comunicación con apoderados'         : 'C16',
+  'comunicacion con apoderados'         : 'C16',
+  'bajo involucramiento estudiantes'    : 'C15',
+  'involucramiento estudiantes'         : 'C15',
+  'conflictos entre estamentos'         : 'C11',  // mapeada a Clima Laboral
+  'liderazgo intermedio débil'          : 'C10',
+  'liderazgo intermedio'                : 'C10',
+  'tiempo'                              : 'C1',
+  'recursos materiales'                 : 'C2',
+  'recursos humanos'                    : 'C3',
+  'competencias técnicas'               : 'C4',
+  'coordinación entre cargos'           : 'C5',
+  'definición poco clara'               : 'C6',
+  'datos / información'                 : 'C7',
+  'datos o información'                 : 'C7',
+  'evaluación y monitoreo'              : 'C8',
+  'clima laboral'                       : 'C11',
+  'comunicación interna'                : 'C12'
+};
+
+function planNormalizarCodigoCausa(codigo, etiqueta){
+  if(!codigo && !etiqueta) return codigo;
+  // 1. Intentar match exacto en LEGACY_MAP (códigos string viejos y C8-C14 con sufijo _OLD)
+  if(codigo && CAUSAS_LEGACY_MAP[codigo]) return CAUSAS_LEGACY_MAP[codigo];
+  // 2. Si tiene etiqueta, intentar match por nombre normalizado (más robusto)
+  if(etiqueta){
+    const norm = etiqueta.toLowerCase().trim();
+    if(CAUSAS_LEGACY_NOMBRES[norm]) return CAUSAS_LEGACY_NOMBRES[norm];
+  }
+  // 3. Si el código ya es C1-C17, devolverlo tal cual
+  if(codigo && /^C(1[0-7]|[1-9])$/.test(codigo)) return codigo;
+  // 4. Sin match: devolver el original (puede ser un código nuevo que aún no conocemos)
+  return codigo;
 }
 
 /* ====================== ESTADO ====================== */
