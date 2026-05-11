@@ -9519,36 +9519,47 @@ async function abrirMapaAcciones(){
 /* Carga los planes de planes_cache (solo los precomputados) con paginación
  * explícita para superar el límite por defecto de Supabase (1000 filas). */
 async function _mapaCargarPlanes(){
-  let planes = [];
-  let pagina = 0;
-  const tamPagina = 1000;
-  let hayMas = true;
-
-  while(hayMas){
-    const desde = pagina * tamPagina;
-    const hasta = desde + tamPagina - 1;
-    const { data, error } = await sb
-      .from('planes_cache')
-      .select('*')
-      .or('cache_key.like.ficha|%,cache_key.like.nivel|%,cache_key.like.causal|%')
-      .order('cache_key', { ascending: true })
-      .range(desde, hasta);
-
-    if(error){
-      console.error('[Mapa] Error cargando planes:', error);
-      return planes;
+  // Cargar las 3 categor\u00edas (ficha, nivel, causal) en queries separadas
+  // porque el operador .or() de Supabase no maneja bien el car\u00e1cter '|'
+  // que est\u00e1 dentro de los patrones LIKE.
+  const cargarPorPrefijo = async (prefijo) => {
+    let resultado = [];
+    let pagina = 0;
+    const tamPagina = 1000;
+    let hayMas = true;
+    while(hayMas){
+      const desde = pagina * tamPagina;
+      const hasta = desde + tamPagina - 1;
+      const { data, error } = await sb
+        .from('planes_cache')
+        .select('*')
+        .like('cache_key', prefijo + '|%')
+        .order('cache_key', { ascending: true })
+        .range(desde, hasta);
+      if(error){
+        console.error('[Mapa] Error cargando ' + prefijo + ':', error);
+        return resultado;
+      }
+      resultado = resultado.concat(data || []);
+      hayMas = (data || []).length === tamPagina;
+      pagina++;
+      if(pagina > 10){
+        console.warn('[Mapa] M\u00e1s de 10 p\u00e1ginas en ' + prefijo + ', abortando');
+        break;
+      }
     }
+    return resultado;
+  };
 
-    planes = planes.concat(data || []);
-    hayMas = (data || []).length === tamPagina;
-    pagina++;
-    if(pagina > 10){
-      console.warn('[Mapa] Más de 10 páginas, abortando paginación');
-      break;
-    }
-  }
+  const [fichas, niveles, causales] = await Promise.all([
+    cargarPorPrefijo('ficha'),
+    cargarPorPrefijo('nivel'),
+    cargarPorPrefijo('causal')
+  ]);
+  let planes = [...fichas, ...niveles, ...causales];
 
-  console.log('[Mapa] Registros cat\u00e1logo cargados:', planes.length);
+  console.log('[Mapa] Registros cat\u00e1logo cargados:', planes.length,
+              '(fichas:', fichas.length, ', niveles:', niveles.length, ', causales:', causales.length, ')');
 
   // Si el usuario es director, hacer merge con sus personalizaciones de planes_director
   const rol = SESSION.user?.rol;
