@@ -9917,23 +9917,27 @@ function escapeAttr(s){
 
 /* Abre el drawer editor con el plan seleccionado */
 async function mapaAbrirEditor(cacheKey){
-  const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
-  if(!plan){ showToast('Plan no encontrado'); return; }
+  const registro = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
+  if(!registro){ showToast('Registro no encontrado'); return; }
 
-  // Clonar para edición (no tocar el original hasta guardar)
-  MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
-  // Garantizar estructura mínima de plan_data
-  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data) || MAPA_STATE.edicionActual.plan_data.length === 0){
-    MAPA_STATE.edicionActual.plan_data = [{
-      id:'linea_1', titulo:'', foco:'', descripcion_corta:'',
-      causa_atacada:'', pasos:[]
-    }];
-  }
-  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data[0].pasos)){
-    MAPA_STATE.edicionActual.plan_data[0].pasos = [];
-  }
+  // Parsear el cache_key para identificar tipo y dimensiones
+  const k = _mapaParsearKey(cacheKey);
+  if(!k){ showToast('Formato cache_key no reconocido'); return; }
 
-  // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
+  // Construir edicionActual con la estructura que espera _mapaRenderEditor
+  MAPA_STATE.edicionActual = {
+    cache_key: cacheKey,
+    tipo:      k.tipo,
+    accionId:  k.accionId,
+    nivel:     k.nivel || null,
+    ambito:    k.ambito || null,
+    causal:    k.causal || null,
+    plan_data: registro.plan_data,
+    ficha:     registro.ficha,
+    curado:    registro.curado === true
+  };
+
+  // Asegurar que el drawer existe (reusamos el del módulo plan)
   if(typeof asegurarDrawer === 'function') asegurarDrawer();
   document.getElementById('planOverlay').classList.add('show');
   document.getElementById('planDrawer').classList.add('show');
