@@ -9510,10 +9510,12 @@ const MAPA_AMBITOS_INFO = {
 
 // Estado del módulo
 let MAPA_STATE = {
-  planes: [],            // array de filas de planes_cache
+  planes: [],                         // array de filas de planes_cache
   accionesExpandidas: new Set(),
-  nivelesExpandidos: new Set(),  // key: "accion::nivel"
-  edicionActual: null    // { cache_key, plan_data, pct_banda, curado, ... }
+  nivelesExpandidos: new Set(),       // key: "accion::nivel"
+  edicionesAbiertas: new Map(),       // key: cache_key, value: copia editable del plan
+  notasExpandidas: new Set(),         // key: cache_key (segundo nivel: notas del curador)
+  cargandoFila: new Set()             // key: cache_key (loader durante fetch on-demand)
 };
 
 /* Abre la pantalla. Solo accesible para superadmin. */
@@ -9881,7 +9883,8 @@ function _mapaRenderNiveles(accionNombre, porNivel){
 }
 
 /* Renderiza las filas finales de un nivel: primero los ámbitos (pasos base),
- * después las causales. Cada fila es clickeable y abre el editor apropiado. */
+ * después las causales. Al hacer clic una fila se expande hacia abajo en su
+ * lugar (acordeón libre: se pueden tener varias abiertas a la vez). */
 function _mapaRenderItems(accionNombre, nivelCodigo, sec){
   let html = '<div style="background:#fcfcfc">';
 
@@ -9895,15 +9898,22 @@ function _mapaRenderItems(accionNombre, nivelCodigo, sec){
       const info = MAPA_AMBITOS_INFO[ambito] || { icono:'•', etiqueta: ambito, descripcion:'' };
       const curado = plan.curado === true;
       const cacheKey = plan.cache_key;
+      const idSeguro = _mapaIdSeguro(cacheKey);
+      const expandida = MAPA_STATE.edicionesAbiertas.has(cacheKey);
+      const cargando = MAPA_STATE.cargandoFila.has(cacheKey);
       html += `
-        <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
-             onmouseover="this.style.background='#f3f4f6'"
-             onmouseout="this.style.background='transparent'">
-          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-          <div style="font-size:14px;width:24px;text-align:center">${info.icono}</div>
-          <div style="flex:1;font-size:13px;color:var(--text);font-weight:500">${escapeHtmlPlan(info.etiqueta)}</div>
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">3 pasos</div>
-          <div style="color:var(--muted);font-size:14px">›</div>
+        <div id="mapa-row-${idSeguro}">
+          <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s;background:${expandida?'#f3f4f6':'transparent'}"
+               onmouseover="this.style.background='#f3f4f6'"
+               onmouseout="this.style.background='${expandida?'#f3f4f6':'transparent'}'">
+            <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+            <div style="font-size:14px;width:24px;text-align:center">${info.icono}</div>
+            <div style="flex:1;font-size:13px;color:var(--text);font-weight:500">${escapeHtmlPlan(info.etiqueta)}</div>
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">3 pasos</div>
+            <div style="color:var(--muted);font-size:14px;transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s">›</div>
+          </div>
+          ${cargando ? '<div style="padding:14px 18px 14px 82px;font-size:12px;color:var(--muted);background:#fcfcfa;border-top:1px solid var(--border-light,#e5e7eb)">⏳ Cargando…</div>' : ''}
+          ${expandida ? _mapaRenderEditor(cacheKey) : ''}
         </div>`;
     });
   }
@@ -9918,15 +9928,22 @@ function _mapaRenderItems(accionNombre, nivelCodigo, sec){
       const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
       const curado = plan.curado === true;
       const cacheKey = plan.cache_key;
+      const idSeguro = _mapaIdSeguro(cacheKey);
+      const expandida = MAPA_STATE.edicionesAbiertas.has(cacheKey);
+      const cargando = MAPA_STATE.cargandoFila.has(cacheKey);
       html += `
-        <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
-             onmouseover="this.style.background='#f3f4f6'"
-             onmouseout="this.style.background='transparent'">
-          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-          <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
-          <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
-          <div style="color:var(--muted);font-size:14px">›</div>
+        <div id="mapa-row-${idSeguro}">
+          <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s;background:${expandida?'#f3f4f6':'transparent'}"
+               onmouseover="this.style.background='#f3f4f6'"
+               onmouseout="this.style.background='${expandida?'#f3f4f6':'transparent'}'">
+            <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
+            <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
+            <div style="color:var(--muted);font-size:14px;transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s">›</div>
+          </div>
+          ${cargando ? '<div style="padding:14px 18px 14px 82px;font-size:12px;color:var(--muted);background:#fcfcfa;border-top:1px solid var(--border-light,#e5e7eb)">⏳ Cargando…</div>' : ''}
+          ${expandida ? _mapaRenderEditor(cacheKey) : ''}
         </div>`;
     });
   }
@@ -9962,17 +9979,34 @@ function escapeAttr(s){
   return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
 }
 
-/* ====================== EDITOR DEL PLAN INSTITUCIONAL ============= */
+/* ====================== EDITOR INLINE DEL MAPA DE ACCIONES ===========
+ * En vez de abrir un drawer modal, cada fila se expande hacia abajo en su
+ * lugar mostrando el editor. Acordeón libre: se pueden tener varias filas
+ * expandidas a la vez para comparar entre ámbitos o causales.
+ */
 
-/* Abre el drawer editor con el plan seleccionado */
+/* Toggle expandir/colapsar una fila (Aula, Gestión, C1, etc.).
+ * Si está cerrada: trae plan_data fresh de Supabase y la abre.
+ * Si está abierta: la cierra y descarta los cambios no guardados.
+ */
 async function mapaAbrirEditor(cacheKey){
+  // Si ya está abierta, cerrarla
+  if(MAPA_STATE.edicionesAbiertas.has(cacheKey)){
+    MAPA_STATE.edicionesAbiertas.delete(cacheKey);
+    MAPA_STATE.notasExpandidas.delete(cacheKey);
+    renderMapaAcciones();
+    return;
+  }
+
   const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
   if(!plan){ showToast('Plan no encontrado'); return; }
 
+  // Marcamos la fila como "cargando" y re-renderizamos para mostrar loader
+  MAPA_STATE.cargandoFila.add(cacheKey);
+  renderMapaAcciones();
+
   // SIEMPRE traemos plan_data y notas_curador frescos de Supabase.
-  // No usamos cache de sesión porque el contenido puede haber cambiado en la base
-  // (por curaduría desde otra ventana, scripts de migración, o UPDATEs manuales).
-  // El listado solo trae metadata liviana para ser rápido; el detalle se trae al abrir.
+  // El listado solo trae metadata liviana; el detalle se trae al expandir.
   try {
     const { data, error } = await sb
       .from('planes_cache')
@@ -9981,15 +10015,18 @@ async function mapaAbrirEditor(cacheKey){
       .maybeSingle();
     if(error){
       console.error('[Mapa] Error cargando plan_data:', error);
-      showToast('Error cargando el plan: ' + error.message);
+      showToast('Error cargando: ' + error.message);
+      MAPA_STATE.cargandoFila.delete(cacheKey);
+      renderMapaAcciones();
       return;
     }
     if(!data){
       showToast('Plan no encontrado en la base');
+      MAPA_STATE.cargandoFila.delete(cacheKey);
+      renderMapaAcciones();
       return;
     }
-    // Refrescamos los 4 campos en el objeto de memoria. Esto también garantiza
-    // que si el listado tenía el flag 'curado' o 'updated_at' desactualizado, se corrija.
+    // Refrescamos los campos en el objeto de memoria del listado
     plan.plan_data = data.plan_data || null;
     plan.notas_curador = data.notas_curador || null;
     plan.curado = data.curado === true;
@@ -9997,57 +10034,145 @@ async function mapaAbrirEditor(cacheKey){
   } catch(err){
     console.error('[Mapa] Excepción cargando plan_data:', err);
     showToast('Error inesperado: ' + (err.message||err));
+    MAPA_STATE.cargandoFila.delete(cacheKey);
+    renderMapaAcciones();
     return;
   }
 
-  // Clonar para edición (no tocar el original hasta guardar)
-  MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
-  // El render se encarga de normalizar plan_data al shape esperado
-  // (alternativas A/B/C para 'causal', pasos[] para 'nivel') si llegara vacío o malformado.
+  // Crear una copia editable (no toca el original hasta guardar)
+  const copiaEditable = JSON.parse(JSON.stringify(plan));
+  MAPA_STATE.edicionesAbiertas.set(cacheKey, copiaEditable);
+  MAPA_STATE.cargandoFila.delete(cacheKey);
+  renderMapaAcciones();
 
-  // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
-  if(typeof asegurarDrawer === 'function') asegurarDrawer();
-  document.getElementById('planOverlay').classList.add('show');
-  document.getElementById('planDrawer').classList.add('show');
-  document.body.style.overflow = 'hidden';
+  // Hacer scroll a la fila expandida para que el usuario la vea
+  setTimeout(() => {
+    const el = document.getElementById('mapa-row-' + _mapaIdSeguro(cacheKey));
+    if(el && el.scrollIntoView){
+      el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    }
+  }, 50);
+}
 
-  _mapaRenderEditor();
+/* Convierte un cache_key en un id DOM seguro (sin caracteres especiales) */
+function _mapaIdSeguro(cacheKey){
+  return String(cacheKey||'').replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/* Cierra todas las ediciones abiertas (útil al cambiar de panel) */
+function mapaCerrarTodos(){
+  MAPA_STATE.edicionesAbiertas.clear();
+  MAPA_STATE.notasExpandidas.clear();
+  MAPA_STATE.cargandoFila.clear();
+}
+
+/* Cancelar edición de una fila (descarta cambios y la cierra) */
+function mapaCancelarEdicion(cacheKey){
+  MAPA_STATE.edicionesAbiertas.delete(cacheKey);
+  MAPA_STATE.notasExpandidas.delete(cacheKey);
+  renderMapaAcciones();
+}
+
+/* Toggle del sub-bloque "notas internas del curador" dentro de una fila abierta */
+function mapaToggleNotas(cacheKey){
+  if(MAPA_STATE.notasExpandidas.has(cacheKey)){
+    MAPA_STATE.notasExpandidas.delete(cacheKey);
+  } else {
+    MAPA_STATE.notasExpandidas.add(cacheKey);
+  }
+  renderMapaAcciones();
 }
 
 /* ============================================================
- * EDITOR DEL MAPA DE ACCIONES
+ * EDITOR DEL MAPA DE ACCIONES (inline, no drawer)
+ *
+ * Cuando una fila se expande (mapaAbrirEditor), su HTML se renderiza
+ * inline debajo del título de la fila, en el mismo listado. Se pueden
+ * tener varias filas abiertas a la vez (acordeón libre).
  *
  * Dos vistas según el tipo de fila:
  *  - tipo 'causal' → _mapaRenderEditorCausal (3 alternativas A/B/C)
  *  - tipo 'nivel'  → _mapaRenderEditorNivel  (3 pasos sugeridos, por ámbito)
  *
  * Ambos editores comparten: curado (bool), notas_curador (text),
- * mapaToggleCurado, mapaActualizarNotas, mapaCerrarEditor, mapaGuardarPlan.
+ * mapaToggleCurado, mapaActualizarNotas, mapaCancelarEdicion, mapaGuardarPlan.
+ * Todas reciben el cache_key como primer parámetro (ya no hay edición única).
  *
  * El editor NO crea pasos accionables con responsable/fecha: ese modelo
  * pertenece al plan del colegio (otra tabla), no a la biblioteca institucional.
  * ============================================================ */
-function _mapaRenderEditor(){
-  const e = MAPA_STATE.edicionActual;
-  if(!e) return;
+function _mapaRenderEditor(cacheKey){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
+  if(!e) return '';
   const k = _mapaParsearKey(e.cache_key);
   if(!k){
-    document.getElementById('planBody').innerHTML =
-      '<div class="empty-state">Formato de cache_key no reconocido: <code>'+escapeHtmlPlan(e.cache_key)+'</code></div>';
-    return;
+    return '<div class="empty-state">Formato de cache_key no reconocido: <code>'+escapeHtmlPlan(e.cache_key)+'</code></div>';
   }
   if(k.tipo === 'nivel')  return _mapaRenderEditorNivel(e, k);
   if(k.tipo === 'causal') return _mapaRenderEditorCausal(e, k);
-  document.getElementById('planBody').innerHTML =
-    '<div class="empty-state">Tipo de fila no editable todavía: <strong>'+k.tipo+'</strong></div>';
+  return '<div class="empty-state">Tipo de fila no editable todavía: <strong>'+k.tipo+'</strong></div>';
 }
 
-/* Editor para filas tipo 'causal' (alternativas A/B/C) */
+/* Helper común: bloque de curado + bloque de notas en sub-expandible + footer
+ * Reutilizado por los dos editores (causal y nivel) */
+function _mapaBloqueComun(e, curadoLabel, curadoMsg){
+  const curado = e.curado === true;
+  const cacheKeyAttr = escapeAttr(e.cache_key);
+  const notasOpen = MAPA_STATE.notasExpandidas.has(e.cache_key);
+  const notas = e.notas_curador || '';
+  const fechaUpd = e.updated_at ?
+    new Date(e.updated_at).toLocaleString('es-CL', {dateStyle:'short', timeStyle:'short'}) : '';
+
+  return {
+    curadoToggle: `
+      <div style="margin-bottom:18px;padding:12px 14px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:all .15s"
+           onclick="mapaToggleCurado('${cacheKeyAttr}')">
+        <div style="font-size:22px">${curado?'✅':'⚪'}</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:2px">
+            ${curado ? curadoLabel.curado : curadoLabel.sinCurar}
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);line-height:1.4">
+            ${curado ? curadoMsg.curado : curadoMsg.sinCurar}
+          </div>
+        </div>
+      </div>`,
+    notasExpander: `
+      <div style="margin-top:18px;border:1px solid var(--border-light,#e5e7eb);border-radius:8px;background:#fff">
+        <div onclick="mapaToggleNotas('${cacheKeyAttr}')" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">
+          <div style="font-size:11px;color:var(--muted);transform:${notasOpen?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s">›</div>
+          <div style="flex:1">Notas internas del curador${notas ? ' · <span style="color:#f59e0b;text-transform:none;letter-spacing:0;font-weight:500">tiene notas</span>' : ''}</div>
+        </div>
+        ${notasOpen ? `
+        <div style="padding:4px 14px 14px 14px;border-top:1px solid var(--border-light,#f0f0f0)">
+          <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Solo visibles para superadmin. Útiles para dejar contexto, decisiones de redacción o pendientes.</div>
+          <textarea
+            oninput="mapaActualizarNotas('${cacheKeyAttr}', this.value)"
+            placeholder="Notas internas (no visibles al colegio)…"
+            style="width:100%;min-height:70px;padding:10px 11px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+          >${escapeHtmlPlan(notas)}</textarea>
+        </div>` : ''}
+      </div>`,
+    footer: `
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-light,#f0f0f0);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;font-size:11px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace">
+          ${escapeHtmlPlan(e.cache_key)}${fechaUpd ? ' · actualizado ' + fechaUpd : ''}
+        </div>
+        <button onclick="mapaCancelarEdicion('${cacheKeyAttr}')" style="background:transparent;border:1px solid var(--border,#d4d4d8);color:var(--muted);padding:7px 14px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit">Cancelar</button>
+        <button onclick="mapaGuardarPlan('${cacheKeyAttr}')" id="mapaBtnGuardar_${_mapaIdSeguro(e.cache_key)}" style="background:var(--accent);color:#fff;border:0;padding:7px 16px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">💾 Guardar cambios</button>
+      </div>`
+  };
+}
+
+/* Editor para filas tipo 'causal' (alternativas A/B/C) — devuelve HTML inline */
 function _mapaRenderEditorCausal(e, k){
   const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
   const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
+  const cacheKeyAttr = escapeAttr(e.cache_key);
 
-  // Normalizar plan_data: aseguramos que exista el shape esperado
+  // Normalizar plan_data
   if(!Array.isArray(e.plan_data) || e.plan_data.length === 0){
     e.plan_data = [{ alternativas:{A:'',B:'',C:''}, causal_nombre: causalInfo.nombre || '' }];
   }
@@ -10055,232 +10180,129 @@ function _mapaRenderEditorCausal(e, k){
   if(!fila.alternativas || typeof fila.alternativas !== 'object'){
     fila.alternativas = { A:'', B:'', C:'' };
   }
-  // Garantizar las 3 claves
   ['A','B','C'].forEach(letra => {
     if(typeof fila.alternativas[letra] !== 'string') fila.alternativas[letra] = '';
   });
 
-  // Header
-  document.getElementById('planTitle').textContent = k.accion || 'Plan';
-  document.getElementById('planSubtitle').textContent =
-    `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
-  const prog = document.getElementById('planProgress');
-  if(prog) prog.innerHTML = '';
+  const com = _mapaBloqueComun(e, 
+    { curado:'Plan curado', sinCurar:'Plan sin curar' },
+    { curado:'Esta fila fue revisada por superadmin y se ofrece como inspiración a los colegios.', sinCurar:'Marcala como curada cuando termines de revisar las alternativas.' });
 
-  const curado = e.curado === true;
-  const notas = e.notas_curador || '';
-
-  // Helper para cada textarea de alternativa
   const altBlock = (letra, texto) => `
-    <div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${letra}</div>
-        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Alternativa ${letra}</div>
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${letra}</div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Alternativa ${letra}</div>
       </div>
       <textarea
-        oninput="mapaActualizarAlternativa('${letra}', this.value)"
+        oninput="mapaActualizarAlternativa('${cacheKeyAttr}', '${letra}', this.value)"
         placeholder="Texto de la alternativa ${letra}…"
-        style="width:100%;min-height:90px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        style="width:100%;min-height:82px;padding:10px 11px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
         onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
         onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
       >${escapeHtmlPlan(texto)}</textarea>
     </div>`;
 
-  document.getElementById('planBody').innerHTML = `
-    <!-- Clave del plan (referencia técnica) -->
-    <div style="margin-bottom:20px;padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
-      ${escapeHtmlPlan(e.cache_key)}
-    </div>
-
-    <!-- Toggle de curado -->
-    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
-         onclick="mapaToggleCurado()">
-      <div style="font-size:24px">${curado?'✅':'⚪'}</div>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
-          ${curado ? 'Plan curado' : 'Plan sin curar'}
-        </div>
-        <div style="font-size:12px;color:var(--muted)">
-          ${curado ? 'Esta fila fue revisada por superadmin y se ofrece como inspiración a los colegios.' : 'Marcala como curada cuando termines de revisar las alternativas.'}
-        </div>
+  return `
+    <div onclick="event.stopPropagation()" style="padding:16px 18px 16px 18px;background:#fcfcfa;border-top:1px solid var(--border-light,#e5e7eb)">
+      <div style="margin-bottom:14px;padding:9px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:var(--muted);line-height:1.5">
+        <strong style="color:var(--text)">${k.nivel} ${escapeHtmlPlan(nivelInfo.etiqueta)} · ${k.causal} ${escapeHtmlPlan(causalInfo.nombre)}</strong><br>
+        Estas tres alternativas se mostrarán al director del colegio como inspiración. Editá solo para corregir errores tipográficos o de redacción menor.
       </div>
-    </div>
-
-    <!-- Alternativas A/B/C -->
-    <div style="margin-bottom:24px">
-      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
-        Alternativas para la causal "${escapeHtmlPlan(causalInfo.nombre)}"
+      ${com.curadoToggle}
+      <div>
+        ${altBlock('A', fila.alternativas.A)}
+        ${altBlock('B', fila.alternativas.B)}
+        ${altBlock('C', fila.alternativas.C)}
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px">
-        Estas tres alternativas se mostrarán al director del colegio como inspiración.
-        Editá solo para corregir errores tipográficos o de redacción menor.
-      </div>
-      ${altBlock('A', fila.alternativas.A)}
-      ${altBlock('B', fila.alternativas.B)}
-      ${altBlock('C', fila.alternativas.C)}
-    </div>
-
-    <!-- Notas del curador (internas) -->
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
-        Notas internas del curador
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
-        Solo visibles para superadmin. Útiles para dejar contexto, decisiones de redacción o pendientes.
-      </div>
-      <textarea
-        oninput="mapaActualizarNotas(this.value)"
-        placeholder="Notas internas (no visibles al colegio)…"
-        style="width:100%;min-height:80px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
-        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-      >${escapeHtmlPlan(notas)}</textarea>
-    </div>
-  `;
-
-  document.getElementById('planFooter').innerHTML = `
-    <span class="info" style="font-size:12px;color:var(--muted)">${escapeHtmlPlan(k.accion || '')} · ${k.nivel} · ${k.causal}</span>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
-      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
+      ${com.notasExpander}
+      ${com.footer}
     </div>`;
 }
 
-/* Editor para filas tipo 'nivel' (pasos base por ámbito Aula/Gestión).
- * Modelo de plan_data: [{ pasos: [string, string, string] }] */
+/* Editor para filas tipo 'nivel' (pasos base por ámbito) — devuelve HTML inline */
 function _mapaRenderEditorNivel(e, k){
   const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
   const ambitoInfo = MAPA_AMBITOS_INFO[k.ambito] || { icono:'•', etiqueta: k.ambito, descripcion:'' };
+  const cacheKeyAttr = escapeAttr(e.cache_key);
 
-  // Normalizar plan_data al shape esperado
+  // Normalizar plan_data
   if(!Array.isArray(e.plan_data) || e.plan_data.length === 0){
     e.plan_data = [{ pasos: ['','',''] }];
   }
   const fila = e.plan_data[0];
   if(!Array.isArray(fila.pasos)) fila.pasos = [];
-  // Garantizar al menos 3 pasos (mantenemos N>=3, el bulk cargó siempre 3)
   while(fila.pasos.length < 3) fila.pasos.push('');
 
-  // Header
-  document.getElementById('planTitle').textContent = k.accion || 'Plan';
-  document.getElementById('planSubtitle').textContent =
-    `${k.nivel} ${nivelInfo.etiqueta} · ${ambitoInfo.icono} ${ambitoInfo.etiqueta}`;
-  const prog = document.getElementById('planProgress');
-  if(prog) prog.innerHTML = '';
-
-  const curado = e.curado === true;
-  const notas = e.notas_curador || '';
+  const com = _mapaBloqueComun(e,
+    { curado:'Pasos curados', sinCurar:'Pasos sin curar' },
+    { curado:'Estos pasos fueron revisados por superadmin y se ofrecen como referencia base del nivel.', sinCurar:'Marcalos como curados cuando termines de revisarlos.' });
 
   const pasoBlock = (idx, texto) => `
-    <div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${idx+1}</div>
-        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${idx+1}</div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
       </div>
       <textarea
-        oninput="mapaActualizarPasoNivel(${idx}, this.value)"
+        oninput="mapaActualizarPasoNivel('${cacheKeyAttr}', ${idx}, this.value)"
         placeholder="Texto del paso ${idx+1}…"
-        style="width:100%;min-height:90px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        style="width:100%;min-height:82px;padding:10px 11px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
         onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
         onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
       >${escapeHtmlPlan(texto)}</textarea>
     </div>`;
 
-  document.getElementById('planBody').innerHTML = `
-    <div style="margin-bottom:20px;padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
-      ${escapeHtmlPlan(e.cache_key)}
-    </div>
-
-    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
-         onclick="mapaToggleCurado()">
-      <div style="font-size:24px">${curado?'✅':'⚪'}</div>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
-          ${curado ? 'Pasos curados' : 'Pasos sin curar'}
-        </div>
-        <div style="font-size:12px;color:var(--muted)">
-          ${curado ? 'Estos pasos fueron revisados por superadmin y se ofrecen como referencia base del nivel.' : 'Marcalos como curados cuando termines de revisarlos.'}
-        </div>
-      </div>
-    </div>
-
-    <div style="margin-bottom:24px">
-      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
-        Pasos base ${ambitoInfo.icono} ${escapeHtmlPlan(ambitoInfo.etiqueta)} · ${k.nivel} ${escapeHtmlPlan(nivelInfo.etiqueta)}
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px">
+  return `
+    <div onclick="event.stopPropagation()" style="padding:16px 18px 16px 18px;background:#fcfcfa;border-top:1px solid var(--border-light,#e5e7eb)">
+      <div style="margin-bottom:14px;padding:9px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:var(--muted);line-height:1.5">
+        <strong style="color:var(--text)">${ambitoInfo.icono} ${escapeHtmlPlan(ambitoInfo.etiqueta)} · ${k.nivel} ${escapeHtmlPlan(nivelInfo.etiqueta)}</strong><br>
         ${escapeHtmlPlan(ambitoInfo.descripcion || '')} Estos pasos describen <strong>cómo se ve</strong> esta acción en ${escapeHtmlPlan(ambitoInfo.etiqueta.toLowerCase())} cuando el establecimiento está en nivel ${k.nivel}. Editá solo para corregir errores tipográficos o de redacción.
       </div>
-      ${fila.pasos.slice(0,3).map((t,i) => pasoBlock(i, t)).join('')}
-    </div>
-
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
-        Notas internas del curador
+      ${com.curadoToggle}
+      <div>
+        ${fila.pasos.slice(0,3).map((t,i) => pasoBlock(i, t)).join('')}
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
-        Solo visibles para superadmin.
-      </div>
-      <textarea
-        oninput="mapaActualizarNotas(this.value)"
-        placeholder="Notas internas (no visibles al colegio)…"
-        style="width:100%;min-height:80px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
-        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-      >${escapeHtmlPlan(notas)}</textarea>
-    </div>
-  `;
-
-  document.getElementById('planFooter').innerHTML = `
-    <span class="info" style="font-size:12px;color:var(--muted)">${escapeHtmlPlan(k.accion || '')} · ${k.nivel} · ${escapeHtmlPlan(k.ambito)}</span>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
-      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
+      ${com.notasExpander}
+      ${com.footer}
     </div>`;
 }
 
-/* Update en memoria para un paso del editor 'nivel' */
-function mapaActualizarPasoNivel(idx, valor){
-  const e = MAPA_STATE.edicionActual;
+/* Updates en memoria (no persisten hasta apretar "Guardar cambios"). Reciben cache_key */
+function mapaActualizarPasoNivel(cacheKey, idx, valor){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
   if(!e || !Array.isArray(e.plan_data) || !e.plan_data[0]) return;
   if(!Array.isArray(e.plan_data[0].pasos)) e.plan_data[0].pasos = [];
   e.plan_data[0].pasos[idx] = valor;
 }
 
-/* Updates en memoria (no persisten hasta apretar "Guardar cambios") */
-function mapaActualizarAlternativa(letra, valor){
-  const e = MAPA_STATE.edicionActual;
+function mapaActualizarAlternativa(cacheKey, letra, valor){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
   if(!e) return;
   if(!Array.isArray(e.plan_data) || !e.plan_data[0]) return;
   if(!e.plan_data[0].alternativas) e.plan_data[0].alternativas = {};
   e.plan_data[0].alternativas[letra] = valor;
 }
 
-function mapaActualizarNotas(valor){
-  if(!MAPA_STATE.edicionActual) return;
-  MAPA_STATE.edicionActual.notas_curador = valor;
+function mapaActualizarNotas(cacheKey, valor){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
+  if(!e) return;
+  e.notas_curador = valor;
 }
 
-function mapaToggleCurado(){
-  if(!MAPA_STATE.edicionActual) return;
-  MAPA_STATE.edicionActual.curado = !MAPA_STATE.edicionActual.curado;
-  _mapaRenderEditor();
+function mapaToggleCurado(cacheKey){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
+  if(!e) return;
+  e.curado = !e.curado;
+  renderMapaAcciones();
 }
 
-function mapaCerrarEditor(){
-  document.getElementById('planOverlay')?.classList.remove('show');
-  document.getElementById('planDrawer')?.classList.remove('show');
-  document.body.style.overflow = '';
-  MAPA_STATE.edicionActual = null;
-  // Refrescar la vista del mapa por si hubo cambios guardados
-  if(currentPanel === 'mapa-acciones') renderMapaAcciones();
-}
-
-async function mapaGuardarPlan(){
-  const e = MAPA_STATE.edicionActual;
+async function mapaGuardarPlan(cacheKey){
+  const e = MAPA_STATE.edicionesAbiertas.get(cacheKey);
   if(!e) return;
 
-  const btn = document.getElementById('mapaBtnGuardar');
+  const btnId = 'mapaBtnGuardar_' + _mapaIdSeguro(cacheKey);
+  const btn = document.getElementById(btnId);
   if(btn){ btn.disabled = true; btn.textContent = '💾 Guardando…'; }
 
   try {
@@ -10292,7 +10314,7 @@ async function mapaGuardarPlan(){
         notas_curador: e.notas_curador || null,
         updated_at: new Date().toISOString()
       })
-      .eq('cache_key', e.cache_key)
+      .eq('cache_key', cacheKey)
       .select()
       .single();
 
@@ -10300,9 +10322,9 @@ async function mapaGuardarPlan(){
       console.error('[Mapa] Error guardando:', error);
       const msg = (error.message||'').toLowerCase();
       if(msg.includes('notas_curador')){
-        showToast('Falta la columna `notas_curador` en planes_cache. Corré: alter table planes_cache add column notas_curador text;');
+        showToast('Falta la columna `notas_curador` en planes_cache.');
       } else if(msg.includes('curado')){
-        showToast('Falta la columna `curado` en planes_cache. Corré la migración primero.');
+        showToast('Falta la columna `curado` en planes_cache.');
       } else {
         showToast('Error al guardar: ' + error.message);
       }
@@ -10310,22 +10332,23 @@ async function mapaGuardarPlan(){
       return;
     }
 
-    // Actualizar la fila en MAPA_STATE.planes (la versión en memoria del listado)
-    const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
+    // Actualizar la fila en el listado en memoria
+    const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === cacheKey);
     if(idx >= 0){
-      // Conservar el shape liviano del listado pero reflejar lo que cambió
       MAPA_STATE.planes[idx] = {
         ...MAPA_STATE.planes[idx],
         curado: data.curado,
         updated_at: data.updated_at,
-        // mantenemos plan_data y notas_curador para no tener que re-fetchear si reabre
         plan_data: data.plan_data,
         notas_curador: data.notas_curador
       };
     }
 
+    // Cerrar la edición de esta fila (cambios persistidos)
+    MAPA_STATE.edicionesAbiertas.delete(cacheKey);
+    MAPA_STATE.notasExpandidas.delete(cacheKey);
     showToast('✓ Cambios guardados');
-    mapaCerrarEditor();
+    renderMapaAcciones();
   } catch(err){
     console.error('[Mapa] Excepción guardando:', err);
     showToast('Error inesperado: ' + (err.message||err));
