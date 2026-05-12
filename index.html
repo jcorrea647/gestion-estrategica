@@ -9490,6 +9490,13 @@ const MAPA_CAUSAS_INFO = {
   C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' }
 };
 
+// Ámbitos para las filas 'nivel|<accion>|<L>|<ambito>': pasos base sugeridos
+// para esa acción en ese nivel, segmentados por dónde se ejecuta el trabajo.
+const MAPA_AMBITOS_INFO = {
+  'Aula':    { icono:'🏫', etiqueta:'Aula',    descripcion:'Cómo se vive el proceso en el aula y entre quienes lo implementan directamente.' },
+  'Gestión': { icono:'⚙️', etiqueta:'Gestión', descripcion:'Cómo se organiza, formaliza y monitorea desde la conducción institucional.' }
+};
+
 // Estado del módulo
 let MAPA_STATE = {
   planes: [],            // array de filas de planes_cache
@@ -9527,7 +9534,7 @@ async function _mapaCargarPlanes(){
     const { data, error } = await sb
       .from('planes_cache')
       .select('cache_key,curado,updated_at')
-      .or('cache_key.like.precomp|%,cache_key.like.causal|%')
+      .or('cache_key.like.precomp|%,cache_key.like.causal|%,cache_key.like.nivel|%')
       .order('cache_key', { ascending: true })
       .range(desde, hasta);
 
@@ -9552,43 +9559,91 @@ async function _mapaCargarPlanes(){
   return planes;
 }
 
-/* Parsea cache_key → {accion, nivel, causal}
- * Acepta dos formatos equivalentes:
- *   precomp|{accion}|{nivel}|{causal}   (formato original del código)
- *   causal|{accion}|{nivel}|{causal}    (formato de la carga bulk en planes_cache) */
+/* Parsea cache_key → {tipo, accion, nivel, causal|ambito}
+ * Tres formatos válidos:
+ *   precomp|{accion}|{nivel}|{causal}    → tipo='causal' (legacy)
+ *   causal|{accion}|{nivel}|{causal}     → tipo='causal' (alternativas A/B/C)
+ *   nivel|{accion}|{nivel}|{ambito}      → tipo='nivel'  (pasos base por ámbito: Aula/Gestión)
+ *   ficha|{accion}                       → tipo='ficha'  (metadata curada — todavía sin editor)
+ */
 function _mapaParsearKey(cacheKey){
   const partes = (cacheKey || '').split('|');
-  if(partes.length !== 4) return null;
-  if(partes[0] !== 'precomp' && partes[0] !== 'causal') return null;
-  return { accion: partes[1], nivel: partes[2], causal: partes[3] };
+  if(!partes.length) return null;
+  const prefijo = partes[0];
+
+  if(prefijo === 'ficha' && partes.length === 2){
+    return { tipo:'ficha', accion: partes[1] };
+  }
+  if((prefijo === 'precomp' || prefijo === 'causal') && partes.length === 4){
+    return { tipo:'causal', accion: partes[1], nivel: partes[2], causal: partes[3] };
+  }
+  if(prefijo === 'nivel' && partes.length === 4){
+    return { tipo:'nivel',  accion: partes[1], nivel: partes[2], ambito: partes[3] };
+  }
+  return null;
 }
 
-/* Agrupa planes por acción y nivel */
+/* Agrupa planes por acción → nivel → tipo (causal | nivel)
+ * Estructura resultante:
+ *   {
+ *     accionNombre: {
+ *       _ficha: planObj | undefined,
+ *       L1: { causales: [{plan, causal}, ...], niveles: [{plan, ambito}, ...] },
+ *       L2: { ... },
+ *       ...
+ *     }
+ *   }
+ */
 function _mapaAgrupar(planes){
-  const grupos = {}; // { accionNombre: { L1: [{plan, causal}, ...], L2: [...] } }
+  const grupos = {};
   planes.forEach(p => {
     const k = _mapaParsearKey(p.cache_key);
     if(!k) return;
     if(!grupos[k.accion]) grupos[k.accion] = {};
-    if(!grupos[k.accion][k.nivel]) grupos[k.accion][k.nivel] = [];
-    grupos[k.accion][k.nivel].push({ plan: p, causal: k.causal });
+    if(k.tipo === 'ficha'){
+      grupos[k.accion]._ficha = p;
+      return;
+    }
+    if(!grupos[k.accion][k.nivel]){
+      grupos[k.accion][k.nivel] = { causales: [], niveles: [] };
+    }
+    if(k.tipo === 'causal'){
+      grupos[k.accion][k.nivel].causales.push({ plan: p, causal: k.causal });
+    } else if(k.tipo === 'nivel'){
+      grupos[k.accion][k.nivel].niveles.push({ plan: p, ambito: k.ambito });
+    }
   });
-  // Ordenar causales dentro de cada nivel: C1, C2, ..., C14
+  // Ordenar causales (C1, C2, ..., C14) y ámbitos (Aula antes que Gestión)
   Object.values(grupos).forEach(porNivel => {
-    Object.values(porNivel).forEach(arr => {
-      arr.sort((a,b) => {
-        const na = parseInt((a.causal||'').replace('C',''), 10) || 99;
-        const nb = parseInt((b.causal||'').replace('C',''), 10) || 99;
-        return na - nb;
-      });
+    Object.entries(porNivel).forEach(([k, sec]) => {
+      if(k === '_ficha' || !sec) return;
+      if(Array.isArray(sec.causales)){
+        sec.causales.sort((a,b) => {
+          const na = parseInt((a.causal||'').replace('C',''), 10) || 99;
+          const nb = parseInt((b.causal||'').replace('C',''), 10) || 99;
+          return na - nb;
+        });
+      }
+      if(Array.isArray(sec.niveles)){
+        const ORDEN = ['Aula','Gestión'];
+        sec.niveles.sort((a,b) => {
+          const ia = ORDEN.indexOf(a.ambito); const ib = ORDEN.indexOf(b.ambito);
+          return (ia===-1?99:ia) - (ib===-1?99:ib);
+        });
+      }
     });
   });
   return grupos;
 }
 
-/* Cuenta curados en un array de {plan, causal} */
-function _mapaContarCurados(arr){
-  return (arr || []).filter(x => x.plan?.curado === true).length;
+/* Cuenta total e items curados en una sección {causales, niveles} */
+function _mapaContarSeccion(sec){
+  if(!sec) return { total:0, curados:0 };
+  const items = [...(sec.causales||[]), ...(sec.niveles||[])];
+  return {
+    total: items.length,
+    curados: items.filter(x => x.plan?.curado === true).length
+  };
 }
 
 /* Render principal del Mapa de Acciones */
@@ -9693,11 +9748,18 @@ async function renderMapaAcciones(){
     </div>
   `;
 
-  // Vista jerárquica: acción → nivel → causal
+  // Vista jerárquica: acción → nivel → (pasos base ámbito + causales)
   accionesOrdenadas.forEach(accionNombre => {
     const porNivel = grupos[accionNombre];
-    const totalAccion = Object.values(porNivel).reduce((s,arr) => s + arr.length, 0);
-    const curadosAccion = Object.values(porNivel).reduce((s,arr) => s + _mapaContarCurados(arr), 0);
+    // Conteos: excluimos la fila '_ficha' del cálculo principal (modelo distinto)
+    let totalAccion = 0, curadosAccion = 0, nivelesActivos = 0;
+    Object.entries(porNivel).forEach(([k, sec]) => {
+      if(k === '_ficha' || !sec) return;
+      nivelesActivos++;
+      const c = _mapaContarSeccion(sec);
+      totalAccion += c.total;
+      curadosAccion += c.curados;
+    });
     const expandidaAccion = MAPA_STATE.accionesExpandidas.has(accionNombre);
     const pctAccion = totalAccion > 0 ? Math.round(curadosAccion/totalAccion*100) : 0;
 
@@ -9709,7 +9771,7 @@ async function renderMapaAcciones(){
           <div style="font-size:18px;color:var(--muted);transform:${expandidaAccion?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:18px">›</div>
           <div style="flex:1">
             <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${Object.keys(porNivel).length} niveles activos</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${nivelesActivos} niveles activos</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:200px">
             <div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
@@ -9729,16 +9791,24 @@ async function renderMapaAcciones(){
 
 /* Renderiza los niveles de una acción expandida */
 function _mapaRenderNiveles(accionNombre, porNivel){
-  const nivelesOrdenados = ['L1','L2','L3','L4','L5'].filter(n => porNivel[n]?.length);
+  const nivelesOrdenados = ['L1','L2','L3','L4','L5'].filter(n => {
+    const sec = porNivel[n];
+    return sec && ((sec.causales?.length||0) + (sec.niveles?.length||0)) > 0;
+  });
   let html = '<div style="padding:0">';
   nivelesOrdenados.forEach(nivelCodigo => {
-    const arr = porNivel[nivelCodigo];
+    const sec = porNivel[nivelCodigo];
     const info = MAPA_NIVELES_INFO[nivelCodigo];
-    const total = arr.length;
-    const curados = _mapaContarCurados(arr);
+    const { total, curados } = _mapaContarSeccion(sec);
     const pct = total > 0 ? Math.round(curados/total*100) : 0;
     const claveNivel = accionNombre + '::' + nivelCodigo;
     const expandida = MAPA_STATE.nivelesExpandidos.has(claveNivel);
+    const nCausales = sec.causales?.length || 0;
+    const nAmbitos = sec.niveles?.length || 0;
+    const desglose = [
+      nAmbitos ? (nAmbitos + ' ámbito' + (nAmbitos>1?'s':'')) : null,
+      nCausales ? (nCausales + ' causal' + (nCausales>1?'es':'')) : null
+    ].filter(Boolean).join(' · ');
 
     html += `
       <div style="border-top:1px solid var(--border-light,#f0f0f0)">
@@ -9748,7 +9818,7 @@ function _mapaRenderNiveles(accionNombre, porNivel){
           <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text)">${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${total} causales</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${desglose || 'sin contenido'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:180px">
             <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
@@ -9759,32 +9829,64 @@ function _mapaRenderNiveles(accionNombre, porNivel){
             </div>
           </div>
         </div>
-        ${expandida ? _mapaRenderCausales(accionNombre, nivelCodigo, arr) : ''}
+        ${expandida ? _mapaRenderItems(accionNombre, nivelCodigo, sec) : ''}
       </div>`;
   });
   html += '</div>';
   return html;
 }
 
-/* Renderiza las causales (filas finales clickeables que abren editor) */
-function _mapaRenderCausales(accionNombre, nivelCodigo, arr){
+/* Renderiza las filas finales de un nivel: primero los ámbitos (pasos base),
+ * después las causales. Cada fila es clickeable y abre el editor apropiado. */
+function _mapaRenderItems(accionNombre, nivelCodigo, sec){
   let html = '<div style="background:#fcfcfc">';
-  arr.forEach(({plan, causal}) => {
-    const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
-    const curado = plan.curado === true;
-    const cacheKey = plan.cache_key;
 
+  // Sección 1: pasos base por ámbito (Aula / Gestión)
+  if(sec.niveles && sec.niveles.length){
     html += `
-      <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
-           onmouseover="this.style.background='#f3f4f6'"
-           onmouseout="this.style.background='transparent'">
-        <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
-        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
-        <div style="color:var(--muted);font-size:14px">›</div>
+      <div style="padding:6px 18px 6px 50px;background:#f5f5f1;border-top:1px solid var(--border-light,#f0f0f0);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
+        Pasos base del nivel
       </div>`;
-  });
+    sec.niveles.forEach(({plan, ambito}) => {
+      const info = MAPA_AMBITOS_INFO[ambito] || { icono:'•', etiqueta: ambito, descripcion:'' };
+      const curado = plan.curado === true;
+      const cacheKey = plan.cache_key;
+      html += `
+        <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
+             onmouseover="this.style.background='#f3f4f6'"
+             onmouseout="this.style.background='transparent'">
+          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+          <div style="font-size:14px;width:24px;text-align:center">${info.icono}</div>
+          <div style="flex:1;font-size:13px;color:var(--text);font-weight:500">${escapeHtmlPlan(info.etiqueta)}</div>
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">3 pasos</div>
+          <div style="color:var(--muted);font-size:14px">›</div>
+        </div>`;
+    });
+  }
+
+  // Sección 2: causales (alternativas A/B/C)
+  if(sec.causales && sec.causales.length){
+    html += `
+      <div style="padding:6px 18px 6px 50px;background:#f5f5f1;border-top:1px solid var(--border-light,#f0f0f0);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
+        Por causal
+      </div>`;
+    sec.causales.forEach(({plan, causal}) => {
+      const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
+      const curado = plan.curado === true;
+      const cacheKey = plan.cache_key;
+      html += `
+        <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
+             onmouseover="this.style.background='#f3f4f6'"
+             onmouseout="this.style.background='transparent'">
+          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
+          <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
+          <div style="color:var(--muted);font-size:14px">›</div>
+        </div>`;
+    });
+  }
+
   html += '</div>';
   return html;
 }
@@ -9861,25 +9963,35 @@ async function mapaAbrirEditor(cacheKey){
 }
 
 /* ============================================================
- * EDITOR DEL MAPA DE ACCIONES (visor de revisión, no de edición libre)
+ * EDITOR DEL MAPA DE ACCIONES
  *
- * Modelo: cada fila de planes_cache tiene
- *   plan_data: [{ alternativas:{A,B,C}, causal_nombre }]
- *   curado: bool
- *   notas_curador: text|null
+ * Dos vistas según el tipo de fila:
+ *  - tipo 'causal' → _mapaRenderEditorCausal (3 alternativas A/B/C)
+ *  - tipo 'nivel'  → _mapaRenderEditorNivel  (3 pasos sugeridos, por ámbito)
  *
- * El superadmin puede:
- *  - Corregir tipeos en las 3 alternativas A/B/C
- *  - Agregar notas internas (no visibles al colegio)
- *  - Marcar la fila como curada
+ * Ambos editores comparten: curado (bool), notas_curador (text),
+ * mapaToggleCurado, mapaActualizarNotas, mapaCerrarEditor, mapaGuardarPlan.
  *
- * El editor NO maneja título/foco/pasos: ese modelo pertenece
- * al plan del colegio (otra tabla), no a la biblioteca institucional.
+ * El editor NO crea pasos accionables con responsable/fecha: ese modelo
+ * pertenece al plan del colegio (otra tabla), no a la biblioteca institucional.
  * ============================================================ */
 function _mapaRenderEditor(){
   const e = MAPA_STATE.edicionActual;
   if(!e) return;
-  const k = _mapaParsearKey(e.cache_key) || {};
+  const k = _mapaParsearKey(e.cache_key);
+  if(!k){
+    document.getElementById('planBody').innerHTML =
+      '<div class="empty-state">Formato de cache_key no reconocido: <code>'+escapeHtmlPlan(e.cache_key)+'</code></div>';
+    return;
+  }
+  if(k.tipo === 'nivel')  return _mapaRenderEditorNivel(e, k);
+  if(k.tipo === 'causal') return _mapaRenderEditorCausal(e, k);
+  document.getElementById('planBody').innerHTML =
+    '<div class="empty-state">Tipo de fila no editable todavía: <strong>'+k.tipo+'</strong></div>';
+}
+
+/* Editor para filas tipo 'causal' (alternativas A/B/C) */
+function _mapaRenderEditorCausal(e, k){
   const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
   const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
 
@@ -9980,6 +10092,107 @@ function _mapaRenderEditor(){
       <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
       <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
     </div>`;
+}
+
+/* Editor para filas tipo 'nivel' (pasos base por ámbito Aula/Gestión).
+ * Modelo de plan_data: [{ pasos: [string, string, string] }] */
+function _mapaRenderEditorNivel(e, k){
+  const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
+  const ambitoInfo = MAPA_AMBITOS_INFO[k.ambito] || { icono:'•', etiqueta: k.ambito, descripcion:'' };
+
+  // Normalizar plan_data al shape esperado
+  if(!Array.isArray(e.plan_data) || e.plan_data.length === 0){
+    e.plan_data = [{ pasos: ['','',''] }];
+  }
+  const fila = e.plan_data[0];
+  if(!Array.isArray(fila.pasos)) fila.pasos = [];
+  // Garantizar al menos 3 pasos (mantenemos N>=3, el bulk cargó siempre 3)
+  while(fila.pasos.length < 3) fila.pasos.push('');
+
+  // Header
+  document.getElementById('planTitle').textContent = k.accion || 'Plan';
+  document.getElementById('planSubtitle').textContent =
+    `${k.nivel} ${nivelInfo.etiqueta} · ${ambitoInfo.icono} ${ambitoInfo.etiqueta}`;
+  const prog = document.getElementById('planProgress');
+  if(prog) prog.innerHTML = '';
+
+  const curado = e.curado === true;
+  const notas = e.notas_curador || '';
+
+  const pasoBlock = (idx, texto) => `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${idx+1}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
+      </div>
+      <textarea
+        oninput="mapaActualizarPasoNivel(${idx}, this.value)"
+        placeholder="Texto del paso ${idx+1}…"
+        style="width:100%;min-height:90px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+      >${escapeHtmlPlan(texto)}</textarea>
+    </div>`;
+
+  document.getElementById('planBody').innerHTML = `
+    <div style="margin-bottom:20px;padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
+      ${escapeHtmlPlan(e.cache_key)}
+    </div>
+
+    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
+         onclick="mapaToggleCurado()">
+      <div style="font-size:24px">${curado?'✅':'⚪'}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
+          ${curado ? 'Pasos curados' : 'Pasos sin curar'}
+        </div>
+        <div style="font-size:12px;color:var(--muted)">
+          ${curado ? 'Estos pasos fueron revisados por superadmin y se ofrecen como referencia base del nivel.' : 'Marcalos como curados cuando termines de revisarlos.'}
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:24px">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
+        Pasos base ${ambitoInfo.icono} ${escapeHtmlPlan(ambitoInfo.etiqueta)} · ${k.nivel} ${escapeHtmlPlan(nivelInfo.etiqueta)}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px">
+        ${escapeHtmlPlan(ambitoInfo.descripcion || '')} Estos pasos describen <strong>cómo se ve</strong> esta acción en ${escapeHtmlPlan(ambitoInfo.etiqueta.toLowerCase())} cuando el establecimiento está en nivel ${k.nivel}. Editá solo para corregir errores tipográficos o de redacción.
+      </div>
+      ${fila.pasos.slice(0,3).map((t,i) => pasoBlock(i, t)).join('')}
+    </div>
+
+    <div>
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        Notas internas del curador
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Solo visibles para superadmin.
+      </div>
+      <textarea
+        oninput="mapaActualizarNotas(this.value)"
+        placeholder="Notas internas (no visibles al colegio)…"
+        style="width:100%;min-height:80px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+      >${escapeHtmlPlan(notas)}</textarea>
+    </div>
+  `;
+
+  document.getElementById('planFooter').innerHTML = `
+    <span class="info" style="font-size:12px;color:var(--muted)">${escapeHtmlPlan(k.accion || '')} · ${k.nivel} · ${escapeHtmlPlan(k.ambito)}</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
+      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
+    </div>`;
+}
+
+/* Update en memoria para un paso del editor 'nivel' */
+function mapaActualizarPasoNivel(idx, valor){
+  const e = MAPA_STATE.edicionActual;
+  if(!e || !Array.isArray(e.plan_data) || !e.plan_data[0]) return;
+  if(!Array.isArray(e.plan_data[0].pasos)) e.plan_data[0].pasos = [];
+  e.plan_data[0].pasos[idx] = valor;
 }
 
 /* Updates en memoria (no persisten hasta apretar "Guardar cambios") */
