@@ -6053,13 +6053,13 @@ const PLAN_CSS = `
   letter-spacing:.3px;margin-bottom:14px;line-height:1.4}
 
 .plan-brecha-list-personalizada{display:flex;flex-direction:column;gap:14px}
-.plan-brecha-item{border-radius:10px;overflow:hidden;border:0.5px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.plan-brecha-item{border-radius:10px;overflow:hidden;border:1.5px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .plan-brecha-num{display:none}
 .plan-brecha-head{padding:10px 15px;display:flex;align-items:center;gap:8px}
 .plan-brecha-source-badge{font-size:10px;font-weight:600;padding:3px 9px;border-radius:5px;letter-spacing:.03em;white-space:nowrap}
 .plan-brecha-std-pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;white-space:nowrap}
 .plan-brecha-diag{font-size:13px;font-weight:600;flex:1}
-.plan-brecha-cuerpo{background:var(--bg-soft,#FAFCFA);padding:13px 15px;display:flex;flex-direction:column;gap:10px}
+.plan-brecha-cuerpo{padding:13px 15px;display:flex;flex-direction:column;gap:10px}
 .plan-brecha-q{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 5px}
 .plan-brecha-quote{font-size:12.5px;color:var(--text-secondary,#4a4a4a);line-height:1.55;font-style:italic;border-left:2px solid var(--border);padding-left:10px;margin:0}
 .plan-brecha-divider{height:0.5px;background:var(--border)}
@@ -7214,10 +7214,10 @@ async function renderPaso1Contexto(){
 
   // ── Configuración visual por tipo de fuente ──────────────────────────────
   const BRECHA_THEME = {
-    eid:     { headBg:'#E6F1FB', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
-    uc:      { headBg:'#E1F5EE', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
-    harvard: { headBg:'#FAEEDA', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
-    default: { headBg:'#F1EFE8', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
+    eid:     { headBg:'#E6F1FB', bodyBg:'#F4F9FE', borderCol:'#B5D4F4', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
+    uc:      { headBg:'#E1F5EE', bodyBg:'#F1FAF6', borderCol:'#9FE1CB', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
+    harvard: { headBg:'#FAEEDA', bodyBg:'#FDF7EC', borderCol:'#FAC775', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
+    default: { headBg:'#F1EFE8', bodyBg:'#F8F7F2', borderCol:'#D3D1C7', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
   };
   const BRECHA_ICON = { eid:'ti-certificate', uc:'ti-school', harvard:'ti-brain', default:'ti-chart-bar' };
 
@@ -7235,13 +7235,13 @@ async function renderPaso1Contexto(){
       </div>`
     ).join('');
     const qLabel = tipo === 'eid' ? '¿Qué exige el estándar?' : tipo === 'uc' ? '¿Qué dice la UC?' : tipo === 'harvard' ? '¿Qué dice Harvard?' : '¿Qué dice la fuente?';
-    return `<div class="plan-brecha-item">
+    return `<div class="plan-brecha-item" style="border-color:${th.borderCol}">
       <div class="plan-brecha-head" style="background:${th.headBg}">
         <span class="plan-brecha-source-badge" style="background:${th.badgeBg};color:${th.badgeColor}">${escapeHtmlPlan(b.fuente_label||'Fuente')}</span>
         ${stdPill}
         <span class="plan-brecha-diag" style="color:${th.diagColor}">${escapeHtmlPlan(b.diagnostico||'')}</span>
       </div>
-      <div class="plan-brecha-cuerpo">
+      <div class="plan-brecha-cuerpo" style="background:${th.bodyBg}">
         <div>
           <p class="plan-brecha-q">${qLabel}</p>
           <p class="plan-brecha-quote">${escapeHtmlPlan(b.que_dice||b.texto||'')}</p>
