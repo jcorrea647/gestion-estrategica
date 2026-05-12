@@ -9508,6 +9508,49 @@ const MAPA_AMBITOS_INFO = {
   'Comunicación':      { icono:'📣', etiqueta:'Comunicación',      descripcion:'Lo que sucede cuando la información circula efectivamente entre actores (apoderados, sostenedor, comunidad, ministerios). Producto esperable: destinatarios informados que pueden actuar a partir de lo recibido.' }
 };
 
+/* Áreas del modelo SACGE / SEP. Orden fijo para presentación.
+ * El orden importa: se usa para ordenar las acciones en el listado. */
+const MAPA_AREAS_INFO = [
+  { key:'pedagogica',  icono:'📚', etiqueta:'Gestión Pedagógica', color:'#7c3aed' },
+  { key:'liderazgo',   icono:'🎯', etiqueta:'Liderazgo',          color:'#1f5f47' },
+  { key:'convivencia', icono:'🤝', etiqueta:'Convivencia Escolar',color:'#dc2626' },
+  { key:'recursos',    icono:'🧰', etiqueta:'Gestión de Recursos',color:'#0891b2' }
+];
+
+/* Mapeo de cada acción a su área (modelo SACGE / SEP) */
+const MAPA_ACCION_AREA = {
+  // Gestión Pedagógica
+  'analisis_resultados':        'pedagogica',
+  'calendario_evaluaciones':    'pedagogica',
+  'desarrollo_profesional':     'pedagogica',
+  'ensayos_simce_paes':         'pedagogica',
+  'observacion_aula':           'pedagogica',
+  'plan_evaluaciones':          'pedagogica',
+  'retroalimentacion_dia':      'pedagogica',
+  'reuniones_departamentos':    'pedagogica',
+  // Liderazgo
+  'evaluacion_pme':             'liderazgo',
+  'seguimiento_plan_liderazgo': 'liderazgo',
+  'informe_semestral':          'liderazgo',
+  // Convivencia Escolar
+  'analisis_idps':              'convivencia',
+  'denuncias_seguimiento':      'convivencia',
+  'ejecucion_plan_convivencia': 'convivencia',
+  'monitoreo_asistencia':       'convivencia',
+  'monitoreo_incidentes':       'convivencia',
+  'sistema_reconocimiento':     'convivencia',
+  'talleres_resolucion':        'convivencia',
+  // Gestión de Recursos
+  'planes_apoyo_riesgo':        'recursos',
+  'seguimiento_pie':            'recursos',
+  'talleres_deportivos':        'recursos'
+};
+
+/* Helper: devuelve el área de una acción, o 'otras' si no está mapeada */
+function _mapaAreaDe(accionNombre){
+  return MAPA_ACCION_AREA[accionNombre] || 'otras';
+}
+
 // Estado del módulo
 let MAPA_STATE = {
   planes: [],                         // array de filas de planes_cache
@@ -9515,7 +9558,8 @@ let MAPA_STATE = {
   nivelesExpandidos: new Set(),       // key: "accion::nivel"
   edicionesAbiertas: new Map(),       // key: cache_key, value: copia editable del plan
   notasExpandidas: new Set(),         // key: cache_key (segundo nivel: notas del curador)
-  cargandoFila: new Set()             // key: cache_key (loader durante fetch on-demand)
+  cargandoFila: new Set(),            // key: cache_key (loader durante fetch on-demand)
+  filtroArea: 'todas'                 // 'todas' | 'pedagogica' | 'liderazgo' | 'convivencia' | 'recursos'
 };
 
 /* Abre la pantalla. Solo accesible para superadmin. */
@@ -9735,7 +9779,18 @@ async function renderMapaAcciones(){
   }
 
   const grupos = _mapaAgrupar(planes);
-  const accionesOrdenadas = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
+  // Orden por área (según MAPA_AREAS_INFO) y dentro de cada área, alfabético.
+  // Las acciones sin área mapeada van al final.
+  const todasLasAcciones = Object.keys(grupos);
+  const ordenAreas = MAPA_AREAS_INFO.map(a => a.key).concat(['otras']);
+  const accionesOrdenadas = todasLasAcciones.sort((a, b) => {
+    const areaA = _mapaAreaDe(a);
+    const areaB = _mapaAreaDe(b);
+    const idxA = ordenAreas.indexOf(areaA);
+    const idxB = ordenAreas.indexOf(areaB);
+    if(idxA !== idxB) return idxA - idxB;
+    return a.localeCompare(b);
+  });
 
   // Stats globales — calculamos dos métricas distintas:
   //   • filas de tabla (lo que se clickea para abrir un editor)
@@ -9789,8 +9844,86 @@ async function renderMapaAcciones(){
     </div>
   `;
 
+  // Filtro por área (pills clickeables)
+  // Contamos cuántas acciones hay en cada área para mostrar el conteo en cada pill
+  const conteoPorArea = { todas: accionesOrdenadas.length };
+  MAPA_AREAS_INFO.forEach(a => { conteoPorArea[a.key] = 0; });
+  conteoPorArea['otras'] = 0;
+  accionesOrdenadas.forEach(ac => {
+    const area = _mapaAreaDe(ac);
+    conteoPorArea[area] = (conteoPorArea[area] || 0) + 1;
+  });
+
+  const filtroActual = MAPA_STATE.filtroArea || 'todas';
+  const pillStyle = (activa) => `
+    background:${activa ? 'var(--accent)' : '#fff'};
+    color:${activa ? '#fff' : 'var(--text)'};
+    border:1.5px solid ${activa ? 'var(--accent)' : 'var(--border,#d4d4d8)'};
+    padding:7px 13px;
+    border-radius:18px;
+    font-size:12.5px;
+    font-weight:${activa ? '600' : '500'};
+    cursor:pointer;
+    transition:all .15s;
+    font-family:inherit;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    white-space:nowrap;
+  `;
+
+  html += `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:center">
+      <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px">Filtrar:</span>
+      <button onclick="mapaSetFiltroArea('todas')" style="${pillStyle(filtroActual==='todas')}">
+        Todas <span style="opacity:.7;font-weight:500">${conteoPorArea.todas}</span>
+      </button>`;
+  MAPA_AREAS_INFO.forEach(area => {
+    const activa = filtroActual === area.key;
+    const cuenta = conteoPorArea[area.key] || 0;
+    if(cuenta === 0) return; // si no hay acciones en esa área, no mostramos la pill
+    html += `
+      <button onclick="mapaSetFiltroArea('${area.key}')" style="${pillStyle(activa)}">
+        ${area.icono} ${escapeHtmlPlan(area.etiqueta)} <span style="opacity:.7;font-weight:500">${cuenta}</span>
+      </button>`;
+  });
+  if(conteoPorArea['otras'] > 0){
+    const activa = filtroActual === 'otras';
+    html += `
+      <button onclick="mapaSetFiltroArea('otras')" style="${pillStyle(activa)}">
+        Sin área <span style="opacity:.7;font-weight:500">${conteoPorArea['otras']}</span>
+      </button>`;
+  }
+  html += `
+    </div>
+  `;
+
+  // Aplicamos el filtro
+  const accionesVisibles = (filtroActual === 'todas')
+    ? accionesOrdenadas
+    : accionesOrdenadas.filter(ac => _mapaAreaDe(ac) === filtroActual);
+
   // Vista jerárquica: acción → nivel → (pasos base ámbito + causales)
-  accionesOrdenadas.forEach(accionNombre => {
+  // Insertamos separadores de área cada vez que cambia (solo si filtro = 'todas')
+  let ultimaAreaRenderizada = null;
+  accionesVisibles.forEach(accionNombre => {
+    const areaAccion = _mapaAreaDe(accionNombre);
+    // Separador de área (solo cuando filtro = 'todas' y cambia el área)
+    if(filtroActual === 'todas' && areaAccion !== ultimaAreaRenderizada){
+      const areaInfo = MAPA_AREAS_INFO.find(a => a.key === areaAccion) ||
+        { icono:'📁', etiqueta:'Sin área asignada', color:'#9ca3af' };
+      html += `
+        <div style="margin:16px 0 8px 0;padding:8px 4px;border-bottom:2px solid ${areaInfo.color};display:flex;align-items:center;gap:10px">
+          <div style="font-size:18px">${areaInfo.icono}</div>
+          <div style="font-size:14px;font-weight:700;color:${areaInfo.color};text-transform:uppercase;letter-spacing:.05em">
+            ${escapeHtmlPlan(areaInfo.etiqueta)}
+          </div>
+          <div style="flex:1;height:1px"></div>
+          <div style="font-size:11px;color:var(--muted)">${conteoPorArea[areaAccion]} acciones</div>
+        </div>`;
+      ultimaAreaRenderizada = areaAccion;
+    }
+
     const porNivel = grupos[accionNombre];
     // Conteos: excluimos la fila '_ficha' del cálculo principal (modelo distinto)
     let totalAccion = 0, curadosAccion = 0, nivelesActivos = 0;
@@ -9971,6 +10104,24 @@ function mapaToggleNivel(accionNombre, nivelCodigo){
   const k = accionNombre + '::' + nivelCodigo;
   if(MAPA_STATE.nivelesExpandidos.has(k)) MAPA_STATE.nivelesExpandidos.delete(k);
   else MAPA_STATE.nivelesExpandidos.add(k);
+  renderMapaAcciones();
+}
+
+/* Cambia el filtro de área y re-renderiza */
+function mapaSetFiltroArea(areaKey){
+  MAPA_STATE.filtroArea = areaKey || 'todas';
+  // Si filtramos a un subconjunto, no tiene sentido dejar abiertas acciones
+  // que ya no se ven. Las cerramos para evitar confusión.
+  if(areaKey !== 'todas'){
+    Array.from(MAPA_STATE.accionesExpandidas).forEach(ac => {
+      if(_mapaAreaDe(ac) !== areaKey){
+        MAPA_STATE.accionesExpandidas.delete(ac);
+        Array.from(MAPA_STATE.nivelesExpandidos).forEach(k => {
+          if(k.startsWith(ac + '::')) MAPA_STATE.nivelesExpandidos.delete(k);
+        });
+      }
+    });
+  }
   renderMapaAcciones();
 }
 
