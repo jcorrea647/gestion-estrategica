@@ -6258,6 +6258,9 @@ const PLAN_BRECHA_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v
 const PLAN_AUTOSAVE_DEBOUNCE = 1500; // ms
 const PLAN_LS_PREFIX = 'plan_borrador_v2_';
 
+/* Catálogo definitivo: 9 estructurales + 8 relacionales = 17 causales.
+ * Las etiquetas coinciden literalmente con plan_data->>'causal_nombre' en
+ * planes_cache (validado contra BD: 105 filas por código, sin variantes). */
 const CAUSAS_TAXONOMIA = {
   estructurales: [
     {codigo:'C1', etiqueta:'Tiempo'},
@@ -6266,30 +6269,39 @@ const CAUSAS_TAXONOMIA = {
     {codigo:'C4', etiqueta:'Competencias técnicas'},
     {codigo:'C5', etiqueta:'Coordinación entre cargos'},
     {codigo:'C6', etiqueta:'Definición poco clara'},
-    {codigo:'C7', etiqueta:'Datos / información'},
-    {codigo:'C8', etiqueta:'Causa externa'}
+    {codigo:'C7', etiqueta:'Datos o información'},
+    {codigo:'C8', etiqueta:'Evaluación y monitoreo'},
+    {codigo:'C9', etiqueta:'Causas externas'}
   ],
   relacionales: [
-    {codigo:'C9',  etiqueta:'Falta de compromiso docente'},
-    {codigo:'C10', etiqueta:'Resistencia o cultura instalada'},
-    {codigo:'C11', etiqueta:'Comunicación con apoderados'},
-    {codigo:'C12', etiqueta:'Bajo involucramiento estudiantes'},
-    {codigo:'C13', etiqueta:'Conflictos entre estamentos'},
-    {codigo:'C14', etiqueta:'Liderazgo intermedio débil'},
-    {codigo:'C15', etiqueta:'Involucramiento estudiantes'},
+    {codigo:'C10', etiqueta:'Liderazgo Intermedio'},
+    {codigo:'C11', etiqueta:'Clima Laboral'},
+    {codigo:'C12', etiqueta:'Comunicación interna'},
+    {codigo:'C13', etiqueta:'Resistencia cultural'},
+    {codigo:'C14', etiqueta:'Compromiso docente'},
+    {codigo:'C15', etiqueta:'Involucramiento Estudiantes'},
     {codigo:'C16', etiqueta:'Comunicación con apoderados'},
     {codigo:'C17', etiqueta:'Compromiso de apoderados'}
   ]
 };
 
-/* Mapa de retro-compatibilidad: traduce códigos legacy a C1-C14
+/* Mapa de retro-compatibilidad: traduce códigos legacy (texto plano de borradores
+ * antiguos) a los códigos C1..C17 del catálogo definitivo.
+ * Nota: tras el rediseño del catálogo (oct-2025) varios destinos cambiaron:
+ *   - EXTERNA pasó de C8 a C9 (C8 ahora es "Evaluación y monitoreo")
+ *   - COMPROMISO (docente) pasó de C9 a C14
+ *   - RESISTENCIA pasó de C10 a C13
+ *   - COMUNIC_APOD pasó de C11 a C16
+ *   - INVOL_EST pasó de C12 a C15
+ *   - CONFLICTOS pasó de C13 a C11 (subsumido en "Clima Laboral")
+ *   - LIDERAZGO pasó de C14 a C10
  * Usado al cargar borradores guardados con códigos antiguos. */
 const CAUSAS_LEGACY_MAP = {
   'TIEMPO':'C1', 'RECURSOS_MAT':'C2', 'RECURSOS_HUM':'C3',
   'COMPETENCIAS':'C4', 'COORDINACION':'C5', 'DEFINICION':'C6',
-  'DATOS':'C7', 'EXTERNA':'C8',
-  'COMPROMISO':'C9', 'RESISTENCIA':'C10', 'COMUNIC_APOD':'C11',
-  'INVOL_EST':'C12', 'CONFLICTOS':'C13', 'LIDERAZGO':'C14'
+  'DATOS':'C7', 'EXTERNA':'C9',
+  'COMPROMISO':'C14', 'RESISTENCIA':'C13', 'COMUNIC_APOD':'C16',
+  'INVOL_EST':'C15', 'CONFLICTOS':'C11', 'LIDERAZGO':'C10'
 };
 function planNormalizarCodigoCausa(codigo){
   if(!codigo) return codigo;
@@ -9483,15 +9495,15 @@ const MAPA_CAUSAS_INFO = {
   C4:  { grupo:'estructural', nombre:'Competencias técnicas' },
   C5:  { grupo:'estructural', nombre:'Coordinación entre cargos' },
   C6:  { grupo:'estructural', nombre:'Definición poco clara' },
-  C7:  { grupo:'estructural', nombre:'Datos / información' },
-  C8:  { grupo:'estructural', nombre:'Causa externa' },
-  C9:  { grupo:'relacional',  nombre:'Falta de compromiso docente' },
-  C10: { grupo:'relacional',  nombre:'Resistencia o cultura instalada' },
-  C11: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
-  C12: { grupo:'relacional',  nombre:'Bajo involucramiento estudiantes' },
-  C13: { grupo:'relacional',  nombre:'Conflictos entre estamentos' },
-  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' },
-  C15: { grupo:'relacional',  nombre:'Involucramiento estudiantes' },
+  C7:  { grupo:'estructural', nombre:'Datos o información' },
+  C8:  { grupo:'estructural', nombre:'Evaluación y monitoreo' },
+  C9:  { grupo:'estructural', nombre:'Causas externas' },
+  C10: { grupo:'relacional',  nombre:'Liderazgo Intermedio' },
+  C11: { grupo:'relacional',  nombre:'Clima Laboral' },
+  C12: { grupo:'relacional',  nombre:'Comunicación interna' },
+  C13: { grupo:'relacional',  nombre:'Resistencia cultural' },
+  C14: { grupo:'relacional',  nombre:'Compromiso docente' },
+  C15: { grupo:'relacional',  nombre:'Involucramiento Estudiantes' },
   C16: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
   C17: { grupo:'relacional',  nombre:'Compromiso de apoderados' }
 };
