@@ -5832,11 +5832,11 @@ const PLAN_CSS = `
   background:rgba(26,25,22,.45);z-index:9000;display:none;
   animation:fadePlan .2s ease}
 .plan-drawer-overlay.show{display:block}
-.plan-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);
+.plan-drawer{position:fixed;top:0;right:0;bottom:0;left:0;width:100vw;max-width:100vw;
   background:var(--bg);z-index:9001;display:none;flex-direction:column;
-  box-shadow:-12px 0 40px rgba(0,0,0,.18);transform:translateX(100%);
-  transition:transform .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
-.plan-drawer.show{display:flex;transform:translateX(0)}
+  box-shadow:0 0 60px rgba(0,0,0,.25);transform:translateY(20px);opacity:0;
+  transition:transform .28s cubic-bezier(.4,0,.2,1), opacity .28s ease;overflow:hidden}
+.plan-drawer.show{display:flex;transform:translateY(0);opacity:1}
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
 .plan-header{background:var(--accent);color:#fff;padding:16px 24px;
@@ -6165,24 +6165,25 @@ const PLAN_CSS = `
 /* === MARCO CONCEPTUAL (paso 4) === */
 .marco-intro{font-size:13px; color:var(--muted); line-height:1.55; margin-bottom:18px}
 .marco-intro strong{color:var(--accent); font-weight:700}
-.marco-grid{display:flex; flex-direction:column; gap:14px}
+.marco-grid{display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px; align-items:stretch}
 .marco-card{
-  border-radius:12px; padding:18px 20px;
+  border-radius:12px; padding:16px 14px;
   box-shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+  display:flex; flex-direction:column; min-width:0;
 }
-.marco-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px}
-.marco-tag{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:11px;
-  font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase}
-.marco-origen{font-size:9.5px; font-weight:600; color:var(--muted);
-  letter-spacing:.5px; text-transform:uppercase; text-align:right; flex-shrink:0}
-.marco-subtitulo{font-size:11.5px; color:var(--muted); font-style:italic; margin-bottom:8px}
-.marco-titulo{font-family:'DM Serif Display','Georgia',serif; font-size:19px;
-  color:var(--accent); line-height:1.25; margin-bottom:14px; font-weight:400}
-.marco-bullets{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px}
-.marco-bullet{display:flex; gap:10px; align-items:flex-start; font-size:13.5px; line-height:1.55; color:#2A2622}
-.marco-bullet-icon{flex-shrink:0; width:18px; height:18px; border-radius:50%;
+.marco-head{display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:6px; flex-wrap:wrap}
+.marco-tag{display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:11px;
+  font-size:9px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; line-height:1.3}
+.marco-origen{font-size:8.5px; font-weight:600; color:var(--muted);
+  letter-spacing:.3px; text-transform:uppercase; text-align:right; flex-shrink:0; line-height:1.3}
+.marco-subtitulo{font-size:10.5px; color:var(--muted); font-style:italic; margin-bottom:8px; line-height:1.4}
+.marco-titulo{font-family:'DM Serif Display','Georgia',serif; font-size:15px;
+  color:var(--accent); line-height:1.22; margin-bottom:12px; font-weight:400}
+.marco-bullets{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:9px}
+.marco-bullet{display:flex; gap:7px; align-items:flex-start; font-size:11.5px; line-height:1.5; color:#2A2622}
+.marco-bullet-icon{flex-shrink:0; width:15px; height:15px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
-  font-size:10px; font-weight:700; color:#fff; margin-top:2px}
+  font-size:8.5px; font-weight:700; color:#fff; margin-top:2px}
 .marco-bullet strong{font-weight:700; color:#1A1916}
 .marco-mbd{background:#E8F0EA; border:3px solid var(--accent)}
 .marco-mbd .marco-tag{background:var(--accent); color:#fff}
@@ -6222,7 +6223,18 @@ const PLAN_CSS = `
   padding:18px; background:var(--surface2); border:1px dashed var(--border);
   border-radius:8px; color:var(--muted); font-size:13px; text-align:center;
 }
+@media (max-width:1400px){
+  .marco-grid{grid-template-columns:repeat(3, minmax(0, 1fr))}
+  .marco-titulo{font-size:16px}
+  .marco-bullet{font-size:12px}
+}
+@media (max-width:900px){
+  .marco-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+  .marco-titulo{font-size:17px}
+  .marco-bullet{font-size:13px}
+}
 @media (max-width:560px){
+  .marco-grid{grid-template-columns:1fr}
   .marco-card{padding:16px}
   .marco-head{flex-direction:column; gap:6px}
   .marco-origen{text-align:left}
