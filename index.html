@@ -9969,33 +9969,41 @@ async function mapaAbrirEditor(cacheKey){
   const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
   if(!plan){ showToast('Plan no encontrado'); return; }
 
-  // Si no tenemos plan_data en memoria (el listado solo trae metadata para ser liviano),
-  // lo cargamos on-demand para esta fila específica. También traemos notas_curador.
-  if(!plan.plan_data){
-    try {
-      const { data, error } = await sb
-        .from('planes_cache')
-        .select('plan_data,notas_curador')
-        .eq('cache_key', cacheKey)
-        .maybeSingle();
-      if(error){
-        console.error('[Mapa] Error cargando plan_data:', error);
-        showToast('Error cargando el plan: ' + error.message);
-        return;
-      }
-      plan.plan_data = data?.plan_data || null;
-      plan.notas_curador = data?.notas_curador || null;
-    } catch(err){
-      console.error('[Mapa] Excepción cargando plan_data:', err);
-      showToast('Error inesperado: ' + (err.message||err));
+  // SIEMPRE traemos plan_data y notas_curador frescos de Supabase.
+  // No usamos cache de sesión porque el contenido puede haber cambiado en la base
+  // (por curaduría desde otra ventana, scripts de migración, o UPDATEs manuales).
+  // El listado solo trae metadata liviana para ser rápido; el detalle se trae al abrir.
+  try {
+    const { data, error } = await sb
+      .from('planes_cache')
+      .select('plan_data,notas_curador,curado,updated_at')
+      .eq('cache_key', cacheKey)
+      .maybeSingle();
+    if(error){
+      console.error('[Mapa] Error cargando plan_data:', error);
+      showToast('Error cargando el plan: ' + error.message);
       return;
     }
+    if(!data){
+      showToast('Plan no encontrado en la base');
+      return;
+    }
+    // Refrescamos los 4 campos en el objeto de memoria. Esto también garantiza
+    // que si el listado tenía el flag 'curado' o 'updated_at' desactualizado, se corrija.
+    plan.plan_data = data.plan_data || null;
+    plan.notas_curador = data.notas_curador || null;
+    plan.curado = data.curado === true;
+    plan.updated_at = data.updated_at;
+  } catch(err){
+    console.error('[Mapa] Excepción cargando plan_data:', err);
+    showToast('Error inesperado: ' + (err.message||err));
+    return;
   }
 
   // Clonar para edición (no tocar el original hasta guardar)
   MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
   // El render se encarga de normalizar plan_data al shape esperado
-  // ({alternativas:{A,B,C}, causal_nombre}) si llegara vacío o malformado.
+  // (alternativas A/B/C para 'causal', pasos[] para 'nivel') si llegara vacío o malformado.
 
   // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
   if(typeof asegurarDrawer === 'function') asegurarDrawer();
