@@ -7541,19 +7541,50 @@ async function planGenerarPropuestas(){
       const nivelActual = pct <= 25 ? 'L1' : pct <= 50 ? 'L2' : pct <= 75 ? 'L3' : pct <= 90 ? 'L4' : 'L5';
 
       const propuestas = await Promise.all(causasAUsar.map(async (causa, i) => {
-        // 1. Buscar en planes_cache pre-computados (nivel-específico).
-        // Probamos ambos formatos de prefijo: 'precomp|' (legacy) y 'causal|' (carga bulk).
+        // 1. Buscar en planes_cache la fila correspondiente a esta causa × nivel.
+        //    Aceptamos dos prefijos: 'causal|' (carga bulk con alternativas A/B/C)
+        //    y 'precomp|' (legacy, plan ya armado con título/foco/pasos).
         const suffix = (s.accion?.nombre||'') + '|' + nivelActual + '|' + causa.codigo;
         const claves = ['precomp|' + suffix, 'causal|' + suffix];
         try {
           const { data: cachedRows } = await sb.from('planes_cache')
-            .select('cache_key,plan_data')
+            .select('cache_key,plan_data,curado')
             .in('cache_key', claves)
             .limit(1);
           const cached = cachedRows && cachedRows[0];
-          if(cached?.plan_data?.[0]){
-            const linea = cached.plan_data[0];
-            return { ...linea, id: 'linea_' + (i+1), _fromPrecomp: true };
+          const filaCache = cached?.plan_data?.[0];
+          if(filaCache){
+            // Caso A: formato "alternativas A/B/C" (carga bulk). Las 3 alternativas
+            // se ofrecen al director como 3 pasos sugeridos — él elige/edita/borra.
+            if(filaCache.alternativas && typeof filaCache.alternativas === 'object'){
+              const alt = filaCache.alternativas;
+              const causalNombre = filaCache.causal_nombre || causa.etiqueta || '';
+              const pasos = [];
+              ['A','B','C'].forEach((letra, k) => {
+                const texto = (alt[letra]||'').trim();
+                if(texto){
+                  pasos.push({
+                    id: (i+1) + '.' + (k+1),
+                    descripcion: texto,
+                    responsable_sugerido: '',
+                    plazo_dias: 14,
+                    esfuerzo: 'MEDIO',
+                    _alternativa: letra
+                  });
+                }
+              });
+              return {
+                id: 'linea_' + (i+1),
+                titulo: 'Estrategia · ' + (causalNombre || causa.etiqueta || ''),
+                foco: 'FOCO EN ' + (causalNombre || causa.etiqueta || '').toUpperCase(),
+                descripcion_corta: 'Tres alternativas sugeridas para abordar "' + causalNombre + '". Elegí la que mejor se adapte y editala para tu contexto. Borrá las que no uses.',
+                causa_atacada: causalNombre || causa.etiqueta || '',
+                pasos,
+                _fromPrecomp: true
+              };
+            }
+            // Caso B: formato legacy (línea con titulo/foco/pasos ya armada).
+            return { ...filaCache, id: 'linea_' + (i+1), _fromPrecomp: true };
           }
         } catch(e){ console.warn('precomp lookup:', e.message); }
 
@@ -9793,12 +9824,12 @@ async function mapaAbrirEditor(cacheKey){
   if(!plan){ showToast('Plan no encontrado'); return; }
 
   // Si no tenemos plan_data en memoria (el listado solo trae metadata para ser liviano),
-  // lo cargamos on-demand para esta fila específica.
+  // lo cargamos on-demand para esta fila específica. También traemos notas_curador.
   if(!plan.plan_data){
     try {
       const { data, error } = await sb
         .from('planes_cache')
-        .select('plan_data')
+        .select('plan_data,notas_curador')
         .eq('cache_key', cacheKey)
         .maybeSingle();
       if(error){
@@ -9807,6 +9838,7 @@ async function mapaAbrirEditor(cacheKey){
         return;
       }
       plan.plan_data = data?.plan_data || null;
+      plan.notas_curador = data?.notas_curador || null;
     } catch(err){
       console.error('[Mapa] Excepción cargando plan_data:', err);
       showToast('Error inesperado: ' + (err.message||err));
@@ -9816,16 +9848,8 @@ async function mapaAbrirEditor(cacheKey){
 
   // Clonar para edición (no tocar el original hasta guardar)
   MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
-  // Garantizar estructura mínima de plan_data
-  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data) || MAPA_STATE.edicionActual.plan_data.length === 0){
-    MAPA_STATE.edicionActual.plan_data = [{
-      id:'linea_1', titulo:'', foco:'', descripcion_corta:'',
-      causa_atacada:'', pasos:[]
-    }];
-  }
-  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data[0].pasos)){
-    MAPA_STATE.edicionActual.plan_data[0].pasos = [];
-  }
+  // El render se encarga de normalizar plan_data al shape esperado
+  // ({alternativas:{A,B,C}, causal_nombre}) si llegara vacío o malformado.
 
   // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
   if(typeof asegurarDrawer === 'function') asegurarDrawer();
@@ -9836,77 +9860,71 @@ async function mapaAbrirEditor(cacheKey){
   _mapaRenderEditor();
 }
 
+/* ============================================================
+ * EDITOR DEL MAPA DE ACCIONES (visor de revisión, no de edición libre)
+ *
+ * Modelo: cada fila de planes_cache tiene
+ *   plan_data: [{ alternativas:{A,B,C}, causal_nombre }]
+ *   curado: bool
+ *   notas_curador: text|null
+ *
+ * El superadmin puede:
+ *  - Corregir tipeos en las 3 alternativas A/B/C
+ *  - Agregar notas internas (no visibles al colegio)
+ *  - Marcar la fila como curada
+ *
+ * El editor NO maneja título/foco/pasos: ese modelo pertenece
+ * al plan del colegio (otra tabla), no a la biblioteca institucional.
+ * ============================================================ */
 function _mapaRenderEditor(){
   const e = MAPA_STATE.edicionActual;
   if(!e) return;
   const k = _mapaParsearKey(e.cache_key) || {};
-  const linea = e.plan_data[0];
-  const pasos = linea.pasos || [];
   const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
   const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
 
-  // Título y subtítulo del drawer
-  document.getElementById('planTitle').textContent = k.accion || 'Plan';
-  document.getElementById('planSubtitle').textContent = `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
+  // Normalizar plan_data: aseguramos que exista el shape esperado
+  if(!Array.isArray(e.plan_data) || e.plan_data.length === 0){
+    e.plan_data = [{ alternativas:{A:'',B:'',C:''}, causal_nombre: causalInfo.nombre || '' }];
+  }
+  const fila = e.plan_data[0];
+  if(!fila.alternativas || typeof fila.alternativas !== 'object'){
+    fila.alternativas = { A:'', B:'', C:'' };
+  }
+  // Garantizar las 3 claves
+  ['A','B','C'].forEach(letra => {
+    if(typeof fila.alternativas[letra] !== 'string') fila.alternativas[letra] = '';
+  });
 
+  // Header
+  document.getElementById('planTitle').textContent = k.accion || 'Plan';
+  document.getElementById('planSubtitle').textContent =
+    `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
   const prog = document.getElementById('planProgress');
   if(prog) prog.innerHTML = '';
 
-  // Render del editor
   const curado = e.curado === true;
+  const notas = e.notas_curador || '';
 
-  const pasosHtml = pasos.map((p, idx) => `
-    <div style="background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px;padding:18px;margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${idx+1}</div>
-        <div style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
-        <div style="flex:1"></div>
-        ${pasos.length > 1 ? `<button onclick="mapaEliminarPaso(${idx})" style="background:transparent;border:1px solid #fca5a5;color:#dc2626;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit" title="Eliminar este paso">✕ Eliminar</button>` : ''}
+  // Helper para cada textarea de alternativa
+  const altBlock = (letra, texto) => `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">${letra}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Alternativa ${letra}</div>
       </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción del paso</label>
-        <textarea
-          oninput="mapaActualizarPaso(${idx}, 'descripcion', this.value)"
-          style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-        >${escapeHtmlPlan(p.descripcion || '')}</textarea>
-      </div>
-
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px">
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsable sugerido</label>
-          <input type="text" value="${escapeHtmlPlan(p.responsable_sugerido || '')}"
-            oninput="mapaActualizarPaso(${idx}, 'responsable_sugerido', this.value)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Plazo (días)</label>
-          <input type="number" min="1" max="90" value="${p.plazo_dias || 14}"
-            oninput="mapaActualizarPaso(${idx}, 'plazo_dias', parseInt(this.value)||14)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Esfuerzo</label>
-          <select onchange="mapaActualizarPaso(${idx}, 'esfuerzo', this.value)"
-            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;background:#fff">
-            <option value="BAJO"${(p.esfuerzo||'')==='BAJO'?' selected':''}>BAJO</option>
-            <option value="MEDIO"${(p.esfuerzo||'MEDIO')==='MEDIO'?' selected':''}>MEDIO</option>
-            <option value="ALTO"${(p.esfuerzo||'')==='ALTO'?' selected':''}>ALTO</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  `).join('');
+      <textarea
+        oninput="mapaActualizarAlternativa('${letra}', this.value)"
+        placeholder="Texto de la alternativa ${letra}…"
+        style="width:100%;min-height:90px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+      >${escapeHtmlPlan(texto)}</textarea>
+    </div>`;
 
   document.getElementById('planBody').innerHTML = `
-    <!-- Header con clave del plan -->
-    <div style="margin-bottom:24px;padding:14px 16px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
+    <!-- Clave del plan (referencia técnica) -->
+    <div style="margin-bottom:20px;padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
       ${escapeHtmlPlan(e.cache_key)}
     </div>
 
@@ -9919,90 +9937,63 @@ function _mapaRenderEditor(){
           ${curado ? 'Plan curado' : 'Plan sin curar'}
         </div>
         <div style="font-size:12px;color:var(--muted)">
-          ${curado ? 'Este plan fue revisado por superadmin y está listo para mostrarse a los colegios.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
+          ${curado ? 'Esta fila fue revisada por superadmin y se ofrece como inspiración a los colegios.' : 'Marcala como curada cuando termines de revisar las alternativas.'}
         </div>
       </div>
     </div>
 
-    <!-- Metadatos de la línea -->
+    <!-- Alternativas A/B/C -->
     <div style="margin-bottom:24px">
       <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
-        Metadatos del plan
+        Alternativas para la causal "${escapeHtmlPlan(causalInfo.nombre)}"
       </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Título de la línea</label>
-        <input type="text" value="${escapeHtmlPlan(linea.titulo || '')}"
-          oninput="mapaActualizarLinea('titulo', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:14px;outline:none;font-weight:600"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px">
+        Estas tres alternativas se mostrarán al director del colegio como inspiración.
+        Editá solo para corregir errores tipográficos o de redacción menor.
       </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Foco (encabezado pedagógico)</label>
-        <input type="text" value="${escapeHtmlPlan(linea.foco || '')}"
-          oninput="mapaActualizarLinea('foco', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-      </div>
-
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción corta</label>
-        <textarea
-          oninput="mapaActualizarLinea('descripcion_corta', this.value)"
-          style="width:100%;min-height:60px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
-        >${escapeHtmlPlan(linea.descripcion_corta || '')}</textarea>
-      </div>
-
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Causa atacada (etiqueta visible)</label>
-        <input type="text" value="${escapeHtmlPlan(linea.causa_atacada || '')}"
-          oninput="mapaActualizarLinea('causa_atacada', this.value)"
-          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
-          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
-      </div>
+      ${altBlock('A', fila.alternativas.A)}
+      ${altBlock('B', fila.alternativas.B)}
+      ${altBlock('C', fila.alternativas.C)}
     </div>
 
-    <!-- Pasos -->
+    <!-- Notas del curador (internas) -->
     <div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
-          Pasos del plan (${pasos.length})
-        </div>
-        <button onclick="mapaAgregarPaso()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s"
-          onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
-          onmouseout="this.style.background='transparent';this.style.color='var(--accent)'">
-          + Agregar paso
-        </button>
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+        Notas internas del curador
       </div>
-      ${pasosHtml || '<p style="color:var(--muted);font-style:italic;padding:20px;text-align:center;background:var(--bg-soft,#f8f9fa);border-radius:8px">Sin pasos. Hacé click en "Agregar paso" para comenzar.</p>'}
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Solo visibles para superadmin. Útiles para dejar contexto, decisiones de redacción o pendientes.
+      </div>
+      <textarea
+        oninput="mapaActualizarNotas(this.value)"
+        placeholder="Notas internas (no visibles al colegio)…"
+        style="width:100%;min-height:80px;padding:11px 12px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;background:#fff"
+        onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+        onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+      >${escapeHtmlPlan(notas)}</textarea>
     </div>
   `;
 
   document.getElementById('planFooter').innerHTML = `
-    <span class="info" style="font-size:12px;color:var(--muted)">${k.accion || ''} · ${k.nivel} · ${k.causal}</span>
+    <span class="info" style="font-size:12px;color:var(--muted)">${escapeHtmlPlan(k.accion || '')} · ${k.nivel} · ${k.causal}</span>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
       <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
     </div>`;
 }
 
-/* Actualizaciones en memoria (no guardan hasta apretar "Guardar cambios") */
-function mapaActualizarLinea(campo, valor){
-  if(!MAPA_STATE.edicionActual) return;
-  MAPA_STATE.edicionActual.plan_data[0][campo] = valor;
+/* Updates en memoria (no persisten hasta apretar "Guardar cambios") */
+function mapaActualizarAlternativa(letra, valor){
+  const e = MAPA_STATE.edicionActual;
+  if(!e) return;
+  if(!Array.isArray(e.plan_data) || !e.plan_data[0]) return;
+  if(!e.plan_data[0].alternativas) e.plan_data[0].alternativas = {};
+  e.plan_data[0].alternativas[letra] = valor;
 }
 
-function mapaActualizarPaso(idx, campo, valor){
+function mapaActualizarNotas(valor){
   if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  if(!pasos[idx]) return;
-  pasos[idx][campo] = valor;
+  MAPA_STATE.edicionActual.notas_curador = valor;
 }
 
 function mapaToggleCurado(){
@@ -10011,40 +10002,12 @@ function mapaToggleCurado(){
   _mapaRenderEditor();
 }
 
-function mapaAgregarPaso(){
-  if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  const nuevoId = '1.' + (pasos.length + 1);
-  pasos.push({
-    id: nuevoId,
-    descripcion: '',
-    responsable_sugerido: '',
-    plazo_dias: 14,
-    esfuerzo: 'MEDIO'
-  });
-  _mapaRenderEditor();
-}
-
-function mapaEliminarPaso(idx){
-  if(!MAPA_STATE.edicionActual) return;
-  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
-  if(pasos.length <= 1){
-    showToast('Debe haber al menos un paso');
-    return;
-  }
-  if(!confirm('¿Eliminar este paso? Esta acción no se puede deshacer hasta que recargues sin guardar.')) return;
-  pasos.splice(idx, 1);
-  // Re-numerar IDs internos
-  pasos.forEach((p, i) => p.id = '1.' + (i+1));
-  _mapaRenderEditor();
-}
-
 function mapaCerrarEditor(){
   document.getElementById('planOverlay')?.classList.remove('show');
   document.getElementById('planDrawer')?.classList.remove('show');
   document.body.style.overflow = '';
   MAPA_STATE.edicionActual = null;
-  // Refrescar la vista del mapa para que se vean los cambios si se guardaron
+  // Refrescar la vista del mapa por si hubo cambios guardados
   if(currentPanel === 'mapa-acciones') renderMapaAcciones();
 }
 
@@ -10061,6 +10024,7 @@ async function mapaGuardarPlan(){
       .update({
         plan_data: e.plan_data,
         curado: e.curado === true,
+        notas_curador: e.notas_curador || null,
         updated_at: new Date().toISOString()
       })
       .eq('cache_key', e.cache_key)
@@ -10069,9 +10033,11 @@ async function mapaGuardarPlan(){
 
     if(error){
       console.error('[Mapa] Error guardando:', error);
-      // Si el error es por columna `curado` inexistente, dar guía clara
-      if(error.message && error.message.toLowerCase().includes('curado')){
-        showToast('Falta la columna `curado` en planes_cache. Ejecutá el SQL de migración primero.');
+      const msg = (error.message||'').toLowerCase();
+      if(msg.includes('notas_curador')){
+        showToast('Falta la columna `notas_curador` en planes_cache. Corré: alter table planes_cache add column notas_curador text;');
+      } else if(msg.includes('curado')){
+        showToast('Falta la columna `curado` en planes_cache. Corré la migración primero.');
       } else {
         showToast('Error al guardar: ' + error.message);
       }
@@ -10079,15 +10045,25 @@ async function mapaGuardarPlan(){
       return;
     }
 
-    // Actualizar el plan en MAPA_STATE.planes
+    // Actualizar la fila en MAPA_STATE.planes (la versión en memoria del listado)
     const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
-    if(idx >= 0) MAPA_STATE.planes[idx] = data;
+    if(idx >= 0){
+      // Conservar el shape liviano del listado pero reflejar lo que cambió
+      MAPA_STATE.planes[idx] = {
+        ...MAPA_STATE.planes[idx],
+        curado: data.curado,
+        updated_at: data.updated_at,
+        // mantenemos plan_data y notas_curador para no tener que re-fetchear si reabre
+        plan_data: data.plan_data,
+        notas_curador: data.notas_curador
+      };
+    }
 
-    showToast('✓ Plan guardado correctamente');
+    showToast('✓ Cambios guardados');
     mapaCerrarEditor();
   } catch(err){
     console.error('[Mapa] Excepción guardando:', err);
-    showToast('Error inesperado: ' + err.message);
+    showToast('Error inesperado: ' + (err.message||err));
     if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
   }
 }
