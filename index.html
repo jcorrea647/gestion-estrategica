@@ -9477,38 +9477,44 @@ async function abrirMapaAcciones(){
 }
 
 /* Carga los planes de planes_cache (solo los precomputados) con paginación
- * explícita para superar el límite por defecto de Supabase (1000 filas). */
+ * explícita para superar el límite por defecto de Supabase (1000 filas).
+ * NO trae `plan_data` (campo pesado): solo lo necesario para el listado.
+ * El plan completo se carga al abrir el editor de un plan específico. */
 async function _mapaCargarPlanes(){
   let planes = [];
   let pagina = 0;
   const tamPagina = 500;
   let hayMas = true;
+  let errorCapturado = null;
 
   while(hayMas){
     const desde = pagina * tamPagina;
     const hasta = desde + tamPagina - 1;
     const { data, error } = await sb
       .from('planes_cache')
-      .select('*')
+      .select('cache_key,curado,updated_at')
       .like('cache_key', 'precomp|%')
       .order('cache_key', { ascending: true })
       .range(desde, hasta);
 
     if(error){
       console.error('[Mapa] Error cargando planes:', error);
-      return planes;
+      errorCapturado = error;
+      break;
     }
 
     planes = planes.concat(data || []);
     hayMas = (data || []).length === tamPagina;
     pagina++;
-    if(pagina > 10){
-      console.warn('[Mapa] Más de 10 páginas, abortando paginación');
+    if(pagina > 30){
+      console.warn('[Mapa] Más de 30 páginas, abortando paginación');
       break;
     }
   }
 
   console.log('[Mapa] planes_cache cargados:', planes.length);
+  // Adjuntamos el error al array para que renderMapaAcciones lo muestre
+  if(errorCapturado) planes._error = errorCapturado;
   return planes;
 }
 
@@ -9567,6 +9573,26 @@ async function renderMapaAcciones(){
     MAPA_STATE.planes = await _mapaCargarPlanes();
   }
   const planes = MAPA_STATE.planes;
+
+  // Si la consulta devolvió error, mostrarlo en pantalla (no quedar en silencio)
+  if(planes._error){
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">🗺 Mapa de Acciones</div>
+        <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
+      </div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="icon">⚠️</div>
+          <div style="font-weight:500;margin-bottom:8px">Error cargando planes desde Supabase</div>
+          <div style="font-size:12px;color:var(--muted);max-width:480px;margin:0 auto 12px;word-break:break-word">
+            ${escapeHtmlPlan(planes._error.message || JSON.stringify(planes._error))}
+          </div>
+          <button class="btn-primary" onclick="MAPA_STATE.planes=[]; renderMapaAcciones();">Reintentar</button>
+        </div>
+      </div>`;
+    return;
+  }
 
   if(!planes.length){
     main.innerHTML = `
@@ -9758,6 +9784,28 @@ function escapeAttr(s){
 async function mapaAbrirEditor(cacheKey){
   const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
   if(!plan){ showToast('Plan no encontrado'); return; }
+
+  // Si no tenemos plan_data en memoria (el listado solo trae metadata para ser liviano),
+  // lo cargamos on-demand para esta fila específica.
+  if(!plan.plan_data){
+    try {
+      const { data, error } = await sb
+        .from('planes_cache')
+        .select('plan_data')
+        .eq('cache_key', cacheKey)
+        .maybeSingle();
+      if(error){
+        console.error('[Mapa] Error cargando plan_data:', error);
+        showToast('Error cargando el plan: ' + error.message);
+        return;
+      }
+      plan.plan_data = data?.plan_data || null;
+    } catch(err){
+      console.error('[Mapa] Excepción cargando plan_data:', err);
+      showToast('Error inesperado: ' + (err.message||err));
+      return;
+    }
+  }
 
   // Clonar para edición (no tocar el original hasta guardar)
   MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
