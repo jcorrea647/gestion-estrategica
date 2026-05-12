@@ -5856,7 +5856,7 @@ const PLAN_CSS = `
 .plan-progress-bar{width:100%;height:3px;border-radius:2px;background:var(--border);transition:background .25s}
 .plan-progress-step.done .plan-progress-bar{background:#7ED4A0}
 .plan-progress-step.current .plan-progress-bar{background:var(--accent2)}
-.plan-progress-label{font-size:14px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
+.plan-progress-label{font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
 .plan-progress-step.done .plan-progress-label{color:#2C7A4B}
 .plan-progress-step.current .plan-progress-label{color:var(--accent2);font-weight:600}
 
@@ -6192,6 +6192,14 @@ const PLAN_CSS = `
 .marco-mbe .marco-tag{background:var(--accent2); color:#fff}
 .marco-mbe .marco-bullet-icon{background:var(--accent2)}
 .marco-mbe .marco-titulo{color:var(--accent2)}
+.marco-cpeip{background:#DCE6F2; border:3px solid #2A5589}
+.marco-cpeip .marco-tag{background:#2A5589; color:#fff}
+.marco-cpeip .marco-bullet-icon{background:#2A5589}
+.marco-cpeip .marco-titulo{color:#1F3F66}
+.marco-sdpd{background:#D6E4EE; border:3px solid #1F6F8B}
+.marco-sdpd .marco-tag{background:#1F6F8B; color:#fff}
+.marco-sdpd .marco-bullet-icon{background:#1F6F8B}
+.marco-sdpd .marco-titulo{color:#175467}
 .marco-uc{background:#FAEFD7; border:3px solid var(--gold)}
 .marco-uc .marco-tag{background:var(--gold); color:#fff}
 .marco-uc .marco-bullet-icon{background:var(--gold)}
@@ -6259,65 +6267,18 @@ const CAUSAS_TAXONOMIA = {
   ]
 };
 
-/* Mapa de retro-compatibilidad: traduce códigos legacy y códigos antiguos C1-C14
- * a los nuevos códigos C1-C17 (vigentes desde Mayo 2026).
- * Usado al cargar borradores guardados con códigos o nombres antiguos. */
+/* Mapa de retro-compatibilidad: traduce códigos legacy a C1-C14
+ * Usado al cargar borradores guardados con códigos antiguos. */
 const CAUSAS_LEGACY_MAP = {
-  // Códigos string antiguos → nuevos C1-C17
-  'TIEMPO'      : 'C1',
-  'RECURSOS_MAT': 'C2',
-  'RECURSOS_HUM': 'C3',
-  'COMPETENCIAS': 'C4',
-  'COORDINACION': 'C5',
-  'DEFINICION'  : 'C6',
-  'DATOS'       : 'C7',
-  'EXTERNA'     : 'C9',   // Antes C8, ahora C9 (Causas externas)
-  'COMPROMISO'  : 'C14',  // Antes C9, ahora C14 (Compromiso docente)
-  'RESISTENCIA' : 'C13',  // Antes C10, ahora C13 (Resistencia cultural)
-  'COMUNIC_APOD': 'C16',  // Antes C11, ahora C16 (Comunicación con apoderados)
-  'INVOL_EST'   : 'C15',  // Antes C12, ahora C15 (Involucramiento Estudiantes)
-  'CONFLICTOS'  : 'C11',  // Antes C13 (eliminada), se mapea a C11 (Clima Laboral)
-  'LIDERAZGO'   : 'C10'   // Antes C14, ahora C10 (Liderazgo Intermedio)
+  'TIEMPO':'C1', 'RECURSOS_MAT':'C2', 'RECURSOS_HUM':'C3',
+  'COMPETENCIAS':'C4', 'COORDINACION':'C5', 'DEFINICION':'C6',
+  'DATOS':'C7', 'EXTERNA':'C8',
+  'COMPROMISO':'C9', 'RESISTENCIA':'C10', 'COMUNIC_APOD':'C11',
+  'INVOL_EST':'C12', 'CONFLICTOS':'C13', 'LIDERAZGO':'C14'
 };
-
-/* Mapa de retro-compatibilidad por NOMBRE de causal.
- * Para planes guardados que tienen la etiqueta textual en vez del código. */
-const CAUSAS_LEGACY_NOMBRES = {
-  'causa externa'                       : 'C9',
-  'causas externas'                     : 'C9',
-  'falta de compromiso docente'         : 'C14',
-  'compromiso docente'                  : 'C14',
-  'resistencia o cultura instalada'     : 'C13',
-  'resistencia cultural'                : 'C13',
-  'comunicación con apoderados'         : 'C16',
-  'comunicacion con apoderados'         : 'C16',
-  'bajo involucramiento estudiantes'    : 'C15',
-  'involucramiento estudiantes'         : 'C15',
-  'conflictos entre estamentos'         : 'C11',
-  'liderazgo intermedio débil'          : 'C10',
-  'liderazgo intermedio'                : 'C10',
-  'tiempo'                              : 'C1',
-  'recursos materiales'                 : 'C2',
-  'recursos humanos'                    : 'C3',
-  'competencias técnicas'               : 'C4',
-  'coordinación entre cargos'           : 'C5',
-  'definición poco clara'               : 'C6',
-  'datos / información'                 : 'C7',
-  'datos o información'                 : 'C7',
-  'evaluación y monitoreo'              : 'C8',
-  'clima laboral'                       : 'C11',
-  'comunicación interna'                : 'C12'
-};
-
-function planNormalizarCodigoCausa(codigo, etiqueta){
-  if(!codigo && !etiqueta) return codigo;
-  if(codigo && CAUSAS_LEGACY_MAP[codigo]) return CAUSAS_LEGACY_MAP[codigo];
-  if(etiqueta){
-    const norm = etiqueta.toLowerCase().trim();
-    if(CAUSAS_LEGACY_NOMBRES[norm]) return CAUSAS_LEGACY_NOMBRES[norm];
-  }
-  if(codigo && /^C(1[0-7]|[1-9])$/.test(codigo)) return codigo;
-  return codigo;
+function planNormalizarCodigoCausa(codigo){
+  if(!codigo) return codigo;
+  return CAUSAS_LEGACY_MAP[codigo] || codigo;
 }
 
 /* ====================== ESTADO ====================== */
@@ -7241,10 +7202,10 @@ async function renderPaso1Contexto(){
 
   // ── Configuración visual por tipo de fuente ──────────────────────────────
   const BRECHA_THEME = {
-    eid:     { headBg:'#E6F1FB', bodyBg:'#F3F8FD', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
-    uc:      { headBg:'#E1F5EE', bodyBg:'#F0FAF6', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
-    harvard: { headBg:'#FAEEDA', bodyBg:'#FDF7EC', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
-    default: { headBg:'#F1EFE8', bodyBg:'#F8F7F3', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
+    eid:     { headBg:'#E6F1FB', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
+    uc:      { headBg:'#E1F5EE', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
+    harvard: { headBg:'#FAEEDA', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
+    default: { headBg:'#F1EFE8', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
   };
   const BRECHA_ICON = { eid:'ti-certificate', uc:'ti-school', harvard:'ti-brain', default:'ti-chart-bar' };
 
@@ -7268,7 +7229,7 @@ async function renderPaso1Contexto(){
         ${stdPill}
         <span class="plan-brecha-diag" style="color:${th.diagColor}">${escapeHtmlPlan(b.diagnostico||'')}</span>
       </div>
-      <div class="plan-brecha-cuerpo" style="background:${th.bodyBg}">
+      <div class="plan-brecha-cuerpo">
         <div>
           <p class="plan-brecha-q">${qLabel}</p>
           <p class="plan-brecha-quote">${escapeHtmlPlan(b.que_dice||b.texto||'')}</p>
@@ -7289,7 +7250,7 @@ async function renderPaso1Contexto(){
         <span class="plan-brecha-source-badge" style="background:#B5D4F4;color:#042C53">Brecha ${i+1}</span>
         <span class="plan-brecha-diag" style="color:#0C447C">${escapeHtmlPlan((b.texto||'').split('.')[0].slice(0,60))}</span>
       </div>
-      <div class="plan-brecha-cuerpo" style="background:#F3F8FD">
+      <div class="plan-brecha-cuerpo">
         <p class="plan-brecha-quote">${escapeHtmlPlan(b.texto||'')}</p>
       </div>
     </div>`;
@@ -7670,7 +7631,7 @@ async function renderPaso4MarcoConceptual(){
       ${areaLabel ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
     </div>
     <h3>Marco conceptual</h3>
-    <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>cuatro fuentes</strong> que conversan entre sí: dos marcos normativos chilenos (Mineduc) y dos centros de investigación (uno chileno, uno internacional). Léelas antes de avanzar.</p>
+    <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>marcos normativos chilenos</strong> (MBD, MBE, CPEIP y, cuando aplica, el Sistema de Desarrollo Profesional Docente) y en <strong>dos centros de investigación</strong> (CEPPE-UC y Harvard). Léelas antes de avanzar.</p>
     <div id="planMarcoContenedor">
       <div class="plan-loading-inline">
         <div class="plan-loading-spin-sm"></div>
@@ -7690,7 +7651,7 @@ async function renderPaso4MarcoConceptual(){
   if(!cont) return; // drawer cerrado
 
   const mc = ficha?.marco_conceptual;
-  if(!mc || (!mc.mbd && !mc.mbe && !mc.uc && !mc.harvard)){
+  if(!mc || (!mc.mbd && !mc.mbe && !mc.cpeip && !mc.sdpd && !mc.uc && !mc.harvard)){
     cont.innerHTML = `<div class="marco-fallback">El marco conceptual para esta acción aún no está cargado en la base de conocimiento. Puedes continuar al estado actual de todas formas.</div>`;
     return;
   }
@@ -7705,6 +7666,8 @@ async function renderPaso4MarcoConceptual(){
       </li>`).join('');
     const tagLabel = key === 'mbd' ? 'MBD'
       : key === 'mbe' ? 'MBE'
+      : key === 'cpeip' ? 'CPEIP · MINEDUC'
+      : key === 'sdpd' ? 'SIST. DESARROLLO PROF. DOCENTE'
       : key === 'uc' ? 'CEPPE · UC'
       : 'HARVARD · ELMORE';
     return `
@@ -7723,6 +7686,8 @@ async function renderPaso4MarcoConceptual(){
     <div class="marco-grid">
       ${renderCard('mbd', 'marco-mbd')}
       ${renderCard('mbe', 'marco-mbe')}
+      ${renderCard('cpeip', 'marco-cpeip')}
+      ${renderCard('sdpd', 'marco-sdpd')}
       ${renderCard('uc', 'marco-uc')}
       ${renderCard('harvard', 'marco-harvard')}
     </div>
@@ -8195,12 +8160,6 @@ async function planConfirmar(){
         orden: i
       };
     });
-    // FIX 2026-05-11: borrar pasos previos antes de insertar los nuevos para evitar
-    // duplicación cuando el director regenera el plan o reconfirma desde el wizard.
-    // Si esta microacción ya tenía pasos (sesión anterior o reconfirmación), se reemplazan
-    // por los pasos finales del wizard actual. NO afecta a microacciones nuevas (delete con 0 filas).
-    const {error:eDel} = await sb.from('microacciones_pasos').delete().eq('microaccion_id', ma.id);
-    if(eDel) throw eDel;
     const {error:e2} = await sb.from('microacciones_pasos').insert(pasosPayload);
     if(e2) throw e2;
 
@@ -9048,8 +9007,7 @@ async function renderMisPlanes(){
       const cumplBar = cumpl === null
         ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
         : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
-      const respDisplay = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : 'Sin asignar');
-      const respClase = (!m.acuerdo_quien && !m.acuerdo_co) ? 'style="color:var(--muted)"' : '';
+      const respDisplay = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '<span style="color:var(--muted)">Sin asignar</span>');
       const areaPlan = _areaDeAccion(m.accion_id);
 
       html += `
@@ -9060,7 +9018,7 @@ async function renderMisPlanes(){
           <div>
             ${areaPlan ? `<div style="margin-bottom:5px">${_areaBadge(areaPlan)}</div>` : ''}
             <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted)">👤 <span ${respClase}>${escapeHtmlPlan(respDisplay)}</span></div>
+            <div style="font-size:11px;color:var(--muted)">👤 ${escapeHtmlPlan(respDisplay)}</div>
           </div>
           <div style="font-size:12px;color:var(--text)">${fmtMes(m.mes, true)}</div>
           <div>${_estadoBadge(m.estado)}</div>
@@ -9431,8 +9389,7 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
       ? '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin pasos cerrados</span>'
       : `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:40px;max-width:80px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
 
-    const respDisplay = v.acuerdo_quien || 'Sin asignar';
-    const respClase2 = !v.acuerdo_quien ? 'style="color:var(--muted)"' : '';
+    const respDisplay = v.acuerdo_quien || '<span style="color:var(--muted)">Sin asignar</span>';
 
     html += `
       <div onclick="bibliotecaAbrirVersion('${accionId}','${v.mes}')" 
@@ -9443,7 +9400,7 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
         <div>${_estadoBadge(v.estado)}</div>
         <div>${cumplBar}</div>
         <div style="font-size:12px;color:var(--text)">${numPasos} paso(s)</div>
-        <div style="font-size:12px;color:var(--text)">👤 <span ${respClase2}>${escapeHtmlPlan(respDisplay)}</span></div>
+        <div style="font-size:12px;color:var(--text)">👤 ${escapeHtmlPlan(respDisplay)}</div>
         <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
       </div>`;
   });
@@ -9463,43 +9420,28 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
  */
 
 const MAPA_NIVELES_INFO = {
-  L1: { etiqueta:'Inicial',       rango:'1-25%',  min: 1,  max: 25,  descripcion:'El proceso no existe o tiene debilidades críticas.' },
-  L2: { etiqueta:'Básico',        rango:'25-50%', min: 25, max: 50,  descripcion:'El proceso se realiza pero de forma irregular o mínima.' },
-  L3: { etiqueta:'En Desarrollo', rango:'50-70%', min: 50, max: 70,  descripcion:'Se están instalando prácticas sistemáticas de mejora.' },
-  L4: { etiqueta:'Satisfactorio', rango:'70-90%', min: 70, max: 90,  descripcion:'El proceso cumple con el estándar esperado de forma regular.' },
-  L5: { etiqueta:'Consolidado',   rango:'≥90%',   min: 90, max: 100, descripcion:'Práctica institucionalizada y de alta calidad que sirve de modelo.' }
+  L1: { etiqueta:'Inicial',                  rango:'0-30%'  },
+  L2: { etiqueta:'Estandarización inicial',  rango:'31-50%' },
+  L3: { etiqueta:'Articulación institucional', rango:'51-70%' },
+  L4: { etiqueta:'Análisis y mejora',        rango:'71-89%' },
+  L5: { etiqueta:'Cultura institucional',    rango:'90-100%' }
 };
 
-// Helper único: convierte pct → código de nivel (regla: borde superior pertenece al nivel inferior, L5 es ≥90%)
-function pctANivel(pct){
-  const p = pct || 0;
-  if (p <= 25) return 'L1';
-  if (p <= 50) return 'L2';
-  if (p <= 70) return 'L3';
-  if (p <  90) return 'L4';
-  return 'L5';
-}
-
 const MAPA_CAUSAS_INFO = {
-  // Estructurales (9)
-  C1:  { grupo:'estructural', nombre:'Tiempo',                       descripcion:'La acción no se ejecuta o se ejecuta parcialmente porque las horas disponibles del equipo son insuficientes o están saturadas con otras prioridades.' },
-  C2:  { grupo:'estructural', nombre:'Recursos materiales',          descripcion:'Faltan los insumos físicos, tecnológicos o financieros necesarios para implementar la acción.' },
-  C3:  { grupo:'estructural', nombre:'Recursos humanos',             descripcion:'No hay personas suficientes o disponibles para ejecutar la acción, o las que están tienen carga excesiva por otros frentes.' },
-  C4:  { grupo:'estructural', nombre:'Competencias técnicas',        descripcion:'El equipo responsable no domina las habilidades, metodologías o conocimientos específicos que la acción requiere.' },
-  C5:  { grupo:'estructural', nombre:'Coordinación entre cargos',    descripcion:'La acción involucra a varios roles que no logran articularse para definir quién hace qué, cuándo y cómo.' },
-  C6:  { grupo:'estructural', nombre:'Definición poco clara',        descripcion:'La acción está formulada de forma ambigua: no se sabe qué cuenta como cumplida, quién es responsable, ni cuál es el estado de éxito.' },
-  C7:  { grupo:'estructural', nombre:'Datos o información',          descripcion:'No se cuenta con la información necesaria para tomar decisiones sobre la acción, o los datos no son confiables.' },
-  C8:  { grupo:'estructural', nombre:'Evaluación y monitoreo',       descripcion:'No existen mecanismos sistemáticos para revisar si la acción está avanzando, lo que impide ajustar a tiempo.' },
-  C9:  { grupo:'estructural', nombre:'Causas externas',              descripcion:'Factores fuera del control directo del establecimiento: normativas, decisiones del sostenedor, contexto territorial.' },
-  // Relacionales (8)
-  C10: { grupo:'relacional',  nombre:'Liderazgo Intermedio',         descripcion:'Los jefes técnicos, de departamento o de ciclo no logran instalar, sostener o supervisar la acción en sus equipos.' },
-  C11: { grupo:'relacional',  nombre:'Clima Laboral',                descripcion:'Las tensiones, conflictos o desmotivación entre los adultos del establecimiento dificultan trabajar juntos en la acción.' },
-  C12: { grupo:'relacional',  nombre:'Comunicación interna',         descripcion:'Los mensajes, decisiones y lineamientos no circulan bien dentro del establecimiento entre los distintos actores.' },
-  C13: { grupo:'relacional',  nombre:'Resistencia cultural',         descripcion:'La práctica propuesta choca con creencias o costumbres instaladas en el establecimiento.' },
-  C14: { grupo:'relacional',  nombre:'Compromiso docente',           descripcion:'Un grupo significativo de docentes no se involucra activamente con la acción.' },
-  C15: { grupo:'relacional',  nombre:'Involucramiento Estudiantes',  descripcion:'Los estudiantes no se vinculan con la acción, la ven ajena a su experiencia o no se sienten convocados.' },
-  C16: { grupo:'relacional',  nombre:'Comunicación con apoderados',  descripcion:'Las familias no reciben información clara sobre la acción o no responden a los canales habituales.' },
-  C17: { grupo:'relacional',  nombre:'Compromiso de apoderados',     descripcion:'Las familias no se vinculan con la acción o asumen una postura contraria a lo que promueve el establecimiento.' }
+  C1:  { grupo:'estructural', nombre:'Tiempo' },
+  C2:  { grupo:'estructural', nombre:'Recursos materiales' },
+  C3:  { grupo:'estructural', nombre:'Recursos humanos' },
+  C4:  { grupo:'estructural', nombre:'Competencias técnicas' },
+  C5:  { grupo:'estructural', nombre:'Coordinación entre cargos' },
+  C6:  { grupo:'estructural', nombre:'Definición poco clara' },
+  C7:  { grupo:'estructural', nombre:'Datos / información' },
+  C8:  { grupo:'estructural', nombre:'Causa externa' },
+  C9:  { grupo:'relacional',  nombre:'Falta de compromiso docente' },
+  C10: { grupo:'relacional',  nombre:'Resistencia o cultura instalada' },
+  C11: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
+  C12: { grupo:'relacional',  nombre:'Bajo involucramiento estudiantes' },
+  C13: { grupo:'relacional',  nombre:'Conflictos entre estamentos' },
+  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' }
 };
 
 // Estado del módulo
@@ -9525,179 +9467,72 @@ async function abrirMapaAcciones(){
 /* Carga los planes de planes_cache (solo los precomputados) con paginación
  * explícita para superar el límite por defecto de Supabase (1000 filas). */
 async function _mapaCargarPlanes(){
-  // Cargar las 3 categor\u00edas (ficha, nivel, causal) en queries separadas
-  // porque el operador .or() de Supabase no maneja bien el car\u00e1cter '|'
-  // que est\u00e1 dentro de los patrones LIKE.
-  const cargarPorPrefijo = async (prefijo) => {
-    let resultado = [];
-    let pagina = 0;
-    const tamPagina = 1000;
-    let hayMas = true;
-    while(hayMas){
-      const desde = pagina * tamPagina;
-      const hasta = desde + tamPagina - 1;
-      const { data, error } = await sb
-        .from('planes_cache')
-        .select('*')
-        .like('cache_key', prefijo + '|%')
-        .order('cache_key', { ascending: true })
-        .range(desde, hasta);
-      if(error){
-        console.error('[Mapa] Error cargando ' + prefijo + ':', error);
-        return resultado;
-      }
-      resultado = resultado.concat(data || []);
-      hayMas = (data || []).length === tamPagina;
-      pagina++;
-      if(pagina > 10){
-        console.warn('[Mapa] M\u00e1s de 10 p\u00e1ginas en ' + prefijo + ', abortando');
-        break;
-      }
+  let planes = [];
+  let pagina = 0;
+  const tamPagina = 500;
+  let hayMas = true;
+
+  while(hayMas){
+    const desde = pagina * tamPagina;
+    const hasta = desde + tamPagina - 1;
+    const { data, error } = await sb
+      .from('planes_cache')
+      .select('*')
+      .like('cache_key', 'precomp|%')
+      .order('cache_key', { ascending: true })
+      .range(desde, hasta);
+
+    if(error){
+      console.error('[Mapa] Error cargando planes:', error);
+      return planes;
     }
-    return resultado;
-  };
 
-  const [fichas, niveles, causales] = await Promise.all([
-    cargarPorPrefijo('ficha'),
-    cargarPorPrefijo('nivel'),
-    cargarPorPrefijo('causal')
-  ]);
-  let planes = [...fichas, ...niveles, ...causales];
-
-  console.log('[Mapa] Registros cat\u00e1logo cargados:', planes.length,
-              '(fichas:', fichas.length, ', niveles:', niveles.length, ', causales:', causales.length, ')');
-
-  // Si el usuario es director, hacer merge con sus personalizaciones de planes_director
-  const rol = SESSION.user?.rol;
-  const colegioId = SESSION.colegioActivo;
-  if(rol === 'director' && colegioId){
-    try {
-      const { data: personalizados, error: errPers } = await sb
-        .from('planes_director')
-        .select('*')
-        .eq('colegio_id', colegioId);
-      if(errPers){
-        console.warn('[Mapa] Error cargando planes_director, se muestra solo cat\u00e1logo:', errPers.message);
-      } else if(personalizados && personalizados.length > 0){
-        // Indexar personalizados por cache_key
-        const idxPers = {};
-        personalizados.forEach(p => { idxPers[p.cache_key] = p; });
-        // Reemplazar en el array de planes la versi\u00f3n del cat\u00e1logo por la personalizada,
-        // manteniendo el cache_key como referencia. Marcamos con _esPersonalizado=true.
-        planes = planes.map(pCatalogo => {
-          const pers = idxPers[pCatalogo.cache_key];
-          if(pers){
-            return {
-              ...pCatalogo,
-              plan_data: pers.plan_data !== null ? pers.plan_data : pCatalogo.plan_data,
-              ficha: pers.ficha !== null ? pers.ficha : pCatalogo.ficha,
-              curado: pers.curado,
-              updated_at: pers.updated_at,
-              _esPersonalizado: true,
-              _personalizadoId: pers.id
-            };
-          }
-          return { ...pCatalogo, _esPersonalizado: false };
-        });
-        console.log('[Mapa] Aplicadas', personalizados.length, 'personalizaciones del colegio', colegioId);
-      } else {
-        // Marcar todos como no personalizados
-        planes = planes.map(p => ({ ...p, _esPersonalizado: false }));
-      }
-    } catch(ex){
-      console.warn('[Mapa] Excepci\u00f3n al cargar planes_director:', ex.message);
+    planes = planes.concat(data || []);
+    hayMas = (data || []).length === tamPagina;
+    pagina++;
+    if(pagina > 10){
+      console.warn('[Mapa] Más de 10 páginas, abortando paginación');
+      break;
     }
   }
 
+  console.log('[Mapa] planes_cache cargados:', planes.length);
   return planes;
 }
 
-/* Parsea cache_key del nuevo modelo → estructura tipada
- * Formatos soportados:
- *   ficha|{accion_id}                          → {tipo:'ficha', accionId}
- *   nivel|{accion_id}|{L1-L5}|{ambito}         → {tipo:'nivel', accionId, nivel, ambito}
- *   causal|{accion_id}|{L1-L5}|{C1-C17}        → {tipo:'causal', accionId, nivel, causal}
- */
+/* Parsea cache_key → {accion, nivel, causal} */
 function _mapaParsearKey(cacheKey){
   const partes = (cacheKey || '').split('|');
-  if(partes.length < 2) return null;
-  const tipo = partes[0];
-  if(tipo === 'ficha' && partes.length === 2){
-    return { tipo:'ficha', accionId: partes[1] };
-  }
-  if(tipo === 'nivel' && partes.length === 4){
-    return { tipo:'nivel', accionId: partes[1], nivel: partes[2], ambito: partes[3] };
-  }
-  if(tipo === 'causal' && partes.length === 4){
-    return { tipo:'causal', accionId: partes[1], nivel: partes[2], causal: partes[3] };
-  }
-  return null;
+  if(partes.length !== 4 || partes[0] !== 'precomp') return null;
+  return { accion: partes[1], nivel: partes[2], causal: partes[3] };
 }
 
-/* Agrupa registros por acción con estructura jerárquica:
- *   grupos[accionId] = { accionId, accionNombre, area, ficha,
- *     niveles: { L1: { 'Gestión':r, 'Aula':r }, ... },
- *     causales: { L1: { C1:r, C2:r, ... }, ... } }
- */
-function _mapaAgrupar(registros){
-  const grupos = {};
-
-  registros.forEach(r => {
-    const k = _mapaParsearKey(r.cache_key);
+/* Agrupa planes por acción y nivel */
+function _mapaAgrupar(planes){
+  const grupos = {}; // { accionNombre: { L1: [{plan, causal}, ...], L2: [...] } }
+  planes.forEach(p => {
+    const k = _mapaParsearKey(p.cache_key);
     if(!k) return;
-
-    if(!grupos[k.accionId]){
-      grupos[k.accionId] = {
-        accionId: k.accionId,
-        accionNombre: k.accionId,
-        area: '',
-        ficha: null,
-        niveles: { L1:{}, L2:{}, L3:{}, L4:{}, L5:{} },
-        causales: { L1:{}, L2:{}, L3:{}, L4:{}, L5:{} }
-      };
-    }
-
-    const g = grupos[k.accionId];
-
-    if(k.tipo === 'ficha'){
-      g.ficha = r;
-      g.accionNombre = r.ficha?.accion_nombre || k.accionId;
-      g.area = r.ficha?.area || '';
-    } else if(k.tipo === 'nivel'){
-      if(g.niveles[k.nivel]) g.niveles[k.nivel][k.ambito] = r;
-    } else if(k.tipo === 'causal'){
-      if(g.causales[k.nivel]) g.causales[k.nivel][k.causal] = r;
-    }
+    if(!grupos[k.accion]) grupos[k.accion] = {};
+    if(!grupos[k.accion][k.nivel]) grupos[k.accion][k.nivel] = [];
+    grupos[k.accion][k.nivel].push({ plan: p, causal: k.causal });
   });
-
+  // Ordenar causales dentro de cada nivel: C1, C2, ..., C14
+  Object.values(grupos).forEach(porNivel => {
+    Object.values(porNivel).forEach(arr => {
+      arr.sort((a,b) => {
+        const na = parseInt((a.causal||'').replace('C',''), 10) || 99;
+        const nb = parseInt((b.causal||'').replace('C',''), 10) || 99;
+        return na - nb;
+      });
+    });
+  });
   return grupos;
 }
 
-/* Cuenta cuántos registros de un grupo están curados.
- * Retorna { curados, total, pct } */
-function _mapaContarCurados(grupo){
-  let curados = 0;
-  let total = 0;
-
-  if(grupo.ficha){
-    total++;
-    if(grupo.ficha.curado === true) curados++;
-  }
-  Object.values(grupo.niveles || {}).forEach(porAmbito => {
-    Object.values(porAmbito).forEach(r => {
-      total++;
-      if(r.curado === true) curados++;
-    });
-  });
-  Object.values(grupo.causales || {}).forEach(porCausal => {
-    Object.values(porCausal).forEach(r => {
-      total++;
-      if(r.curado === true) curados++;
-    });
-  });
-
-  const pct = total > 0 ? Math.round(curados / total * 100) : 0;
-  return { curados, total, pct };
+/* Cuenta curados en un array de {plan, causal} */
+function _mapaContarCurados(arr){
+  return (arr || []).filter(x => x.plan?.curado === true).length;
 }
 
 /* Render principal del Mapa de Acciones */
@@ -9705,60 +9540,62 @@ async function renderMapaAcciones(){
   const main = document.getElementById('mainContent');
   if(!main) return;
 
+  // Loading inicial
   main.innerHTML = `
     <div class="page-header">
       <div class="page-title">🗺 Mapa de Acciones</div>
-      <div class="page-sub">Catálogo institucional · Ficha + 5 niveles × 2 ámbitos + 17 causales × 5 niveles</div>
+      <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
     </div>
     <div class="card" style="padding:30px;text-align:center;color:var(--muted)">
-      <div style="font-size:13px">Cargando catálogo de acciones…</div>
+      <div style="font-size:13px">Cargando planes pre-computados…</div>
     </div>`;
 
+  // Cargar planes si no están en memoria
   if(!MAPA_STATE.planes.length){
     MAPA_STATE.planes = await _mapaCargarPlanes();
   }
-  const registros = MAPA_STATE.planes;
+  const planes = MAPA_STATE.planes;
 
-  if(!registros.length){
+  if(!planes.length){
     main.innerHTML = `
       <div class="page-header">
         <div class="page-title">🗺 Mapa de Acciones</div>
-        <div class="page-sub">Catálogo institucional</div>
+        <div class="page-sub">Curación de planes pre-computados · Vista institucional</div>
       </div>
       <div class="card">
         <div class="empty-state">
           <div class="icon">📋</div>
-          <div style="font-weight:500;margin-bottom:8px">No hay acciones cargadas en el catálogo</div>
-          <div style="font-size:12px;color:var(--muted)">Ejecutá los SQL de carga de acciones para poblar la tabla <code>planes_cache</code>.</div>
+          <div style="font-weight:500;margin-bottom:8px">No hay planes pre-computados en la base</div>
+          <div style="font-size:12px;color:var(--muted)">Asegurate de haber cargado los 1.470 planes en la tabla <code>planes_cache</code>.</div>
         </div>
       </div>`;
     return;
   }
 
-  const grupos = _mapaAgrupar(registros);
-  const accionesOrdenadas = Object.values(grupos).sort((a,b) => a.accionNombre.localeCompare(b.accionNombre));
+  const grupos = _mapaAgrupar(planes);
+  const accionesOrdenadas = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
 
-  const totalRegistros = registros.length;
-  const totalCurados = registros.filter(r => r.curado === true).length;
-  const pctCurado = totalRegistros > 0 ? Math.round(totalCurados / totalRegistros * 100) : 0;
-  const accionesCompletas = accionesOrdenadas.filter(g => _mapaContarCurados(g).total >= 96).length;
+  // Stats globales
+  const totalPlanes = planes.length;
+  const totalCurados = planes.filter(p => p.curado === true).length;
+  const pctCurado = totalPlanes > 0 ? Math.round(totalCurados / totalPlanes * 100) : 0;
 
   let html = `
     <div class="page-header">
       <div class="page-title">🗺 Mapa de Acciones</div>
-      <div class="page-sub">Catálogo institucional · ${totalRegistros} registros · todos los colegios ven la versión curada</div>
+      <div class="page-sub">Curación institucional · ${totalPlanes} planes · todos los colegios ven la versión curada</div>
     </div>
 
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-val">${accionesOrdenadas.length}</div>
-        <div class="kpi-label">Acciones cargadas</div>
-        <div class="kpi-badge">de 20 totales del PME</div>
+        <div class="kpi-label">Acciones</div>
+        <div class="kpi-badge">21 acciones del PME</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-val">${accionesCompletas}</div>
-        <div class="kpi-label">Acciones completas</div>
-        <div class="kpi-badge">≥96 registros cada una</div>
+        <div class="kpi-val">${totalPlanes}</div>
+        <div class="kpi-label">Planes pre-computados</div>
+        <div class="kpi-badge">21 × 5 niveles × 14 causales</div>
       </div>
       <div class="kpi-card verde">
         <div class="kpi-val">${totalCurados}</div>
@@ -9768,7 +9605,7 @@ async function renderMapaAcciones(){
       <div class="kpi-card ${pctCurado>=70?'verde':pctCurado>=40?'amarillo':'rojo'}">
         <div class="kpi-val">${pctCurado}%</div>
         <div class="kpi-label">Avance curación</div>
-        <div class="kpi-badge">${totalRegistros - totalCurados} pendientes</div>
+        <div class="kpi-badge">${totalPlanes - totalCurados} pendientes</div>
       </div>
     </div>
 
@@ -9780,165 +9617,95 @@ async function renderMapaAcciones(){
     </div>
   `;
 
-  accionesOrdenadas.forEach(grupo => {
-    const c = _mapaContarCurados(grupo);
-    const expandidaAccion = MAPA_STATE.accionesExpandidas.has(grupo.accionId);
+  // Vista jerárquica: acción → nivel → causal
+  accionesOrdenadas.forEach(accionNombre => {
+    const porNivel = grupos[accionNombre];
+    const totalAccion = Object.values(porNivel).reduce((s,arr) => s + arr.length, 0);
+    const curadosAccion = Object.values(porNivel).reduce((s,arr) => s + _mapaContarCurados(arr), 0);
+    const expandidaAccion = MAPA_STATE.accionesExpandidas.has(accionNombre);
+    const pctAccion = totalAccion > 0 ? Math.round(curadosAccion/totalAccion*100) : 0;
 
     html += `
       <div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
-        <div onclick="mapaToggleAccion('${escapeAttr(grupo.accionId)}')" style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;background:${expandidaAccion?'var(--bg-soft,#f8f9fa)':'#fff'};border-bottom:${expandidaAccion?'1px solid var(--border)':'none'};transition:background .12s">
+        <div onclick="mapaToggleAccion('${escapeAttr(accionNombre)}')" style="padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;background:${expandidaAccion?'var(--bg-soft,#f8f9fa)':'#fff'};border-bottom:${expandidaAccion?'1px solid var(--border)':'none'};transition:background .12s"
+             onmouseover="if(!${expandidaAccion})this.style.background='var(--bg-soft,#f8f9fa)'"
+             onmouseout="if(!${expandidaAccion})this.style.background='#fff'">
           <div style="font-size:18px;color:var(--muted);transform:${expandidaAccion?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:18px">›</div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(grupo.accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:3px">${escapeHtmlPlan(grupo.area || 'Sin área')} · ${c.total} registros</div>
+            <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(accionNombre)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${Object.keys(porNivel).length} niveles activos</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:200px">
             <div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
-              <div style="width:${c.pct}%;height:100%;background:${c.pct>=70?'#10b981':c.pct>=40?'#f59e0b':'#9ca3af'};transition:width .3s"></div>
+              <div style="width:${pctAccion}%;height:100%;background:${pctAccion>=70?'#10b981':pctAccion>=40?'#f59e0b':'#9ca3af'};transition:width .3s"></div>
             </div>
-            <div style="font-size:12px;font-weight:600;color:var(--text);min-width:60px;text-align:right">${c.curados}/${c.total}</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);min-width:60px;text-align:right">
+              ${curadosAccion}/${totalAccion}
+            </div>
           </div>
         </div>
-        ${expandidaAccion ? _mapaRenderContenidoAccion(grupo) : ''}
+        ${expandidaAccion ? _mapaRenderNiveles(accionNombre, porNivel) : ''}
       </div>`;
   });
 
   main.innerHTML = html;
 }
 
-/* Renderiza el contenido completo de una acción expandida: ficha + niveles + causales */
-function _mapaRenderContenidoAccion(grupo){
+/* Renderiza los niveles de una acción expandida */
+function _mapaRenderNiveles(accionNombre, porNivel){
+  const nivelesOrdenados = ['L1','L2','L3','L4','L5'].filter(n => porNivel[n]?.length);
   let html = '<div style="padding:0">';
-
-  if(grupo.ficha){
-    const curado = grupo.ficha.curado === true;
-    html += `
-      <div style="border-top:1px solid var(--border-light,#f0f0f0);background:#f9fafb">
-        <div onclick="mapaAbrirEditor('${escapeAttr(grupo.ficha.cache_key)}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
-          <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:var(--text)">📋 Ficha de la acción</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">Área, objetivo, fórmula, evidencia, marco normativo</div>
-          </div>
-          <div style="color:var(--muted);font-size:14px">›</div>
-        </div>
-      </div>`;
-  }
-
-  const nivelesConContenido = ['L1','L2','L3','L4','L5'].filter(n =>
-    Object.keys(grupo.niveles[n] || {}).length > 0
-  );
-
-  nivelesConContenido.forEach(nivelCodigo => {
-    const porAmbito = grupo.niveles[nivelCodigo];
+  nivelesOrdenados.forEach(nivelCodigo => {
+    const arr = porNivel[nivelCodigo];
     const info = MAPA_NIVELES_INFO[nivelCodigo];
-    const ambitos = Object.keys(porAmbito);
-    const total = ambitos.length;
-    const curados = ambitos.filter(a => porAmbito[a].curado === true).length;
+    const total = arr.length;
+    const curados = _mapaContarCurados(arr);
     const pct = total > 0 ? Math.round(curados/total*100) : 0;
-    const claveNivel = grupo.accionId + '::nivel::' + nivelCodigo;
+    const claveNivel = accionNombre + '::' + nivelCodigo;
     const expandida = MAPA_STATE.nivelesExpandidos.has(claveNivel);
 
     html += `
       <div style="border-top:1px solid var(--border-light,#f0f0f0)">
-        <div onclick="mapaToggleNivel('${escapeAttr(grupo.accionId)}','nivel::${nivelCodigo}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s">
+        <div onclick="mapaToggleNivel('${escapeAttr(accionNombre)}','${nivelCodigo}')" style="padding:11px 18px 11px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s"
+             onmouseover="if(!${expandida})this.style.background='#fafafa'"
+             onmouseout="if(!${expandida})this.style.background='#fff'">
           <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:var(--text)">🎯 ${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">Pasos por ámbito · Rango ${info.rango}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${total} causales</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:180px">
             <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
               <div style="width:${pct}%;height:100%;background:${pct>=70?'#10b981':pct>=40?'#f59e0b':'#9ca3af'}"></div>
             </div>
-            <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">${curados}/${total}</div>
+            <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">
+              ${curados}/${total}
+            </div>
           </div>
         </div>
-        ${expandida ? _mapaRenderAmbitos(grupo.accionId, nivelCodigo, porAmbito) : ''}
-      </div>`;
-  });
-
-  const causalesPresentes = new Set();
-  ['L1','L2','L3','L4','L5'].forEach(n => {
-    Object.keys(grupo.causales[n] || {}).forEach(c => causalesPresentes.add(c));
-  });
-  const causalesOrdenadas = Array.from(causalesPresentes).sort((a,b) => {
-    const na = parseInt(a.replace('C',''), 10) || 99;
-    const nb = parseInt(b.replace('C',''), 10) || 99;
-    return na - nb;
-  });
-
-  if(causalesOrdenadas.length){
-    html += `<div style="padding:11px 18px 6px 50px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:#fafafa;border-top:1px solid var(--border-light,#f0f0f0)">⚙️ Causales × Niveles (3 alternativas A/B/C por celda)</div>`;
-    causalesOrdenadas.forEach(causalCodigo => {
-      const info = MAPA_CAUSAS_INFO[causalCodigo] || { nombre: causalCodigo, grupo: '' };
-      let totalCausal = 0, curadosCausal = 0;
-      ['L1','L2','L3','L4','L5'].forEach(n => {
-        if(grupo.causales[n][causalCodigo]){
-          totalCausal++;
-          if(grupo.causales[n][causalCodigo].curado === true) curadosCausal++;
-        }
-      });
-      const pct = totalCausal > 0 ? Math.round(curadosCausal/totalCausal*100) : 0;
-      const claveCausal = grupo.accionId + '::causal::' + causalCodigo;
-      const expandida = MAPA_STATE.nivelesExpandidos.has(claveCausal);
-
-      html += `
-        <div style="border-top:1px solid var(--border-light,#f0f0f0)">
-          <div onclick="mapaToggleNivel('${escapeAttr(grupo.accionId)}','causal::${causalCodigo}')" style="padding:9px 18px 9px 50px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${expandida?'#fafafa':'#fff'};transition:background .12s">
-            <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
-            <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causalCodigo}</div>
-            <div style="flex:1">
-              <div style="font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
-              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:1px">${info.grupo || ''}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;min-width:180px">
-              <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
-                <div style="width:${pct}%;height:100%;background:${pct>=70?'#10b981':pct>=40?'#f59e0b':'#9ca3af'}"></div>
-              </div>
-              <div style="font-size:11px;color:var(--text);min-width:55px;text-align:right">${curadosCausal}/${totalCausal}</div>
-            </div>
-          </div>
-          ${expandida ? _mapaRenderCausalNiveles(grupo.accionId, causalCodigo, grupo.causales) : ''}
-        </div>`;
-    });
-  }
-
-  html += '</div>';
-  return html;
-}
-
-/* Renderiza los ámbitos de un nivel expandido */
-function _mapaRenderAmbitos(accionId, nivelCodigo, porAmbito){
-  let html = '<div style="background:#fcfcfc">';
-  Object.entries(porAmbito).forEach(([ambito, plan]) => {
-    const curado = plan.curado === true;
-    html += `
-      <div onclick="mapaAbrirEditor('${escapeAttr(plan.cache_key)}')" style="padding:9px 18px 9px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
-        <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(ambito)}</div>
-        <div style="font-size:10px;color:var(--muted)">3 pasos</div>
-        <div style="color:var(--muted);font-size:14px">›</div>
+        ${expandida ? _mapaRenderCausales(accionNombre, nivelCodigo, arr) : ''}
       </div>`;
   });
   html += '</div>';
   return html;
 }
 
-/* Renderiza los 5 niveles de una causal expandida */
-function _mapaRenderCausalNiveles(accionId, causalCodigo, causalesPorNivel){
+/* Renderiza las causales (filas finales clickeables que abren editor) */
+function _mapaRenderCausales(accionNombre, nivelCodigo, arr){
   let html = '<div style="background:#fcfcfc">';
-  ['L1','L2','L3','L4','L5'].forEach(nivelCodigo => {
-    const plan = causalesPorNivel[nivelCodigo]?.[causalCodigo];
-    if(!plan) return;
-    const info = MAPA_NIVELES_INFO[nivelCodigo];
+  arr.forEach(({plan, causal}) => {
+    const info = MAPA_CAUSAS_INFO[causal] || { nombre: causal, grupo: '' };
     const curado = plan.curado === true;
+    const cacheKey = plan.cache_key;
+
     html += `
-      <div onclick="mapaAbrirEditor('${escapeAttr(plan.cache_key)}')" style="padding:9px 18px 9px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s">
+      <div onclick="mapaAbrirEditor('${escapeAttr(cacheKey)}')" style="padding:10px 18px 10px 82px;border-top:1px solid var(--border-light,#f5f5f5);cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .12s"
+           onmouseover="this.style.background='#f3f4f6'"
+           onmouseout="this.style.background='transparent'">
         <div style="font-size:16px;width:20px;text-align:center">${curado ? '✅' : '⚪'}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${nivelCodigo}</div>
-        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.etiqueta)} · ${info.rango}</div>
-        <div style="font-size:10px;color:var(--muted)">3 alternativas A/B/C</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);min-width:30px">${causal}</div>
+        <div style="flex:1;font-size:13px;color:var(--text)">${escapeHtmlPlan(info.nombre)}</div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${info.grupo}</div>
         <div style="color:var(--muted);font-size:14px">›</div>
       </div>`;
   });
@@ -9977,30 +9744,23 @@ function escapeAttr(s){
 
 /* Abre el drawer editor con el plan seleccionado */
 async function mapaAbrirEditor(cacheKey){
-  const registro = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
-  if(!registro){ showToast('Registro no encontrado'); return; }
+  const plan = MAPA_STATE.planes.find(p => p.cache_key === cacheKey);
+  if(!plan){ showToast('Plan no encontrado'); return; }
 
-  const k = _mapaParsearKey(cacheKey);
-  if(!k){ showToast('Formato cache_key no reconocido'); return; }
+  // Clonar para edición (no tocar el original hasta guardar)
+  MAPA_STATE.edicionActual = JSON.parse(JSON.stringify(plan));
+  // Garantizar estructura mínima de plan_data
+  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data) || MAPA_STATE.edicionActual.plan_data.length === 0){
+    MAPA_STATE.edicionActual.plan_data = [{
+      id:'linea_1', titulo:'', foco:'', descripcion_corta:'',
+      causa_atacada:'', pasos:[]
+    }];
+  }
+  if(!Array.isArray(MAPA_STATE.edicionActual.plan_data[0].pasos)){
+    MAPA_STATE.edicionActual.plan_data[0].pasos = [];
+  }
 
-  // Clonar plan_data y ficha para que editar no toque el original hasta guardar
-  const planDataClonado = registro.plan_data ? JSON.parse(JSON.stringify(registro.plan_data)) : null;
-  const fichaClonada = registro.ficha ? JSON.parse(JSON.stringify(registro.ficha)) : null;
-
-  MAPA_STATE.edicionActual = {
-    cache_key: cacheKey,
-    tipo:      k.tipo,
-    accionId:  k.accionId,
-    nivel:     k.nivel || null,
-    ambito:    k.ambito || null,
-    causal:    k.causal || null,
-    plan_data: planDataClonado,
-    ficha:     fichaClonada,
-    curado:    registro.curado === true,
-    _updatedAt: registro.updated_at || null,
-    _dirty:    false
-  };
-
+  // Garantizar que el drawer del plan exista (reusamos el drawer del módulo plan)
   if(typeof asegurarDrawer === 'function') asegurarDrawer();
   document.getElementById('planOverlay').classList.add('show');
   document.getElementById('planDrawer').classList.add('show');
@@ -10012,303 +9772,203 @@ async function mapaAbrirEditor(cacheKey){
 function _mapaRenderEditor(){
   const e = MAPA_STATE.edicionActual;
   if(!e) return;
-  const curado = e.curado === true;
+  const k = _mapaParsearKey(e.cache_key) || {};
+  const linea = e.plan_data[0];
+  const pasos = linea.pasos || [];
+  const causalInfo = MAPA_CAUSAS_INFO[k.causal] || { nombre: k.causal, grupo:'' };
+  const nivelInfo = MAPA_NIVELES_INFO[k.nivel] || { etiqueta:'', rango:'' };
 
-  // Título y subtítulo según tipo
-  let titulo = '', subtitulo = '';
-  if(e.tipo === 'ficha'){
-    titulo = '📋 Ficha de la acción';
-    subtitulo = e.ficha?.accion_nombre || e.accionId;
-  } else if(e.tipo === 'nivel'){
-    const info = MAPA_NIVELES_INFO[e.nivel] || {etiqueta:e.nivel};
-    titulo = `🎯 ${e.nivel} ${info.etiqueta} · ${e.ambito}`;
-    subtitulo = `Pasos del ámbito ${e.ambito} para nivel ${e.nivel} (${info.rango || ''})`;
-  } else if(e.tipo === 'causal'){
-    const infoCausal = MAPA_CAUSAS_INFO[e.causal] || {nombre:e.causal};
-    const infoNivel = MAPA_NIVELES_INFO[e.nivel] || {etiqueta:e.nivel};
-    titulo = `⚙️ ${e.causal} ${infoCausal.nombre} · ${e.nivel} ${infoNivel.etiqueta}`;
-    subtitulo = `Alternativas A/B/C para la causal ${infoCausal.nombre} en nivel ${e.nivel}`;
-  }
-
-  const titleEl = document.getElementById('planTitle');
-  if(titleEl) titleEl.textContent = titulo;
-  const subEl = document.getElementById('planSubtitle');
-  if(subEl) subEl.textContent = subtitulo;
+  // Título y subtítulo del drawer
+  document.getElementById('planTitle').textContent = k.accion || 'Plan';
+  document.getElementById('planSubtitle').textContent = `${k.nivel} ${nivelInfo.etiqueta} · ${k.causal} ${causalInfo.nombre}`;
 
   const prog = document.getElementById('planProgress');
   if(prog) prog.innerHTML = '';
 
-  // Estilo común para textareas
-  const taStyle = 'width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.6;resize:vertical;outline:none;color:var(--text);box-sizing:border-box';
-  const inputStyle = 'width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;color:var(--text);box-sizing:border-box';
+  // Render del editor
+  const curado = e.curado === true;
 
-  // Última edición (usando updated_at de Supabase)
-  let ultimaEdicion = '';
-  if(e._updatedAt){
-    const fecha = new Date(e._updatedAt);
-    const diff = Date.now() - fecha.getTime();
-    const min = Math.floor(diff / 60000);
-    const hrs = Math.floor(min / 60);
-    const dias = Math.floor(hrs / 24);
-    let hace = '';
-    if(dias > 0) hace = `hace ${dias} día${dias>1?'s':''}`;
-    else if(hrs > 0) hace = `hace ${hrs} hora${hrs>1?'s':''}`;
-    else if(min > 0) hace = `hace ${min} min`;
-    else hace = 'recién';
-    ultimaEdicion = `<div style="font-size:11px;color:var(--muted);margin-top:6px">🕐 Última edición: ${hace}</div>`;
-  }
-
-  // Construir contenido editable según tipo
-  let contenidoHtml = '';
-
-  if(e.tipo === 'ficha' && e.ficha){
-    const f = e.ficha;
-    const mn = f.marco_normativo || {};
-    contenidoHtml = `
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Nombre de la acción</label>
-        <input type="text" value="${escapeHtmlAttr(f.accion_nombre || '')}" oninput="mapaActualizarCampo('ficha.accion_nombre', this.value)" style="${inputStyle}">
+  const pasosHtml = pasos.map((p, idx) => `
+    <div style="background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px;padding:18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${idx+1}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Paso ${idx+1}</div>
+        <div style="flex:1"></div>
+        ${pasos.length > 1 ? `<button onclick="mapaEliminarPaso(${idx})" style="background:transparent;border:1px solid #fca5a5;color:#dc2626;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit" title="Eliminar este paso">✕ Eliminar</button>` : ''}
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción del paso</label>
+        <textarea
+          oninput="mapaActualizarPaso(${idx}, 'descripcion', this.value)"
+          style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13.5px;line-height:1.5;resize:vertical;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+        >${escapeHtmlPlan(p.descripcion || '')}</textarea>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px">
         <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Área</label>
-          <input type="text" value="${escapeHtmlAttr(f.area || '')}" oninput="mapaActualizarCampo('ficha.area', this.value)" style="${inputStyle}">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsable sugerido</label>
+          <input type="text" value="${escapeHtmlPlan(p.responsable_sugerido || '')}"
+            oninput="mapaActualizarPaso(${idx}, 'responsable_sugerido', this.value)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
         </div>
         <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Responsables (separados por coma)</label>
-          <input type="text" value="${escapeHtmlAttr((f.responsables || []).join(', '))}" oninput="mapaActualizarCampo('ficha.responsables', this.value.split(',').map(s=>s.trim()).filter(Boolean))" style="${inputStyle}">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Plazo (días)</label>
+          <input type="number" min="1" max="90" value="${p.plazo_dias || 14}"
+            oninput="mapaActualizarPaso(${idx}, 'plazo_dias', parseInt(this.value)||14)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+            onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+            onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
         </div>
-      </div>
-
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Objetivo</label>
-        <textarea oninput="mapaActualizarCampo('ficha.objetivo', this.value)" style="${taStyle}">${escapeHtmlPlan(f.objetivo || '')}</textarea>
-      </div>
-
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Fórmula</label>
-        <textarea oninput="mapaActualizarCampo('ficha.formula', this.value)" style="${taStyle}">${escapeHtmlPlan(f.formula || '')}</textarea>
-      </div>
-
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Evidencia</label>
-        <textarea oninput="mapaActualizarCampo('ficha.evidencia', this.value)" style="${taStyle}">${escapeHtmlPlan(f.evidencia || '')}</textarea>
-      </div>
-
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Período de evaluación (separados por coma)</label>
-        <input type="text" value="${escapeHtmlAttr((f.periodo_evaluacion || []).join(', '))}" oninput="mapaActualizarCampo('ficha.periodo_evaluacion', this.value.split(',').map(s=>s.trim()).filter(Boolean))" style="${inputStyle}">
-      </div>
-
-      <div style="padding:14px;background:#fef9e7;border-left:3px solid #d4a017;border-radius:6px;margin-bottom:14px">
-        <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Marco normativo</div>
-
-        <div style="margin-bottom:10px">
-          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Principal (ley)</label>
-          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.principal', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.principal || '')}</textarea>
-        </div>
-
-        <div style="margin-bottom:10px">
-          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Técnico (CPEIP / agencia / etc)</label>
-          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.tecnico', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.tecnico || '')}</textarea>
-        </div>
-
-        <div style="margin-bottom:10px">
-          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo MBD</label>
-          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_mbd', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_mbd || '')}</textarea>
-        </div>
-
-        <div style="margin-bottom:10px">
-          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo MBE</label>
-          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_mbe', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_mbe || '')}</textarea>
-        </div>
-
         <div>
-          <label style="display:block;font-size:10px;font-weight:600;color:#92400e;margin-bottom:4px">Vínculo EID</label>
-          <textarea oninput="mapaActualizarCampo('ficha.marco_normativo.vinculo_eid', this.value)" style="${taStyle};min-height:50px;background:#fff">${escapeHtmlPlan(mn.vinculo_eid || '')}</textarea>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Esfuerzo</label>
+          <select onchange="mapaActualizarPaso(${idx}, 'esfuerzo', this.value)"
+            style="width:100%;padding:9px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none;background:#fff">
+            <option value="BAJO"${(p.esfuerzo||'')==='BAJO'?' selected':''}>BAJO</option>
+            <option value="MEDIO"${(p.esfuerzo||'MEDIO')==='MEDIO'?' selected':''}>MEDIO</option>
+            <option value="ALTO"${(p.esfuerzo||'')==='ALTO'?' selected':''}>ALTO</option>
+          </select>
         </div>
       </div>
-    `;
-  } else if(e.tipo === 'nivel' && e.plan_data){
-    const pasos = e.plan_data?.[0]?.pasos || [];
-    contenidoHtml = `
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 pasos para ${e.ambito} en nivel ${e.nivel}</div>
-      ${pasos.map((p, i) => `
-        <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
-          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">
-            <div style="background:var(--accent,#1F5F47);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</div>
-            <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Paso ${i+1}</div>
-          </div>
-          <textarea oninput="mapaActualizarCampo('plan_data.0.pasos.${i}', this.value)" style="${taStyle};min-height:100px">${escapeHtmlPlan(p)}</textarea>
-        </div>
-      `).join('')}
-    `;
-  } else if(e.tipo === 'causal' && e.plan_data){
-    const dato = e.plan_data?.[0] || {};
-    const alt = dato.alternativas || {};
-    contenidoHtml = `
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">3 alternativas — el equipo elige una</div>
-      ${['A','B','C'].map(letra => `
-        <div style="margin-bottom:14px;padding:14px;background:#fff;border:1px solid var(--border-light,#e5e7eb);border-radius:8px">
-          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">
-            <div style="background:#fef9e7;color:#92400e;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;border:1px solid #d4a017">${letra}</div>
-            <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Alternativa ${letra}</div>
-          </div>
-          <textarea oninput="mapaActualizarCampo('plan_data.0.alternativas.${letra}', this.value)" style="${taStyle};min-height:100px">${escapeHtmlPlan(alt[letra] || '')}</textarea>
-        </div>
-      `).join('')}
-    `;
-  } else {
-    contenidoHtml = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Sin contenido disponible para este registro.</div>';
-  }
+    </div>
+  `).join('');
 
   document.getElementById('planBody').innerHTML = `
-    <div style="margin-bottom:18px;padding:10px 12px;background:var(--bg-soft,#f8f9fa);border-radius:6px;font-size:11px;font-family:ui-monospace,monospace;color:var(--muted);word-break:break-all">
+    <!-- Header con clave del plan -->
+    <div style="margin-bottom:24px;padding:14px 16px;background:var(--bg-soft,#f8f9fa);border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);word-break:break-all">
       ${escapeHtmlPlan(e.cache_key)}
-      ${ultimaEdicion}
     </div>
 
-    ${(() => {
-      const rol = SESSION.user?.rol;
-      if(rol === 'director'){
-        const esPers = !!e._esPersonalizado;
-        if(esPers){
-          return `<div style="margin-bottom:16px;padding:10px 14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;display:flex;align-items:center;gap:10px;font-size:13px;color:#78350f">
-            <span style="font-size:18px">\u270F\uFE0F</span>
-            <div style="flex:1"><strong>Versi\u00f3n personalizada</strong> \u2014 tu colegio tiene una copia editada de esta entrada.</div>
-            <button onclick="mapaRestaurarOriginal()" id="mapaBtnRestaurar" style="background:#fff;border:1px solid #f59e0b;color:#78350f;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer">\u21A9 Restaurar original</button>
-          </div>`;
-        }
-        return `<div style="margin-bottom:16px;padding:10px 14px;background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;display:flex;align-items:center;gap:10px;font-size:13px;color:#1e40af">
-          <span style="font-size:18px">\uD83D\uDCCB</span>
-          <div><strong>Versi\u00f3n original del cat\u00e1logo</strong> \u2014 si editas y guardas, se crear\u00e1 una copia para tu colegio.</div>
-        </div>`;
-      } else if(rol === 'sostenedor'){
-        return `<div style="margin-bottom:16px;padding:10px 14px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:13px;color:#374151">\uD83D\uDC41\uFE0F <strong>Modo lectura</strong> \u2014 como sostenedor s\u00f3lo puedes consultar las acciones.</div>`;
-      } else if(rol === 'superadmin'){
-        return `<div style="margin-bottom:16px;padding:10px 14px;background:#fef9e7;border:1px solid #d4a017;border-radius:6px;font-size:13px;color:#78350f">\u2699\uFE0F <strong>Modo superadmin</strong> \u2014 est\u00e1s editando el cat\u00e1logo maestro. Los cambios afectan a todos los colegios que no hayan personalizado esta entrada.</div>`;
-      }
-      return '';
-    })()}
-
-    <div style="margin-bottom:20px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
+    <!-- Toggle de curado -->
+    <div style="margin-bottom:24px;padding:14px 16px;background:${curado?'#dcfce7':'#fff'};border:2px solid ${curado?'#22c55e':'#e5e7eb'};border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .15s"
          onclick="mapaToggleCurado()">
       <div style="font-size:24px">${curado?'✅':'⚪'}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:700;color:${curado?'#065f46':'var(--text)'};margin-bottom:3px">
-          ${curado ? 'Registro curado' : 'Registro sin curar'}
+          ${curado ? 'Plan curado' : 'Plan sin curar'}
         </div>
         <div style="font-size:12px;color:var(--muted)">
-          ${curado ? 'Marcado como revisado y listo para usar.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
+          ${curado ? 'Este plan fue revisado por superadmin y está listo para mostrarse a los colegios.' : 'Marcalo como curado cuando termines de revisar el contenido.'}
         </div>
       </div>
     </div>
 
-    ${contenidoHtml}
+    <!-- Metadatos de la línea -->
+    <div style="margin-bottom:24px">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
+        Metadatos del plan
+      </div>
 
-    ${SESSION.user?.rol === 'sostenedor' ? '' : `<div style="margin-top:20px;padding:14px 16px;background:#e0f2fe;border-left:3px solid #0284c7;border-radius:6px;font-size:12px;color:#075985;line-height:1.5">
-      <strong>\u270F\uFE0F Modo edici\u00f3n</strong> \u2014 ${SESSION.user?.rol === 'director' ? 'tus cambios se guardan en la versi\u00f3n personalizada de tu colegio y no afectan a otros.' : 'los cambios afectar\u00e1n al cat\u00e1logo maestro que ven todos los colegios.'} Se te pedir\u00e1 confirmaci\u00f3n al guardar.
-    </div>`}
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Título de la línea</label>
+        <input type="text" value="${escapeHtmlPlan(linea.titulo || '')}"
+          oninput="mapaActualizarLinea('titulo', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:14px;outline:none;font-weight:600"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Foco (encabezado pedagógico)</label>
+        <input type="text" value="${escapeHtmlPlan(linea.foco || '')}"
+          oninput="mapaActualizarLinea('foco', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Descripción corta</label>
+        <textarea
+          oninput="mapaActualizarLinea('descripcion_corta', this.value)"
+          style="width:100%;min-height:60px;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'"
+        >${escapeHtmlPlan(linea.descripcion_corta || '')}</textarea>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Causa atacada (etiqueta visible)</label>
+        <input type="text" value="${escapeHtmlPlan(linea.causa_atacada || '')}"
+          oninput="mapaActualizarLinea('causa_atacada', this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;font-family:inherit;font-size:13px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)'"
+          onblur="this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'">
+      </div>
+    </div>
+
+    <!-- Pasos -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">
+          Pasos del plan (${pasos.length})
+        </div>
+        <button onclick="mapaAgregarPaso()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s"
+          onmouseover="this.style.background='var(--accent)';this.style.color='#fff'"
+          onmouseout="this.style.background='transparent';this.style.color='var(--accent)'">
+          + Agregar paso
+        </button>
+      </div>
+      ${pasosHtml || '<p style="color:var(--muted);font-style:italic;padding:20px;text-align:center;background:var(--bg-soft,#f8f9fa);border-radius:8px">Sin pasos. Hacé click en "Agregar paso" para comenzar.</p>'}
+    </div>
   `;
 
   document.getElementById('planFooter').innerHTML = `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;width:100%">
-      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cerrar</button>
-      ${SESSION.user?.rol === 'sostenedor' ? '' : `<button class="plan-btn-next" onclick="mapaConfirmarGuardar()" id="mapaBtnGuardar">\uD83D\uDCBE Guardar cambios</button>`}
+    <span class="info" style="font-size:12px;color:var(--muted)">${k.accion || ''} · ${k.nivel} · ${k.causal}</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="plan-btn-back" onclick="mapaCerrarEditor()">Cancelar</button>
+      <button class="plan-btn-next" onclick="mapaGuardarPlan()" id="mapaBtnGuardar">💾 Guardar cambios</button>
     </div>`;
 }
 
-/* Helper: escape para atributos HTML (más estricto que escapeHtmlPlan) */
-function escapeHtmlAttr(s){
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-/* Actualiza un campo de edicionActual usando una ruta tipo 'plan_data.0.pasos.2' o 'ficha.marco_normativo.principal' */
-function mapaActualizarCampo(ruta, valor){
+/* Actualizaciones en memoria (no guardan hasta apretar "Guardar cambios") */
+function mapaActualizarLinea(campo, valor){
   if(!MAPA_STATE.edicionActual) return;
-  const partes = ruta.split('.');
-  let obj = MAPA_STATE.edicionActual;
-  for(let i = 0; i < partes.length - 1; i++){
-    const k = partes[i];
-    // Si es un índice numérico, asegurar que el padre es un array
-    if(!obj[k]){
-      const sigK = partes[i+1];
-      obj[k] = /^\d+$/.test(sigK) ? [] : {};
-    }
-    obj = obj[k];
-  }
-  obj[partes[partes.length - 1]] = valor;
-  MAPA_STATE.edicionActual._dirty = true;
+  MAPA_STATE.edicionActual.plan_data[0][campo] = valor;
 }
 
-/* Muestra modal de confirmación antes de guardar */
-function mapaConfirmarGuardar(){
-  const e = MAPA_STATE.edicionActual;
-  if(!e) return;
-
-  // Construir descripción según tipo
-  let desc = '';
-  if(e.tipo === 'ficha'){
-    desc = `Ficha de la acción "${e.ficha?.accion_nombre || e.accionId}"`;
-  } else if(e.tipo === 'nivel'){
-    desc = `Pasos del ámbito ${e.ambito} para nivel ${e.nivel}`;
-  } else if(e.tipo === 'causal'){
-    desc = `Alternativas A/B/C de causal ${e.causal} en nivel ${e.nivel}`;
-  }
-
-  const rol = SESSION.user?.rol;
-  const esDirector = rol === 'director';
-
-  // Aviso contextual seg\u00fan rol
-  const aviso = esDirector
-    ? `\uD83D\uDCDD Este cambio se guarda en <strong>la versi\u00f3n personalizada de tu colegio</strong>. No afecta al cat\u00e1logo maestro ni a otros establecimientos.`
-    : `\u26A0\uFE0F Este cambio afectar\u00e1 al <strong>cat\u00e1logo maestro</strong> y se ver\u00e1 en todos los colegios que no hayan personalizado esta entrada. Los planes ya guardados (en <code>microacciones</code>) NO se modifican retroactivamente.`;
-
-  const avisoColor = esDirector
-    ? 'color:#1e40af;background:#eff6ff;border-left-color:#3b82f6'
-    : 'color:#92400e;background:#fef9e7;border-left-color:#d4a017';
-
-  const tituloModal = esDirector
-    ? '\u00bfGuardar cambios para tu colegio?'
-    : '\u00bfReemplazar el contenido del cat\u00e1logo?';
-
-  const subtituloModal = esDirector
-    ? 'Vas a personalizar el siguiente registro para tu colegio:'
-    : 'Est\u00e1s a punto de actualizar el siguiente registro del cat\u00e1logo institucional:';
-
-  const botonOk = esDirector ? '\u2713 S\u00ed, guardar' : '\u2713 S\u00ed, reemplazar';
-
-  // Crear modal de confirmación
-  const modalId = 'mapaConfirmModal';
-  document.getElementById(modalId)?.remove();
-  const modal = document.createElement('div');
-  modal.id = modalId;
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = `
-    <div style="background:#fff;border-radius:12px;max-width:480px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.2)">
-      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px">${tituloModal}</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">
-        ${subtituloModal}
-      </div>
-      <div style="padding:12px 14px;background:var(--bg-soft,#f8f9fa);border-radius:6px;font-size:13px;color:var(--text);margin-bottom:18px;border-left:3px solid var(--accent,#1F5F47)">
-        ${escapeHtmlPlan(desc)}
-      </div>
-      <div style="font-size:12px;${avisoColor};border-left-width:3px;border-left-style:solid;border-radius:4px;padding:10px 12px;margin-bottom:18px;line-height:1.5">
-        ${aviso}
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button onclick="document.getElementById('${modalId}').remove()" class="plan-btn-back">Cancelar</button>
-        <button onclick="document.getElementById('${modalId}').remove();mapaGuardarPlan()" class="plan-btn-next">${botonOk}</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
+function mapaActualizarPaso(idx, campo, valor){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  if(!pasos[idx]) return;
+  pasos[idx][campo] = valor;
 }
 
 function mapaToggleCurado(){
   if(!MAPA_STATE.edicionActual) return;
   MAPA_STATE.edicionActual.curado = !MAPA_STATE.edicionActual.curado;
+  _mapaRenderEditor();
+}
+
+function mapaAgregarPaso(){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  const nuevoId = '1.' + (pasos.length + 1);
+  pasos.push({
+    id: nuevoId,
+    descripcion: '',
+    responsable_sugerido: '',
+    plazo_dias: 14,
+    esfuerzo: 'MEDIO'
+  });
+  _mapaRenderEditor();
+}
+
+function mapaEliminarPaso(idx){
+  if(!MAPA_STATE.edicionActual) return;
+  const pasos = MAPA_STATE.edicionActual.plan_data[0].pasos;
+  if(pasos.length <= 1){
+    showToast('Debe haber al menos un paso');
+    return;
+  }
+  if(!confirm('¿Eliminar este paso? Esta acción no se puede deshacer hasta que recargues sin guardar.')) return;
+  pasos.splice(idx, 1);
+  // Re-numerar IDs internos
+  pasos.forEach((p, i) => p.id = '1.' + (i+1));
   _mapaRenderEditor();
 }
 
@@ -10329,116 +9989,34 @@ async function mapaGuardarPlan(){
   if(btn){ btn.disabled = true; btn.textContent = '💾 Guardando…'; }
 
   try {
-    const rol = SESSION.user?.rol;
-    const colegioId = SESSION.colegioActivo;
-    const userId = SESSION.user?.id;
-
-    // Determinar destino seg\u00fan rol
-    if(rol === 'director'){
-      // El director guarda en planes_director (upsert por colegio_id + cache_key)
-      if(!colegioId){
-        showToast('Error: no se detect\u00f3 colegio activo');
-        if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
-        return;
-      }
-
-      const upsertPayload = {
-        colegio_id: colegioId,
-        cache_key: e.cache_key,
-        curado: e.curado === true,
-        editado_por: userId,
-        updated_at: new Date().toISOString()
-      };
-
-      if(e.tipo === 'ficha'){
-        upsertPayload.ficha = e.ficha;
-        upsertPayload.plan_data = null;
-      } else if(e.tipo === 'nivel' || e.tipo === 'causal'){
-        upsertPayload.plan_data = e.plan_data;
-        upsertPayload.ficha = null;
-      }
-
-      const { data, error } = await sb
-        .from('planes_director')
-        .upsert(upsertPayload, { onConflict: 'colegio_id,cache_key' })
-        .select()
-        .single();
-
-      if(error){
-        console.error('[Mapa] Error guardando en planes_director:', error);
-        showToast('Error al guardar: ' + error.message);
-        if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
-        return;
-      }
-
-      // Actualizar en memoria con la versi\u00f3n personalizada
-      const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
-      if(idx >= 0){
-        MAPA_STATE.planes[idx] = {
-          ...MAPA_STATE.planes[idx],
-          plan_data: data.plan_data !== null ? data.plan_data : MAPA_STATE.planes[idx].plan_data,
-          ficha: data.ficha !== null ? data.ficha : MAPA_STATE.planes[idx].ficha,
-          curado: data.curado,
-          updated_at: data.updated_at,
-          _esPersonalizado: true,
-          _personalizadoId: data.id
-        };
-      }
-
-      if(MAPA_STATE.edicionActual){
-        MAPA_STATE.edicionActual._updatedAt = data.updated_at;
-        MAPA_STATE.edicionActual._dirty = false;
-        MAPA_STATE.edicionActual._esPersonalizado = true;
-        MAPA_STATE.edicionActual._personalizadoId = data.id;
-      }
-
-      showToast('✓ Cambios guardados en tu versi\u00f3n personalizada');
-      mapaCerrarEditor();
-      return;
-    }
-
-    if(rol === 'sostenedor'){
-      showToast('Como sostenedor s\u00f3lo tienes acceso de lectura');
-      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
-      return;
-    }
-
-    // Superadmin: guarda en planes_cache (cat\u00e1logo maestro, afecta a todos)
-    const updatePayload = {
-      curado: e.curado === true,
-      updated_at: new Date().toISOString()
-    };
-
-    if(e.tipo === 'ficha'){
-      updatePayload.ficha = e.ficha;
-    } else if(e.tipo === 'nivel' || e.tipo === 'causal'){
-      updatePayload.plan_data = e.plan_data;
-    }
-
     const { data, error } = await sb
       .from('planes_cache')
-      .update(updatePayload)
+      .update({
+        plan_data: e.plan_data,
+        curado: e.curado === true,
+        updated_at: new Date().toISOString()
+      })
       .eq('cache_key', e.cache_key)
       .select()
       .single();
 
     if(error){
       console.error('[Mapa] Error guardando:', error);
-      showToast('Error al guardar: ' + error.message);
+      // Si el error es por columna `curado` inexistente, dar guía clara
+      if(error.message && error.message.toLowerCase().includes('curado')){
+        showToast('Falta la columna `curado` en planes_cache. Ejecutá el SQL de migración primero.');
+      } else {
+        showToast('Error al guardar: ' + error.message);
+      }
       if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
       return;
     }
 
-    // Actualizar en memoria
+    // Actualizar el plan en MAPA_STATE.planes
     const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
     if(idx >= 0) MAPA_STATE.planes[idx] = data;
 
-    if(MAPA_STATE.edicionActual){
-      MAPA_STATE.edicionActual._updatedAt = data.updated_at;
-      MAPA_STATE.edicionActual._dirty = false;
-    }
-
-    showToast('✓ Cambios guardados en el cat\u00e1logo maestro');
+    showToast('✓ Plan guardado correctamente');
     mapaCerrarEditor();
   } catch(err){
     console.error('[Mapa] Excepción guardando:', err);
@@ -10447,61 +10025,6 @@ async function mapaGuardarPlan(){
   }
 }
 
-/* Restaura una entrada personalizada al cat\u00e1logo maestro (s\u00f3lo director).
- * Borra la fila en planes_director y vuelve a mostrar la versi\u00f3n del cat\u00e1logo. */
-async function mapaRestaurarOriginal(){
-  const e = MAPA_STATE.edicionActual;
-  if(!e) return;
-  if(SESSION.user?.rol !== 'director') return;
-  if(!e._esPersonalizado){
-    showToast('Esta entrada no est\u00e1 personalizada');
-    return;
-  }
-  if(!confirm('\u00bfRestaurar el contenido original del cat\u00e1logo?\\n\\nSe perder\u00e1n tus personalizaciones de esta entrada.')) return;
-
-  const btn = document.getElementById('mapaBtnRestaurar');
-  if(btn){ btn.disabled = true; btn.textContent = 'Restaurando\u2026'; }
-
-  try {
-    const colegioId = SESSION.colegioActivo;
-    const { error } = await sb
-      .from('planes_director')
-      .delete()
-      .eq('colegio_id', colegioId)
-      .eq('cache_key', e.cache_key);
-
-    if(error){
-      console.error('[Mapa] Error restaurando:', error);
-      showToast('Error al restaurar: ' + error.message);
-      if(btn){ btn.disabled = false; btn.textContent = '\u21A9 Restaurar original'; }
-      return;
-    }
-
-    // Recargar la versi\u00f3n del cat\u00e1logo para esta entrada
-    const { data: original, error: errOrig } = await sb
-      .from('planes_cache')
-      .select('*')
-      .eq('cache_key', e.cache_key)
-      .single();
-
-    if(errOrig){
-      console.warn('[Mapa] No se pudo recargar versi\u00f3n cat\u00e1logo:', errOrig.message);
-    }
-
-    // Actualizar en memoria
-    const idx = MAPA_STATE.planes.findIndex(p => p.cache_key === e.cache_key);
-    if(idx >= 0 && original){
-      MAPA_STATE.planes[idx] = { ...original, _esPersonalizado: false };
-    }
-
-    showToast('✓ Versi\u00f3n original restaurada');
-    mapaCerrarEditor();
-  } catch(err){
-    console.error('[Mapa] Excepci\u00f3n restaurando:', err);
-    showToast('Error inesperado: ' + err.message);
-    if(btn){ btn.disabled = false; btn.textContent = '\u21A9 Restaurar original'; }
-  }
-}
 /* ====================== CARGA INICIAL DE DATOS ====================== */
 /* Carga DB.microacciones y DB.pasos con paginación explícita y manejo de
  * errores. Si Supabase devuelve un error o menos filas de las esperadas,
