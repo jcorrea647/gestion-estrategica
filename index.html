@@ -9068,7 +9068,10 @@ async function renderMisPlanes(){
       const cumplBar = cumpl === null
         ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
         : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
-      const respDisplay = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '<span style="color:var(--muted)">Sin asignar</span>');
+      const respText = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '');
+      const respDisplay = respText
+        ? escapeHtmlPlan(respText)
+        : '<span style="color:var(--muted)">Sin asignar</span>';
       const areaPlan = _areaDeAccion(m.accion_id);
 
       html += `
@@ -9079,7 +9082,7 @@ async function renderMisPlanes(){
           <div>
             ${areaPlan ? `<div style="margin-bottom:5px">${_areaBadge(areaPlan)}</div>` : ''}
             <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted)">👤 ${escapeHtmlPlan(respDisplay)}</div>
+            <div style="font-size:11px;color:var(--muted)">👤 ${respDisplay}</div>
           </div>
           <div style="font-size:12px;color:var(--text)">${fmtMes(m.mes, true)}</div>
           <div>${_estadoBadge(m.estado)}</div>
@@ -9450,7 +9453,9 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
       ? '<span style="color:var(--muted);font-size:11px;font-style:italic">Sin pasos cerrados</span>'
       : `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:40px;max-width:80px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
 
-    const respDisplay = v.acuerdo_quien || '<span style="color:var(--muted)">Sin asignar</span>';
+    const respDisplay = v.acuerdo_quien
+      ? escapeHtmlPlan(v.acuerdo_quien)
+      : '<span style="color:var(--muted)">Sin asignar</span>';
 
     html += `
       <div onclick="bibliotecaAbrirVersion('${accionId}','${v.mes}')" 
@@ -9461,7 +9466,7 @@ function _bibliotecaRenderVersiones(accionId, versiones, mejorPlanId){
         <div>${_estadoBadge(v.estado)}</div>
         <div>${cumplBar}</div>
         <div style="font-size:12px;color:var(--text)">${numPasos} paso(s)</div>
-        <div style="font-size:12px;color:var(--text)">👤 ${escapeHtmlPlan(respDisplay)}</div>
+        <div style="font-size:12px;color:var(--text)">👤 ${respDisplay}</div>
         <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
       </div>`;
   });
