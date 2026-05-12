@@ -9487,14 +9487,25 @@ const MAPA_CAUSAS_INFO = {
   C11: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
   C12: { grupo:'relacional',  nombre:'Bajo involucramiento estudiantes' },
   C13: { grupo:'relacional',  nombre:'Conflictos entre estamentos' },
-  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' }
+  C14: { grupo:'relacional',  nombre:'Liderazgo intermedio débil' },
+  C15: { grupo:'relacional',  nombre:'Involucramiento estudiantes' },
+  C16: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
+  C17: { grupo:'relacional',  nombre:'Compromiso de apoderados' }
 };
 
 // Ámbitos para las filas 'nivel|<accion>|<L>|<ambito>': pasos base sugeridos
-// para esa acción en ese nivel, segmentados por dónde se ejecuta el trabajo.
+// para esa acción en ese nivel, segmentados por el "lugar" donde sucede el trabajo
+// pedagógico real. Cada acción usa los dos ámbitos que mejor reflejan su naturaleza.
 const MAPA_AMBITOS_INFO = {
-  'Aula':    { icono:'🏫', etiqueta:'Aula',    descripcion:'Cómo se vive el proceso en el aula y entre quienes lo implementan directamente.' },
-  'Gestión': { icono:'⚙️', etiqueta:'Gestión', descripcion:'Cómo se organiza, formaliza y monitorea desde la conducción institucional.' }
+  'Aula':              { icono:'🏫', etiqueta:'Aula',              descripcion:'Lo que sucede entre docente y estudiantes dentro de la sala de clases. Producto esperable: cambio observable en la interacción pedagógica con estudiantes.' },
+  'Gestión':           { icono:'⚙️', etiqueta:'Gestión',           descripcion:'Lo que se organiza, formaliza y monitorea desde la conducción institucional. Producto esperable: protocolo, calendario, registro o sistema de seguimiento.' },
+  'Acompañamiento':    { icono:'🤝', etiqueta:'Acompañamiento',    descripcion:'Lo que sucede en la atención directa de cada caso, con foco en el vínculo y el seguimiento personalizado. Producto esperable: estudiante o familia que recibe apoyo real, no solo un trámite registrado.' },
+  'Comunidad':         { icono:'🌐', etiqueta:'Comunidad',         descripcion:'Lo que sucede cuando la acción llega a apoderados, estudiantes y comunidad educativa más amplia. Producto esperable: participación, vinculación o respuesta concreta de actores fuera del equipo técnico.' },
+  'Práctica':          { icono:'🛠', etiqueta:'Práctica',          descripcion:'Lo que el docente o profesional hace en su trabajo cotidiano como resultado de la acción. Producto esperable: cambio en cómo se enseña, planifica o interviene, observable en la práctica diaria.' },
+  'Departamento':      { icono:'👥', etiqueta:'Departamento',      descripcion:'Lo que sucede en la reunión técnica del departamento o equipo de asignatura: discusión profesional, decisiones pedagógicas compartidas. Producto esperable: acuerdo técnico o decisión colegiada, no solo un acta.' },
+  'Equipo Directivo':  { icono:'🎯', etiqueta:'Equipo Directivo',  descripcion:'Lo que sucede a nivel de conducción estratégica (director, UTP, Convivencia, Inspectoría). Producto esperable: decisiones institucionales coherentes con el proyecto educativo.' },
+  'Equipo Docente':    { icono:'👨‍🏫', etiqueta:'Equipo Docente',    descripcion:'Lo que sucede en el colectivo de docentes como cuerpo profesional. Producto esperable: prácticas comunes, criterios compartidos, mejora del trabajo en conjunto.' },
+  'Comunicación':      { icono:'📣', etiqueta:'Comunicación',      descripcion:'Lo que sucede cuando la información circula efectivamente entre actores (apoderados, sostenedor, comunidad, ministerios). Producto esperable: destinatarios informados que pueden actuar a partir de lo recibido.' }
 };
 
 // Estado del módulo
@@ -9646,6 +9657,24 @@ function _mapaContarSeccion(sec){
   };
 }
 
+/* Cuenta "alternativas editables" (unidades de contenido) en una sección.
+ * Cada fila causal aporta 3 alternativas A/B/C. Cada fila nivel aporta 3 pasos.
+ * Es lo que el director ve como opciones reales, no filas de tabla. */
+function _mapaContarUnidades(sec){
+  if(!sec) return { unidades:0, unidadesCuradas:0 };
+  const ALT_POR_FILA = 3;
+  let unidades = 0, unidadesCuradas = 0;
+  (sec.causales||[]).forEach(({plan}) => {
+    unidades += ALT_POR_FILA;
+    if(plan?.curado === true) unidadesCuradas += ALT_POR_FILA;
+  });
+  (sec.niveles||[]).forEach(({plan}) => {
+    unidades += ALT_POR_FILA;
+    if(plan?.curado === true) unidadesCuradas += ALT_POR_FILA;
+  });
+  return { unidades, unidadesCuradas };
+}
+
 /* Render principal del Mapa de Acciones */
 async function renderMapaAcciones(){
   const main = document.getElementById('mainContent');
@@ -9706,15 +9735,25 @@ async function renderMapaAcciones(){
   const grupos = _mapaAgrupar(planes);
   const accionesOrdenadas = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
 
-  // Stats globales
-  const totalPlanes = planes.length;
-  const totalCurados = planes.filter(p => p.curado === true).length;
-  const pctCurado = totalPlanes > 0 ? Math.round(totalCurados / totalPlanes * 100) : 0;
+  // Stats globales — calculamos dos métricas distintas:
+  //   • filas de tabla (lo que se clickea para abrir un editor)
+  //   • alternativas editables (lo que el director realmente ve como opciones)
+  // Cada fila aporta 3 unidades de contenido (A/B/C para causales, 3 pasos para niveles).
+  // Filtramos las filas 'ficha|' del cómputo: tienen plan_data null y modelo distinto.
+  const planesEditables = planes.filter(p => {
+    const k = _mapaParsearKey(p.cache_key);
+    return k && (k.tipo === 'causal' || k.tipo === 'nivel');
+  });
+  const totalFilas = planesEditables.length;
+  const totalUnidades = totalFilas * 3;
+  const totalFilasCuradas = planesEditables.filter(p => p.curado === true).length;
+  const totalUnidadesCuradas = totalFilasCuradas * 3;
+  const pctCurado = totalFilas > 0 ? Math.round(totalFilasCuradas / totalFilas * 100) : 0;
 
   let html = `
     <div class="page-header">
       <div class="page-title">🗺 Mapa de Acciones</div>
-      <div class="page-sub">Curación institucional · ${totalPlanes} planes · todos los colegios ven la versión curada</div>
+      <div class="page-sub">Curación institucional · ${totalUnidades.toLocaleString('es-CL')} alternativas editables en ${totalFilas.toLocaleString('es-CL')} filas</div>
     </div>
 
     <div class="kpi-grid">
@@ -9724,19 +9763,19 @@ async function renderMapaAcciones(){
         <div class="kpi-badge">21 acciones del PME</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-val">${totalPlanes}</div>
-        <div class="kpi-label">Planes pre-computados</div>
-        <div class="kpi-badge">21 × 5 niveles × 14 causales</div>
+        <div class="kpi-val">${totalUnidades.toLocaleString('es-CL')}</div>
+        <div class="kpi-label">Alternativas editables</div>
+        <div class="kpi-badge">${totalFilas.toLocaleString('es-CL')} filas × 3 (A/B/C o 3 pasos)</div>
       </div>
       <div class="kpi-card verde">
-        <div class="kpi-val">${totalCurados}</div>
-        <div class="kpi-label">Curados</div>
-        <div class="kpi-badge verde">Revisados por superadmin</div>
+        <div class="kpi-val">${totalUnidadesCuradas.toLocaleString('es-CL')}</div>
+        <div class="kpi-label">Curadas</div>
+        <div class="kpi-badge verde">${totalFilasCuradas.toLocaleString('es-CL')} filas revisadas</div>
       </div>
       <div class="kpi-card ${pctCurado>=70?'verde':pctCurado>=40?'amarillo':'rojo'}">
         <div class="kpi-val">${pctCurado}%</div>
         <div class="kpi-label">Avance curación</div>
-        <div class="kpi-badge">${totalPlanes - totalCurados} pendientes</div>
+        <div class="kpi-badge">${(totalUnidades - totalUnidadesCuradas).toLocaleString('es-CL')} alternativas pendientes</div>
       </div>
     </div>
 
@@ -9753,12 +9792,16 @@ async function renderMapaAcciones(){
     const porNivel = grupos[accionNombre];
     // Conteos: excluimos la fila '_ficha' del cálculo principal (modelo distinto)
     let totalAccion = 0, curadosAccion = 0, nivelesActivos = 0;
+    let unidadesAccion = 0, unidadesCuradasAccion = 0;
     Object.entries(porNivel).forEach(([k, sec]) => {
       if(k === '_ficha' || !sec) return;
       nivelesActivos++;
       const c = _mapaContarSeccion(sec);
       totalAccion += c.total;
       curadosAccion += c.curados;
+      const u = _mapaContarUnidades(sec);
+      unidadesAccion += u.unidades;
+      unidadesCuradasAccion += u.unidadesCuradas;
     });
     const expandidaAccion = MAPA_STATE.accionesExpandidas.has(accionNombre);
     const pctAccion = totalAccion > 0 ? Math.round(curadosAccion/totalAccion*100) : 0;
@@ -9771,7 +9814,7 @@ async function renderMapaAcciones(){
           <div style="font-size:18px;color:var(--muted);transform:${expandidaAccion?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:18px">›</div>
           <div style="flex:1">
             <div style="font-weight:700;font-size:15px;color:var(--text)">${escapeHtmlPlan(accionNombre)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:3px">${totalAccion} planes · ${nivelesActivos} niveles activos</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${unidadesAccion.toLocaleString('es-CL')} alternativas en ${totalAccion} filas · ${nivelesActivos} niveles activos</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:200px">
             <div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
@@ -9805,6 +9848,7 @@ function _mapaRenderNiveles(accionNombre, porNivel){
     const expandida = MAPA_STATE.nivelesExpandidos.has(claveNivel);
     const nCausales = sec.causales?.length || 0;
     const nAmbitos = sec.niveles?.length || 0;
+    const { unidades } = _mapaContarUnidades(sec);
     const desglose = [
       nAmbitos ? (nAmbitos + ' ámbito' + (nAmbitos>1?'s':'')) : null,
       nCausales ? (nCausales + ' causal' + (nCausales>1?'es':'')) : null
@@ -9818,7 +9862,7 @@ function _mapaRenderNiveles(accionNombre, porNivel){
           <div style="font-size:14px;color:var(--muted);transform:${expandida?'rotate(90deg)':'rotate(0deg)'};transition:transform .15s;width:14px">›</div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:var(--text)">${nivelCodigo} — ${escapeHtmlPlan(info.etiqueta)}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${desglose || 'sin contenido'}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Rango ${info.rango} · ${desglose || 'sin contenido'} · ${unidades} alternativas</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:180px">
             <div style="flex:1;height:5px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden">
