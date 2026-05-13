@@ -7658,22 +7658,6 @@ function planGenerarCacheKey(s){
   return [s.accionId, s.banda, tramo, causas].join('|');
 }
 
-async function planRegenerarPlan(){
-  if(!confirm('¿Regenerar el plan? Se borrarán los pasos actuales y se generará uno nuevo.')) return;
-  const s = PLAN_STATE;
-  s.propuestas = null;
-  s.pasosSeleccionados = [];
-  s.pasosFocoPropio = [];
-  s.pasosOtrosLinea = {};
-  if(typeof PLAN_BRECHAS_CACHE !== 'undefined'){
-    const ck = (s.colegioId||DB?.colegio?.id||'') + '_' + s.accionId + '_' + s.mes;
-    delete PLAN_BRECHAS_CACHE[ck];
-  }
-  planMarcarCambio();
-  await planSyncSupabase();
-  planGenerarPropuestas();
-}
-
 async function planGenerarPropuestas(){
   const s = PLAN_STATE;
   const ta = document.getElementById('planComentario');
