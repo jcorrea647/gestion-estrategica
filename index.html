@@ -7960,7 +7960,7 @@ function renderPaso4Constructor(){
       return `<div class="plan-paso${sel?' selected':''}" onclick="planTogglePaso('${key}','${ln.id}',${pi})">
         <div class="plan-paso-check">${sel?'✓':''}</div>
         <div class="plan-paso-cuerpo">
-          <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
+          <div>${planBoldTituloPaso(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
           ${fuenteHtml}
         </div>
       </div>`;
@@ -7968,7 +7968,7 @@ function renderPaso4Constructor(){
     const otros = (s.pasosOtrosLinea[ln.id]||[]).map((p,oi)=>
       `<div class="plan-paso selected" onclick="planQuitarOtroLinea('${ln.id}',${oi})">
         <div class="plan-paso-check">✓</div>
-        <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días · propio</span></div>
+        <div>${planBoldTituloPaso(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días · propio</span></div>
       </div>`
     ).join('');
     // Determinar pill de causa
@@ -8013,7 +8013,7 @@ function renderPaso4Constructor(){
   const focoPropios = s.pasosFocoPropio.map((p,i)=>
     `<div class="plan-paso selected" onclick="planQuitarFocoPropio(${i})">
       <div class="plan-paso-check">✓</div>
-      <div>${escapeHtmlPlan(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
+      <div>${planBoldTituloPaso(p.descripcion)} <span style="color:var(--muted)">· ${p.plazo_dias} días</span></div>
     </div>`
   ).join('');
 
@@ -8226,7 +8226,7 @@ function renderPaso5Asignacion(){
       <div class="plan-asign-head">
         <div class="plan-asign-num">${i+1}</div>
         <div style="flex:1">
-          <div class="plan-asign-desc">${escapeHtmlPlan(p.descripcion)}</div>
+          <div class="plan-asign-desc">${planBoldTituloPaso(p.descripcion)}</div>
           <span class="plan-linea-tag" style="margin-top:6px">${escapeHtmlPlan(p.lineaFoco||p.origen||'')}</span>
           ${tagHeredado}
         </div>
@@ -8681,7 +8681,7 @@ function renderPlanResumenPedagogico(){
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:17px;line-height:1.55;color:var(--text);margin-bottom:10px;${done?'text-decoration:line-through':''}">
-            ${escapeHtmlPlan(p.descripcion)}
+            ${planBoldTituloPaso(p.descripcion)}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)">
             <span>👤 <strong style="color:var(--text)">${escapeHtmlPlan(p.responsable||'Sin asignar')}</strong></span>
@@ -8815,7 +8815,7 @@ function renderPasoExistente(){
       <div class="plan-asign-head">
         <div class="plan-asign-num" style="background:${done?'var(--green)':'var(--accent)'}">${done?'✓':i+1}</div>
         <div style="flex:1">
-          <div class="plan-asign-desc" style="${done?'text-decoration:line-through':''}">${escapeHtmlPlan(p.descripcion)}</div>
+          <div class="plan-asign-desc" style="${done?'text-decoration:line-through':''}">${planBoldTituloPaso(p.descripcion)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">
             ${p.responsable||'sin asignar'} · ${p.plazo_dias} días · ${escapeHtmlPlan(p.linea_foco||p.origen)}
           </div>
@@ -8938,6 +8938,25 @@ function safeMarkupPlan(s){
   // Rehabilitar solo etiquetas inline de énfasis. Atributos NO permitidos.
   out = out.replace(/&lt;(\/?)(strong|em|b|i)&gt;/gi, '<$1$2>');
   return out;
+}
+
+/* Aplica negrita al título de un paso cuando tiene el patrón "Título: descripción".
+ * Recibe un string PLANO (sin HTML) y devuelve HTML con <strong> al inicio si
+ * corresponde, escapando el resto. Reglas:
+ *  - El primer ":" debe estar entre los caracteres 5 y 80 (evita "URL:" o
+ *    horas "20:30" como falsos positivos).
+ *  - Si no se cumple, devuelve el texto escapado tal cual (sin negrita).
+ *  - El ":" queda dentro del <strong> para que la separación visual sea limpia.
+ * Uso típico: ${planBoldTituloPaso(p.descripcion)} en lugar de
+ *             ${escapeHtmlPlan(p.descripcion)}. */
+function planBoldTituloPaso(textoPlano){
+  if(textoPlano == null) return '';
+  const str = String(textoPlano);
+  const idx = str.indexOf(':');
+  if(idx < 5 || idx > 80) return escapeHtmlPlan(str);
+  const titulo = escapeHtmlPlan(str.slice(0, idx + 1));
+  const resto = escapeHtmlPlan(str.slice(idx + 1));
+  return '<strong>' + titulo + '</strong>' + resto;
 }
 
 /* ====================== PANEL "MIS PLANES" ============================ */
