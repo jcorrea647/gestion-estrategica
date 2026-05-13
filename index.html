@@ -6623,9 +6623,61 @@ function planInitState(accionId, mes, seg, borrador) {
     };
     PLAN_STATE.consolidacionModos = borrador.consolidacion_modos || [];
     PLAN_STATE.brechasData = borrador.brechas_data || borrador.brechasData || null;
+
+    // ── Saneamiento del borrador (anti-bug de pasos/asignaciones huérfanos) ──
+    planSanearBorrador();
   }
 
   PLAN_LAST_SAVED_HASH = planSnapshotHash();
+}
+
+/* Saneamiento defensivo al hidratar un borrador:
+ *  1. Elimina pasosSeleccionados cuyo lineaId ya no existe en propuestas_llm
+ *     (suelen ser restos de un catálogo viejo que se actualizó).
+ *  2. Agrega uid a pasos otros/focoPropio que no lo tienen (compat con borradores
+ *     creados antes del refactor de asignaciones por key).
+ *  3. Migra s.asignaciones del formato viejo (índices numéricos) al nuevo
+ *     formato (indexado por key del paso). */
+function planSanearBorrador(){
+  const s = PLAN_STATE;
+
+  // (1) Filtrar pasosSeleccionados huérfanos (lineaId que ya no existe en propuestas)
+  if(Array.isArray(s.propuestas) && s.propuestas.length){
+    const lineasValidas = new Set(s.propuestas.map(l=>l.id));
+    const antes = s.pasosSeleccionados.length;
+    s.pasosSeleccionados = s.pasosSeleccionados.filter(p=>{
+      // Si el paso tiene lineaId y esa línea ya no existe, es huérfano
+      if(p.lineaId && !lineasValidas.has(p.lineaId)) return false;
+      return true;
+    });
+    if(s.pasosSeleccionados.length !== antes){
+      console.info('[planSanearBorrador] Eliminados', (antes - s.pasosSeleccionados.length), 'pasos huérfanos');
+    }
+  }
+
+  // (2) Asegurar uid en pasos otros/focoPropio para que las asignaciones
+  // puedan seguirlos aunque cambien de posición en el array.
+  Object.values(s.pasosOtrosLinea || {}).forEach(arr => {
+    if(Array.isArray(arr)){
+      arr.forEach(p => {
+        if(!p.uid) p.uid = Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+      });
+    }
+  });
+  (s.pasosFocoPropio || []).forEach(p => {
+    if(!p.uid) p.uid = Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+  });
+
+  // (3) Migrar asignaciones del formato viejo (índices numéricos) al nuevo.
+  // Detección: si existe al menos una key numérica (ej "0", "1") en asignaciones,
+  // asumimos formato viejo y descartamos. Por instrucción del producto: los
+  // borradores viejos se considera basura porque pueden estar desalineados
+  // (el bug original que motivó este refactor).
+  const tieneKeysNumericas = Object.keys(s.asignaciones).some(k => /^\d+$/.test(k));
+  if(tieneKeysNumericas){
+    console.info('[planSanearBorrador] Asignaciones en formato viejo detectadas. Descartando para evitar desalineación.');
+    s.asignaciones = {};
+  }
 }
 
 function planSnapshotHash(){
@@ -8057,13 +8109,15 @@ function renderPaso4Constructor(){
       ${(() => {
         if(!totalPasos) return '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>';
 
-        // Lista unificada de pasos con su índice global, en el mismo orden que
-        // obtenerTodosLosPasos() para que s.asignaciones[i] coincida.
+        // Lista unificada de pasos. Cada paso tiene _asignKey (key estable
+        // para indexar s.asignaciones). Esto reemplaza el indexado por número
+        // que causaba desincronización al cambiar pasos.
         const todosLosPasos = obtenerTodosLosPasos();
-        // Inicializar asignaciones (default sugerido) si todavía no existen.
-        // Esto replica la lógica del paso 5 antiguo dentro del paso 4 unificado.
-        todosLosPasos.forEach((p, i) => {
-          s.asignaciones[i] = s.asignaciones[i] || {
+
+        // Inicializar asignaciones por key (default sugerido).
+        todosLosPasos.forEach((p) => {
+          const k = p._asignKey;
+          s.asignaciones[k] = s.asignaciones[k] || {
             responsable: p.responsable || '',
             plazo_dias: p.plazo_dias,
             esfuerzo: p.esfuerzo || 'MEDIO'
@@ -8075,23 +8129,25 @@ function renderPaso4Constructor(){
           `<option value="${escapeHtmlPlan(r.nombre)}">${escapeHtmlPlan(r.nombre+' · '+r.cargo)}</option>`
         ).join('');
 
-        // Helper: bloque inline de asignación. Reutiliza el mismo grid del paso 5.
-        const asignBlock = (i) => {
-          const a = s.asignaciones[i];
+        // Helper: bloque inline de asignación. Recibe la key del paso.
+        const asignBlock = (aKey) => {
+          const a = s.asignaciones[aKey];
           const heredadoTag = a._heredado
             ? `<span style="margin-left:8px;font-size:9px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.04em">⚠ Heredado</span>`
             : '';
+          // Escape la key para uso dentro de string literal de onchange
+          const kEsc = aKey.replace(/'/g,"\\'");
           return `<div class="plan-asign-grid" style="margin-top:8px">
             <div>
               <span class="lbl">Responsable ${heredadoTag}</span>
-              <select onchange="PLAN_STATE.asignaciones[${i}].responsable=this.value; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
+              <select onchange="PLAN_STATE.asignaciones['${kEsc}'].responsable=this.value; if(PLAN_STATE.asignaciones['${kEsc}']._heredado){ delete PLAN_STATE.asignaciones['${kEsc}']._heredado; renderPlanPaso(); } planMarcarCambio()">
                 <option value="${escapeHtmlPlan(a.responsable||'')}" selected>${escapeHtmlPlan(a.responsable||'(sin asignar)')}</option>
                 ${responsablesOptions}
               </select>
             </div>
             <div>
               <span class="lbl">Plazo (días)</span>
-              <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones[${i}].plazo_dias=parseInt(this.value)||14; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
+              <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones['${kEsc}'].plazo_dias=parseInt(this.value)||14; if(PLAN_STATE.asignaciones['${kEsc}']._heredado){ delete PLAN_STATE.asignaciones['${kEsc}']._heredado; renderPlanPaso(); } planMarcarCambio()">
             </div>
             <div>
               <span class="lbl">Esfuerzo</span>
@@ -8101,12 +8157,11 @@ function renderPaso4Constructor(){
         };
 
         const items = [];
-        // Misma iteración que obtenerTodosLosPasos() para que el índice global
-        // (variable `gIdx`) coincida con la posición en s.asignaciones.
-        let gIdx = 0;
+        // Iteramos exactamente en el mismo orden que obtenerTodosLosPasos()
+        // y usamos p._asignKey para acceder a la asignación correcta.
         s.pasosSeleccionados.forEach((p) => {
           const ln = (s.propuestas||[]).find(l=>l.id===p.lineaId);
-          const pk = escapeHtmlPlan(p.key||p.id||String(gIdx));
+          const pk = escapeHtmlPlan(p.key||p.id);
           items.push(`
             <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
               <span style="color:var(--accent2);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
@@ -8122,14 +8177,15 @@ function renderPaso4Constructor(){
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
                 <div style="font-size:10px;color:var(--accent2);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
-                ${asignBlock(gIdx)}
+                ${asignBlock(p.key)}
               </div>
             </div>`);
-          gIdx++;
         });
         // Orden y mapeo idéntico a obtenerTodosLosPasos(): primero pasosOtrosLinea, luego focoPropio.
         Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
           (pasos||[]).forEach((p, oi) => {
+            // Key estable basada en uid (fallback a índice solo para compat)
+            const otroKey = p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi);
             items.push(`
               <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
                 <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
@@ -8145,14 +8201,15 @@ function renderPaso4Constructor(){
                     <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                   </div>
                   <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">PASO PROPIO</div>
-                  ${asignBlock(gIdx)}
+                  ${asignBlock(otroKey)}
                 </div>
               </div>`);
-            gIdx++;
           });
         });
         (s.pasosFocoPropio||[]).forEach((p, i) => {
           const fpk = 'fp_' + (p.id || i);
+          // Key estable basada en uid (fallback a índice solo para compat)
+          const focoKey = p.uid ? ('foco|'+p.uid) : ('foco|'+i);
           items.push(`
             <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
               <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
@@ -8168,10 +8225,9 @@ function renderPaso4Constructor(){
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
                 <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
-                ${asignBlock(gIdx)}
+                ${asignBlock(focoKey)}
               </div>
             </div>`);
-          gIdx++;
         });
 
         // Fecha objetivo (basada en el mayor plazo asignado).
@@ -8203,7 +8259,11 @@ function renderPaso4Constructor(){
 function planTogglePaso(key, lineaId, pasoIdx){
   const s = PLAN_STATE;
   const idx = s.pasosSeleccionados.findIndex(x=>x.key===key);
-  if(idx>=0){ s.pasosSeleccionados.splice(idx,1); }
+  if(idx>=0){
+    s.pasosSeleccionados.splice(idx,1);
+    // Limpiar asignación huérfana asociada a este key
+    delete s.asignaciones[key];
+  }
   else {
     const ln = s.propuestas.find(l=>l.id===lineaId);
     const p = ln.pasos[pasoIdx];
@@ -8219,11 +8279,17 @@ function planAgregarOtroLinea(lineaId){
   const dias = parseInt(document.getElementById('otrolnDias_'+lineaId)?.value)||14;
   if(!desc) return;
   if(!PLAN_STATE.pasosOtrosLinea[lineaId]) PLAN_STATE.pasosOtrosLinea[lineaId]=[];
-  PLAN_STATE.pasosOtrosLinea[lineaId].push({descripcion:desc, plazo_dias:dias, origen:'OTROS_LINEA', responsable:'', esfuerzo:'MEDIO'});
+  const uid = Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  PLAN_STATE.pasosOtrosLinea[lineaId].push({uid, descripcion:desc, plazo_dias:dias, origen:'OTROS_LINEA', responsable:'', esfuerzo:'MEDIO'});
   planMarcarCambio();
   renderPlanPaso();
 }
 function planQuitarOtroLinea(lineaId, idx){
+  const p = PLAN_STATE.pasosOtrosLinea[lineaId][idx];
+  if(p && p.uid){
+    // Limpiar asignación huérfana
+    delete PLAN_STATE.asignaciones['otros|'+p.uid];
+  }
   PLAN_STATE.pasosOtrosLinea[lineaId].splice(idx,1);
   if(!PLAN_STATE.pasosOtrosLinea[lineaId].length) delete PLAN_STATE.pasosOtrosLinea[lineaId];
   planMarcarCambio();
@@ -8233,11 +8299,16 @@ function planAgregarFocoPropio(){
   const desc = document.getElementById('focoDesc')?.value.trim();
   const dias = parseInt(document.getElementById('focoDias')?.value)||14;
   if(!desc) return;
-  PLAN_STATE.pasosFocoPropio.push({descripcion:desc, plazo_dias:dias, origen:'FOCO_PROPIO', responsable:'', esfuerzo:'MEDIO'});
+  const uid = Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  PLAN_STATE.pasosFocoPropio.push({uid, descripcion:desc, plazo_dias:dias, origen:'FOCO_PROPIO', responsable:'', esfuerzo:'MEDIO'});
   planMarcarCambio();
   renderPlanPaso();
 }
 function planQuitarFocoPropio(idx){
+  const p = PLAN_STATE.pasosFocoPropio[idx];
+  if(p && p.uid){
+    delete PLAN_STATE.asignaciones['foco|'+p.uid];
+  }
   PLAN_STATE.pasosFocoPropio.splice(idx,1);
   planMarcarCambio();
   renderPlanPaso();
@@ -8246,12 +8317,19 @@ function planQuitarFocoPropio(idx){
 function obtenerTodosLosPasos(){
   const s = PLAN_STATE;
   const arr = [];
-  s.pasosSeleccionados.forEach(p=>arr.push(p));
+  s.pasosSeleccionados.forEach(p=>arr.push({...p, _asignKey: p.key}));
   Object.entries(s.pasosOtrosLinea).forEach(([lineaId,pasos])=>{
     const ln = s.propuestas.find(l=>l.id===lineaId);
-    pasos.forEach(p=>arr.push({...p, lineaTitulo:ln?.titulo||'', lineaFoco:(ln?.foco||'')+' · propio'}));
+    pasos.forEach((p,oi)=>{
+      // uid estable si existe; fallback a índice (solo para compat con borradores muy viejos)
+      const aKey = p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi);
+      arr.push({...p, lineaTitulo:ln?.titulo||'', lineaFoco:(ln?.foco||'')+' · propio', _asignKey: aKey});
+    });
   });
-  s.pasosFocoPropio.forEach(p=>arr.push({...p, lineaTitulo:'Foco propio', lineaFoco:'foco propio'}));
+  s.pasosFocoPropio.forEach((p,i)=>{
+    const aKey = p.uid ? ('foco|'+p.uid) : ('foco|'+i);
+    arr.push({...p, lineaTitulo:'Foco propio', lineaFoco:'foco propio', _asignKey: aKey});
+  });
   return arr;
 }
 
@@ -8363,7 +8441,7 @@ async function planConfirmar(){
 
     // Insertar pasos en tabla microacciones_pasos
     const pasosPayload = pasos.map((p,i)=>{
-      const a = s.asignaciones[i] || {};
+      const a = s.asignaciones[p._asignKey] || {};
       const fecha = new Date(); fecha.setDate(fecha.getDate()+(a.plazo_dias||p.plazo_dias));
       return {
         microaccion_id: ma.id,
