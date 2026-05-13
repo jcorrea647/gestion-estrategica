@@ -6779,15 +6779,20 @@ async function planBuscarBorrador(accionId, mes){
 
 /* ====================== BOTÓN PLAN ====================== */
 function renderBotonPlan(accionId, mes, seg) {
-  if(!seg || seg.porcentaje==null || seg.porcentaje===''){
-    return '<button class="plan-btn disabled" title="Registra el % primero" disabled>'
-      +'<span class="plan-dot"></span>Plan</button>';
-  }
-
+  // Buscar primero si existe un plan (microaccion) para este (accion_id, mes).
+  // Esto importa porque si el director reinició el seguimiento con la
+  // convención 999, el plan se mantiene en BD pero seg.porcentaje es null.
+  // En ese caso el plan debe seguir siendo accesible.
   const ma = (DB.microacciones||[]).find(m=>
     m.accion_id===accionId && m.mes===mes &&
     (m.estado==='ACTIVA' || m.estado==='PROPUESTA' || m.estado==='COMPLETADA' || m.estado==='BORRADOR')
   );
+
+  // Solo deshabilitar si no hay seguimiento Y tampoco hay plan previo.
+  if(!ma && (!seg || seg.porcentaje==null || seg.porcentaje==='')){
+    return '<button class="plan-btn disabled" title="Registra el % primero" disabled>'
+      +'<span class="plan-dot"></span>Plan</button>';
+  }
 
   if(ma && ma.estado==='COMPLETADA'){
     return '<button class="plan-btn completado" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Plan completado">'
@@ -6827,11 +6832,18 @@ async function abrirPlan(accionId, mes){
 }
 async function _abrirPlanInternal(accionId, mes){
   const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
-  if(!seg || seg.porcentaje==null){ showToast('Registra el % de cumplimiento primero'); return; }
 
   // 1. Buscar plan ACTIVO/COMPLETADO/PROPUESTA primero
   const ma = (DB.microacciones||[]).find(m=>m.accion_id===accionId&&m.mes===mes
     && (m.estado==='ACTIVA'||m.estado==='PROPUESTA'||m.estado==='COMPLETADA'));
+
+  // Bloquear apertura solo si NO hay plan previo Y tampoco hay seguimiento.
+  // Si existe plan previo, debe ser accesible aunque el seguimiento haya sido
+  // reiniciado con la convención 999.
+  if(!ma && (!seg || seg.porcentaje==null)){
+    showToast('Registra el % de cumplimiento primero');
+    return;
+  }
 
   if(ma){
     planInitState(accionId, mes, seg, null);
