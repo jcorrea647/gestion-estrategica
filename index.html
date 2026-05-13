@@ -7855,10 +7855,14 @@ async function planGenerarPropuestas(){
         };
       }));
 
-      // ── PROPUESTAS DE NIVEL (ámbito): además de las causales, traer las
-      // alternativas asociadas al ámbito de la acción (Aula, Gestión, etc.).
+      // ── PROPUESTAS DE NIVEL (ámbito): además de las causales, traer los
+      // pasos base asociados al ámbito de la acción (Aula, Gestión, etc.).
       // Se cargan desde filas 'nivel|<accion>|<L>|<ambito>' en planes_cache.
-      // Cada fila aporta una línea nueva con sus alternativas A/B/C.
+      // IMPORTANTE: las filas nivel guardan el contenido como
+      //   plan_data[0].pasos = ['paso 1', 'paso 2', 'paso 3']   (array de strings)
+      // mientras que las filas causal guardan:
+      //   plan_data[0].alternativas = {A:'...', B:'...', C:'...'}
+      // Este código soporta ambos formatos para máxima compatibilidad.
       if(slugAccion){
         try {
           const prefix = 'nivel|' + slugAccion + '|' + nivelActual + '|';
@@ -7872,30 +7876,42 @@ async function planGenerarPropuestas(){
               const partes = (row.cache_key||'').split('|');
               const ambito = partes[3] || '';
               const filaCache = row?.plan_data?.[0];
-              if(!filaCache || !filaCache.alternativas) return;
-              const alt = filaCache.alternativas;
+              if(!filaCache) return;
+
               const ambitoInfo = (typeof MAPA_AMBITOS_INFO !== 'undefined') ? MAPA_AMBITOS_INFO[ambito] : null;
               const etiqueta = ambitoInfo?.etiqueta || ambito;
-              const pasos = [];
-              ['A','B','C'].forEach((letra, k) => {
-                const texto = (alt[letra]||'').trim();
-                if(texto){
-                  pasos.push({
-                    id: 'n' + (j+1) + '.' + (k+1),
-                    descripcion: texto,
-                    responsable_sugerido: '',
-                    plazo_dias: 14,
-                    esfuerzo: 'MEDIO',
-                    _alternativa: letra
-                  });
-                }
-              });
-              if(!pasos.length) return;
+
+              // Construir lista de textos según el formato encontrado
+              const textos = [];
+              if(Array.isArray(filaCache.pasos)){
+                // Formato nivel real: pasos como array de strings
+                filaCache.pasos.forEach(t => {
+                  const s = (t||'').trim();
+                  if(s) textos.push(s);
+                });
+              } else if(filaCache.alternativas){
+                // Formato legacy: alternativas A/B/C
+                ['A','B','C'].forEach(letra => {
+                  const s = (filaCache.alternativas[letra]||'').trim();
+                  if(s) textos.push(s);
+                });
+              }
+
+              if(!textos.length) return;
+
+              const pasos = textos.map((texto, k) => ({
+                id: 'n' + (j+1) + '.' + (k+1),
+                descripcion: texto,
+                responsable_sugerido: '',
+                plazo_dias: 14,
+                esfuerzo: 'MEDIO'
+              }));
+
               propuestas.push({
                 id: 'linea_nivel_' + (j+1),
                 titulo: 'Ámbito · ' + etiqueta,
                 foco: 'FOCO EN ' + etiqueta.toUpperCase(),
-                descripcion_corta: 'Tres alternativas sugeridas para el ámbito "' + etiqueta + '". Elegí la que mejor se adapte y editala para tu contexto. Borrá las que no uses.',
+                descripcion_corta: 'Pasos base sugeridos para el ámbito "' + etiqueta + '". Elegí los que mejor se adapten y editalos para tu contexto. Borrá los que no uses.',
                 causa_atacada: 'nivel',
                 _ambito: etiqueta,
                 pasos,
