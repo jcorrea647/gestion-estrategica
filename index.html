@@ -6097,7 +6097,13 @@ const PLAN_CSS = `
 
 /* P4: Constructor */
 .plan-lineas{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
-@media(min-width:560px){.plan-lineas{grid-template-columns:repeat(2,1fr)}}
+/* Layout split 60/40 del paso 4: alternativas izq + plan armado der (sticky) */
+.plan-p4-split{display:grid;grid-template-columns:60fr 40fr;gap:18px;align-items:start}
+.plan-p4-right{position:sticky;top:8px}
+@media(max-width:900px){
+  .plan-p4-split{grid-template-columns:1fr;gap:14px}
+  .plan-p4-right{position:static}
+}
 .plan-linea{background:var(--surface);border:1px solid var(--border);
   border-radius:10px;padding:14px}
 .plan-linea-tag{display:inline-block;font-size:10px;font-weight:600;
@@ -8084,28 +8090,32 @@ function renderPaso4Constructor(){
       <button onclick="planRegenerarPlan()" style="display:flex;align-items:center;gap:5px;background:none;border:1px solid var(--border);border-radius:6px;padding:5px 11px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit" title="Limpiar plan y regenerar con IA">↺ Regenerar</button>
     </div>
     <p class="lead">Selecciona pasos de las líneas, agrega tus propios pasos en Otros, o crea una línea entera con Foco propio.</p>
-    <div class="plan-lineas">${lineas}</div>
-    <div class="plan-foco-propio">
-      <span class="plan-linea-tag">Foco propio — 4ª línea</span>
-      <h4 style="font-family:'DM Serif Display',serif;font-size:15px;color:var(--accent);margin:6px 0 4px;font-weight:400">Tu propia línea de acción</h4>
-      <div class="plan-linea-desc">Crea pasos completamente tuyos, basados en tu conocimiento del contexto.</div>
-      ${focoPropios}
-      <div class="plan-foco-propio-add">
-        <input class="desc" type="text" id="focoDesc" placeholder="Escribe un paso propio...">
-        <input class="dias" type="number" id="focoDias" placeholder="d" min="1" max="90">
-        <button onclick="planAgregarFocoPropio()">+ Agregar</button>
+    <div class="plan-p4-split">
+      <div class="plan-p4-left">
+        <div class="plan-lineas">${lineas}</div>
+        <div class="plan-foco-propio">
+          <span class="plan-linea-tag">Foco propio — 4ª línea</span>
+          <h4 style="font-family:'DM Serif Display',serif;font-size:15px;color:var(--accent);margin:6px 0 4px;font-weight:400">Tu propia línea de acción</h4>
+          <div class="plan-linea-desc">Crea pasos completamente tuyos, basados en tu conocimiento del contexto.</div>
+          ${focoPropios}
+          <div class="plan-foco-propio-add">
+            <input class="desc" type="text" id="focoDesc" placeholder="Escribe un paso propio...">
+            <input class="dias" type="number" id="focoDias" placeholder="d" min="1" max="90">
+            <button onclick="planAgregarFocoPropio()">+ Agregar</button>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="plan-resumen">
-      <div class="plan-resumen-head">
-        <span class="ttl">Mi plan armado</span>
-        <span class="cnt">${totalPasos} paso${totalPasos===1?'':'s'} seleccionado${totalPasos===1?'':'s'}</span>
-      </div>
-      ${totalPasos > 0 ? `
-        <div style="font-size:11px;color:var(--muted);padding:4px 0 10px 0;display:flex;align-items:center;gap:6px">
-          <span style="font-size:13px">✎</span>
-          <span>Tocá cualquier paso para editarlo. Los cambios se guardan automáticamente.</span>
-        </div>` : ''}
+      <div class="plan-p4-right">
+        <div class="plan-resumen">
+          <div class="plan-resumen-head">
+            <span class="ttl">Mi plan armado</span>
+            <span class="cnt">${totalPasos} paso${totalPasos===1?'':'s'} seleccionado${totalPasos===1?'':'s'}</span>
+          </div>
+          ${totalPasos > 0 ? `
+            <div style="font-size:11px;color:var(--muted);padding:4px 0 10px 0;display:flex;align-items:center;gap:6px">
+              <span style="font-size:13px">✎</span>
+              <span>Tocá cualquier paso para editarlo. Los cambios se guardan automáticamente.</span>
+            </div>` : ''}
       ${(() => {
         if(!totalPasos) return '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>';
 
@@ -8242,6 +8252,8 @@ function renderPaso4Constructor(){
 
         return items.join('');
       })()}
+        </div>
+      </div>
     </div>
   `;
   document.getElementById('planFooter').innerHTML = `
