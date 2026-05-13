@@ -6708,7 +6708,7 @@ async function planSyncSupabase(){
     mes: s.mes,
     estado: 'BORRADOR',
     modo: s.banda,
-    paso_actual: Math.min(s.paso, 7),
+    paso_actual: Math.min(s.paso, 6),
     causas: s.causas.length ? s.causas : null,
     causas_otros: s.causasOtros.length ? s.causasOtros : null,
     comentario: s.comentario || null,
@@ -6804,7 +6804,7 @@ function renderBotonPlan(accionId, mes, seg) {
       +'<span class="plan-dot"></span>Plan</button>';
   }
   if(ma && ma.estado==='BORRADOR'){
-    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/7)">'
+    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/6)">'
       +'<span class="plan-dot"></span>Borrador</button>';
   }
   if(ma){
@@ -7190,13 +7190,13 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Causales','Plan','Asignación','Acuerdos','Listo'];
+  const PASO_LABELS = ['','Marco','Brechas','Causales','Plan','Acuerdos','Listo'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
-  for(let i=1;i<=7;i++){
+  for(let i=1;i<=6;i++){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
-    if(s.paso===99 && i<=7) d.classList.add('done');
+    if(s.paso===99 && i<=6) d.classList.add('done');
     const maxAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado||1);
     const isFuture = s.paso !== 99 && i > maxAlcanzado + 1;
     if(isFuture) d.classList.add('future');
@@ -7220,9 +7220,8 @@ function renderPlanPaso(){
     case 2: renderPaso1Contexto(); break;
     case 3: renderPaso2Diagnostico(); break;
     case 4: renderPaso4Constructor(); break;
-    case 5: renderPaso5Asignacion(); break;
-    case 6: renderPaso6Acuerdos(); break;
-    case 7: renderPaso7Confirmacion(); break;
+    case 5: renderPaso6Acuerdos(); break;
+    case 6: renderPaso7Confirmacion(); break;
   }
 
   // Indicador "Guardando…/Guardado" en footer
@@ -8057,12 +8056,59 @@ function renderPaso4Constructor(){
         </div>` : ''}
       ${(() => {
         if(!totalPasos) return '<div class="plan-resumen-item" style="color:var(--muted)">Aún no has seleccionado pasos.</div>';
+
+        // Lista unificada de pasos con su índice global, en el mismo orden que
+        // obtenerTodosLosPasos() para que s.asignaciones[i] coincida.
+        const todosLosPasos = obtenerTodosLosPasos();
+        // Inicializar asignaciones (default sugerido) si todavía no existen.
+        // Esto replica la lógica del paso 5 antiguo dentro del paso 4 unificado.
+        todosLosPasos.forEach((p, i) => {
+          s.asignaciones[i] = s.asignaciones[i] || {
+            responsable: p.responsable || '',
+            plazo_dias: p.plazo_dias,
+            esfuerzo: p.esfuerzo || 'MEDIO'
+          };
+        });
+
+        // Opciones de responsable (sólo se calculan una vez por render).
+        const responsablesOptions = (DB.responsables||[]).map(r =>
+          `<option value="${escapeHtmlPlan(r.nombre)}">${escapeHtmlPlan(r.nombre+' · '+r.cargo)}</option>`
+        ).join('');
+
+        // Helper: bloque inline de asignación. Reutiliza el mismo grid del paso 5.
+        const asignBlock = (i) => {
+          const a = s.asignaciones[i];
+          const heredadoTag = a._heredado
+            ? `<span style="margin-left:8px;font-size:9px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.04em">⚠ Heredado</span>`
+            : '';
+          return `<div class="plan-asign-grid" style="margin-top:8px">
+            <div>
+              <span class="lbl">Responsable ${heredadoTag}</span>
+              <select onchange="PLAN_STATE.asignaciones[${i}].responsable=this.value; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
+                <option value="${escapeHtmlPlan(a.responsable||'')}" selected>${escapeHtmlPlan(a.responsable||'(sin asignar)')}</option>
+                ${responsablesOptions}
+              </select>
+            </div>
+            <div>
+              <span class="lbl">Plazo (días)</span>
+              <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones[${i}].plazo_dias=parseInt(this.value)||14; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
+            </div>
+            <div>
+              <span class="lbl">Esfuerzo</span>
+              <span class="esfuerzo">${a.esfuerzo}</span>
+            </div>
+          </div>`;
+        };
+
         const items = [];
-        s.pasosSeleccionados.forEach((p,i) => {
+        // Misma iteración que obtenerTodosLosPasos() para que el índice global
+        // (variable `gIdx`) coincida con la posición en s.asignaciones.
+        let gIdx = 0;
+        s.pasosSeleccionados.forEach((p) => {
           const ln = (s.propuestas||[]).find(l=>l.id===p.lineaId);
-          const pk = escapeHtmlPlan(p.key||p.id||String(i));
+          const pk = escapeHtmlPlan(p.key||p.id||String(gIdx));
           items.push(`
-            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
               <span style="color:var(--accent2);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
               <div style="flex:1;min-width:0">
                 <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
@@ -8076,33 +8122,16 @@ function renderPaso4Constructor(){
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
                 <div style="font-size:10px;color:var(--accent2);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
+                ${asignBlock(gIdx)}
               </div>
             </div>`);
+          gIdx++;
         });
-        (s.pasosFocoPropio||[]).forEach((p,i) => {
-          const fpk = 'fp_' + (p.id || i);
-          items.push(`
-            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
-              <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
-              <div style="flex:1;min-width:0">
-                <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
-                     onmouseover="this.style.borderColor='var(--accent)';this.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'"
-                     onmouseout="if(!this.querySelector('[data-fp-idx]:focus')){this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'}">
-                  <div contenteditable="true" data-fp-idx="${i}"
-                    onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
-                    onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionFocoPropio(${i},this.innerText.trim())"
-                    style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
-                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
-                  <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
-                </div>
-                <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
-              </div>
-            </div>`);
-        });
+        // Orden y mapeo idéntico a obtenerTodosLosPasos(): primero pasosOtrosLinea, luego focoPropio.
         Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
           (pasos||[]).forEach((p, oi) => {
             items.push(`
-              <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0">
+              <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
                 <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
                 <div style="flex:1;min-width:0">
                   <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
@@ -8116,10 +8145,45 @@ function renderPaso4Constructor(){
                     <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                   </div>
                   <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">PASO PROPIO</div>
+                  ${asignBlock(gIdx)}
                 </div>
               </div>`);
+            gIdx++;
           });
         });
+        (s.pasosFocoPropio||[]).forEach((p, i) => {
+          const fpk = 'fp_' + (p.id || i);
+          items.push(`
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid var(--border-light,#e5e7eb)">
+              <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
+              <div style="flex:1;min-width:0">
+                <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
+                     onmouseover="this.style.borderColor='var(--accent)';this.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'"
+                     onmouseout="if(!this.querySelector('[data-fp-idx]:focus')){this.style.borderColor='var(--border-light,#e5e7eb)';this.style.boxShadow='none'}">
+                  <div contenteditable="true" data-fp-idx="${i}"
+                    onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
+                    onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionFocoPropio(${i},this.innerText.trim())"
+                    style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
+                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                  <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
+                </div>
+                <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
+                ${asignBlock(gIdx)}
+              </div>
+            </div>`);
+          gIdx++;
+        });
+
+        // Fecha objetivo (basada en el mayor plazo asignado).
+        const maxPlazo = Math.max(...Object.values(s.asignaciones).map(a=>a.plazo_dias||0), 0);
+        if(maxPlazo > 0){
+          const fechaObj = new Date(); fechaObj.setDate(fechaObj.getDate()+maxPlazo);
+          const fechaTxt = fechaObj.toLocaleDateString('es-CL',{day:'numeric',month:'long',year:'numeric'});
+          items.push(`<div style="margin-top:14px;padding:10px 12px;background:var(--surface2);border-radius:6px;font-size:12.5px;color:var(--text)">
+            Tu plan se completaría el <strong>${fechaTxt}</strong> (${maxPlazo} días).
+          </div>`);
+        }
+
         return items.join('');
       })()}
     </div>
@@ -8132,7 +8196,7 @@ function renderPaso4Constructor(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planNext()" ${totalPasos===0?'disabled':''}>Asignar responsables →</button>
+      <button class="plan-btn-next" onclick="planNext()" ${totalPasos===0?'disabled':''}>Acuerdos y compromisos →</button>
     </div>`;
 }
 
@@ -8177,84 +8241,6 @@ function planQuitarFocoPropio(idx){
   PLAN_STATE.pasosFocoPropio.splice(idx,1);
   planMarcarCambio();
   renderPlanPaso();
-}
-
-/* ====================== PASO 5: ASIGNACIÓN ====================== */
-function renderPaso5Asignacion(){
-  const s = PLAN_STATE;
-  const todosLosPasos = obtenerTodosLosPasos();
-
-  const responsables = (DB.responsables||[]).map(r=>
-    `<option value="${escapeHtmlPlan(r.nombre)}">${escapeHtmlPlan(r.nombre+' · '+r.cargo)}</option>`
-  ).join('');
-
-  // Detectar si hay asignaciones heredadas (de plan anterior)
-  const hayHeredadas = Object.values(s.asignaciones||{}).some(a => a && a._heredado);
-  const mesHeredadoLabel = s._heredadoDeMes
-    ? (typeof fmtMes==='function' ? fmtMes(s._heredadoDeMes) : s._heredadoDeMes)
-    : '';
-  const bannerHeredado = hayHeredadas ? `
-    <div class="aviso-disclaimer" style="margin-bottom:14px;background:#fff7e6;border-left:3px solid #f59e0b">
-      <strong>⚠ Datos heredados de ${escapeHtmlPlan(mesHeredadoLabel||'plan anterior')}</strong> — revisa cada responsable y confirmá que sigue vigente.
-      Al cambiar cualquier campo, el aviso de "heredado" desaparece automáticamente.
-    </div>` : '';
-
-  const cards = todosLosPasos.map((p,i)=>{
-    const id = 'asign_'+i;
-    s.asignaciones[i] = s.asignaciones[i] || {responsable:p.responsable||'', plazo_dias:p.plazo_dias, esfuerzo:p.esfuerzo||'MEDIO'};
-    const a = s.asignaciones[i];
-    const tagHeredado = a._heredado
-      ? `<span style="margin-left:8px;font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em">⚠ Heredado · confirmar</span>`
-      : '';
-    return `<div class="plan-asign"${a._heredado?' style="border-left:3px solid #f59e0b"':''}>
-      <div class="plan-asign-head">
-        <div class="plan-asign-num">${i+1}</div>
-        <div style="flex:1">
-          <div class="plan-asign-desc">${planBoldTituloPaso(p.descripcion)}</div>
-          <span class="plan-linea-tag" style="margin-top:6px">${escapeHtmlPlan(p.lineaFoco||p.origen||'')}</span>
-          ${tagHeredado}
-        </div>
-      </div>
-      <div class="plan-asign-grid">
-        <div>
-          <span class="lbl">Responsable</span>
-          <select onchange="PLAN_STATE.asignaciones[${i}].responsable=this.value; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
-            <option value="${escapeHtmlPlan(a.responsable||'')}" selected>${escapeHtmlPlan(a.responsable||'(sin asignar)')}</option>
-            ${responsables}
-          </select>
-        </div>
-        <div>
-          <span class="lbl">Plazo (días)</span>
-          <input type="number" min="1" max="90" value="${a.plazo_dias}" onchange="PLAN_STATE.asignaciones[${i}].plazo_dias=parseInt(this.value)||14; if(PLAN_STATE.asignaciones[${i}]._heredado){ delete PLAN_STATE.asignaciones[${i}]._heredado; renderPlanPaso(); } planMarcarCambio()">
-        </div>
-        <div>
-          <span class="lbl">Esfuerzo</span>
-          <span class="esfuerzo">${a.esfuerzo}</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  // Fecha objetivo = mayor plazo
-  const maxPlazo = Math.max(...Object.values(s.asignaciones).map(a=>a.plazo_dias||0), ...todosLosPasos.map(p=>p.plazo_dias||0));
-  const fechaObj = new Date(); fechaObj.setDate(fechaObj.getDate()+maxPlazo);
-  const fechaTxt = fechaObj.toLocaleDateString('es-CL',{day:'numeric',month:'long',year:'numeric'});
-
-  document.getElementById('planBody').innerHTML = `
-    <h3>Asigna responsables y plazos</h3>
-    <p class="lead">Revisa el responsable y plazo de cada paso.</p>
-    ${bannerHeredado}
-    ${cards}
-    <div class="plan-resumen" style="margin-top:14px">
-      <div class="plan-resumen-item">Tu plan se completaría el <strong>${fechaTxt}</strong> (${maxPlazo} días).</div>
-    </div>
-  `;
-  document.getElementById('planFooter').innerHTML = `
-    <span class="info">${todosLosPasos.length} paso(s) por asignar</span>
-    <div style="display:flex;gap:8px">
-      <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planNext()">Acuerdos y compromisos →</button>
-    </div>`;
 }
 
 function obtenerTodosLosPasos(){
@@ -8340,7 +8326,7 @@ async function planConfirmar(){
 
     const updatePayload = {
       estado: 'ACTIVA',
-      paso_actual: 7,
+      paso_actual: 6,
       fecha_objetivo: fechaObj.toISOString().split('T')[0],
       titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes),
       acuerdo_que: s.acuerdos.qhe,
