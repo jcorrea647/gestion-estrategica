@@ -6599,6 +6599,11 @@ function planInitState(accionId, mes, seg, borrador) {
   if(borrador){
     PLAN_STATE.microaccionId = borrador.id || null;
     PLAN_STATE.paso = 1; // Siempre iniciar desde Marco Conceptual
+    // Restaurar la banda original guardada (campo `modo` en BD). Esto importa
+    // cuando el seguimiento fue reiniciado con 999: pct queda undefined y la
+    // banda calculada sería 'CONSOLIDACION', pero la banda real del plan
+    // (CRITICO/MEJORA/CONSOLIDACION) ya está guardada en BD y debe respetarse.
+    if(borrador.modo) PLAN_STATE.banda = borrador.modo;
     PLAN_STATE.causas = (borrador.causas || []).map(c => ({
       ...c,
       codigo: planNormalizarCodigoCausa(c.codigo)
@@ -6837,10 +6842,16 @@ async function _abrirPlanInternal(accionId, mes){
   const ma = (DB.microacciones||[]).find(m=>m.accion_id===accionId&&m.mes===mes
     && (m.estado==='ACTIVA'||m.estado==='PROPUESTA'||m.estado==='COMPLETADA'));
 
-  // Bloquear apertura solo si NO hay plan previo Y tampoco hay seguimiento.
-  // Si existe plan previo, debe ser accesible aunque el seguimiento haya sido
-  // reiniciado con la convención 999.
-  if(!ma && (!seg || seg.porcentaje==null)){
+  // Detectar también si hay un borrador en memoria (para no bloquear el
+  // acceso cuando el seguimiento fue reiniciado con 999 pero el plan
+  // sigue existiendo como borrador).
+  const borradorMemoria = (DB.microacciones||[]).find(m=>
+    m.accion_id===accionId && m.mes===mes && m.estado==='BORRADOR');
+
+  // Bloquear apertura solo si NO hay plan previo (ni activo ni borrador)
+  // Y tampoco hay seguimiento. Si existe cualquier plan previo, debe ser
+  // accesible aunque el seguimiento haya sido reiniciado con la convención 999.
+  if(!ma && !borradorMemoria && (!seg || seg.porcentaje==null)){
     showToast('Registra el % de cumplimiento primero');
     return;
   }
