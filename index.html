@@ -7851,6 +7851,59 @@ async function planGenerarPropuestas(){
         };
       }));
 
+      // ── PROPUESTAS DE NIVEL (ámbito): además de las causales, traer las
+      // alternativas asociadas al ámbito de la acción (Aula, Gestión, etc.).
+      // Se cargan desde filas 'nivel|<accion>|<L>|<ambito>' en planes_cache.
+      // Cada fila aporta una línea nueva con sus alternativas A/B/C.
+      if(slugAccion){
+        try {
+          const prefix = 'nivel|' + slugAccion + '|' + nivelActual + '|';
+          const { data: nivelRows } = await sb.from('planes_cache')
+            .select('cache_key,plan_data,curado')
+            .like('cache_key', prefix + '%');
+          if(Array.isArray(nivelRows) && nivelRows.length){
+            // Ordenar para presentación estable (por ámbito alfabético)
+            nivelRows.sort((a,b) => (a.cache_key||'').localeCompare(b.cache_key||''));
+            nivelRows.forEach((row, j) => {
+              const partes = (row.cache_key||'').split('|');
+              const ambito = partes[3] || '';
+              const filaCache = row?.plan_data?.[0];
+              if(!filaCache || !filaCache.alternativas) return;
+              const alt = filaCache.alternativas;
+              const ambitoInfo = (typeof MAPA_AMBITOS_INFO !== 'undefined') ? MAPA_AMBITOS_INFO[ambito] : null;
+              const etiqueta = ambitoInfo?.etiqueta || ambito;
+              const pasos = [];
+              ['A','B','C'].forEach((letra, k) => {
+                const texto = (alt[letra]||'').trim();
+                if(texto){
+                  pasos.push({
+                    id: 'n' + (j+1) + '.' + (k+1),
+                    descripcion: texto,
+                    responsable_sugerido: '',
+                    plazo_dias: 14,
+                    esfuerzo: 'MEDIO',
+                    _alternativa: letra
+                  });
+                }
+              });
+              if(!pasos.length) return;
+              propuestas.push({
+                id: 'linea_nivel_' + (j+1),
+                titulo: 'Ámbito · ' + etiqueta,
+                foco: 'FOCO EN ' + etiqueta.toUpperCase(),
+                descripcion_corta: 'Tres alternativas sugeridas para el ámbito "' + etiqueta + '". Elegí la que mejor se adapte y editala para tu contexto. Borrá las que no uses.',
+                causa_atacada: 'nivel',
+                _ambito: etiqueta,
+                pasos,
+                _fromPrecomp: true
+              });
+            });
+          }
+        } catch(e){
+          console.warn('[planGenerarPropuestas] nivel| lookup:', e.message);
+        }
+      }
+
       // NOTA: el Núcleo se eliminó. Las recs por causal se cruzan con el nivel
       // cuando se complete el pre-cómputo con Gemini (accion × nivel × causal).
 
@@ -8027,10 +8080,10 @@ function renderPaso4Constructor(){
     const causaGrupo = esNucleo ? 'nucleo' : (causaObj?.grupo?.toLowerCase().includes('relacional') ? 'relacional' : causaObj ? 'estructural' : 'default');
     const cc = CAUSA_COLORS[causaGrupo];
     const causaPillLabel = esNucleo
-      ? 'Núcleo · ' + (ln.foco||'').replace('NÚCLEO · ','')
+      ? (ln._ambito ? ('Ámbito · ' + ln._ambito) : ('Núcleo · ' + (ln.foco||'').replace('NÚCLEO · ','')))
       : causaAtacada || (ln.foco||'');
     const causaPill = `<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
-      <span style="font-size:10px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">${esNucleo?'Nivel actual':'Causa identificada'}</span>
+      <span style="font-size:10px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">${esNucleo?(ln._ambito?'Ámbito':'Nivel actual'):'Causa identificada'}</span>
       <span style="font-size:11px;font-weight:500;padding:2px 10px;border-radius:20px;background:${cc.bg};color:${cc.color}">${escapeHtmlPlan(causaPillLabel)}</span>
     </div>`;
 
@@ -8183,7 +8236,7 @@ function renderPaso4Constructor(){
                     onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
                     onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionPasoResumen('${pk}',this.innerText.trim())"
                     style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
-                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                    title="Clic para editar">${planBoldTituloPaso(p.descripcion||'')}</div>
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
                 <div style="font-size:10px;color:var(--accent2);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
@@ -8207,7 +8260,7 @@ function renderPaso4Constructor(){
                       onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
                       onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionOtroLinea('${escapeHtmlPlan(lineaId)}',${oi},this.innerText.trim())"
                       style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
-                      title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                      title="Clic para editar">${planBoldTituloPaso(p.descripcion||'')}</div>
                     <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                   </div>
                   <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">PASO PROPIO</div>
@@ -8231,7 +8284,7 @@ function renderPaso4Constructor(){
                     onfocus="this.parentElement.style.borderColor='var(--accent)';this.parentElement.style.boxShadow='0 0 0 3px rgba(31,95,71,0.10)';this.parentElement.style.background='#fff'"
                     onblur="this.parentElement.style.borderColor='var(--border-light,#e5e7eb)';this.parentElement.style.boxShadow='none';planGuardarEdicionFocoPropio(${i},this.innerText.trim())"
                     style="font-size:13px;color:var(--text);outline:none;cursor:text;line-height:1.5;min-height:18px"
-                    title="Clic para editar">${escapeHtmlPlan(p.descripcion||'')}</div>
+                    title="Clic para editar">${planBoldTituloPaso(p.descripcion||'')}</div>
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
                 <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
