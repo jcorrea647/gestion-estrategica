@@ -1255,7 +1255,7 @@ function renderSeguimiento() {
       html+='<td style="text-align:center"><div class="seguimiento-cell">';
       html+=semHtml(est,semLabel);
       html+='<div style="display:flex;align-items:center;gap:4px;margin-top:4px">';
-      html+='<input class="pct-input'+lock+'" type="number" min="0" max="100" id="pct_'+ac.id+'" value="'+(seg?seg.porcentaje:'')+'" placeholder="0-100"'+disabledAttr+'>';
+      html+='<input class="pct-input'+lock+'" type="number" min="0" max="100" id="pct_'+ac.id+'" value="'+(seg?seg.porcentaje:'')+'" placeholder="0-100" title="Ingresa 0–100 para evaluar. Tip: 999 reinicia la meta (conserva comentarios y evidencias)"'+disabledAttr+'>';
       html+='<button class="save-btn'+btnLock+'" id="btn_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',false)"'+disabledAttr+'>OK</button>';
       html+='<button class="pending-btn'+btnLock+(isPend?' on':'')+'" id="pend_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',true)" title="Guardar como pendiente"'+disabledAttr+'>P</button>';
       html+='</div></div></td>';
@@ -1411,7 +1411,36 @@ async function guardarSeg(accionId, mes, pendiente) {
   const pctEl=document.getElementById('pct_'+accionId);
   const btnEl=document.getElementById(pendiente?'pend_'+accionId:'btn_'+accionId);
   const pct=parseFloat(pctEl?.value);
-  if(isNaN(pct)||pct<0||pct>100){showToast('Valor entre 0 y 100');return;}
+
+  // ── Sentinela 999 ──────────────────────────────────────────────────
+  // Convención del equipo: ingresar 999 reinicia la meta al estado "sin
+  // evaluar". Se elimina el registro de seguimiento (DELETE) pero los
+  // comentarios, evidencias y microacciones se conservan porque viven en
+  // tablas separadas con FK (accion_id, mes) — no dependen de seguimiento.id.
+  if(pct === 999) {
+    const exSeg = DB.seguimiento.find(s => s.accion_id === accionId && s.mes === mes);
+    if(!exSeg) {
+      // No había registro previo: ya estaba en estado "sin evaluar".
+      if(pctEl) pctEl.value = '';
+      showToast('Sin avance registrado para este mes');
+      return;
+    }
+    if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
+    const {error: delErr} = await sb.from('seguimiento').delete().eq('id', exSeg.id);
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = pendiente ? 'P' : 'OK'; }
+    if(delErr){ showToast('Error al reiniciar: '+delErr.message); return; }
+    // Limpiar de memoria
+    const i = DB.seguimiento.findIndex(s => s.accion_id === accionId && s.mes === mes);
+    if(i >= 0) DB.seguimiento.splice(i, 1);
+    // Limpiar input visual
+    if(pctEl){ pctEl.value = ''; pctEl.style.borderColor = ''; }
+    showToast('Avance reiniciado — comentarios y evidencias conservados');
+    renderCurrentPanel();
+    return;
+  }
+  // ───────────────────────────────────────────────────────────────────
+
+  if(isNaN(pct)||pct<0||pct>100){showToast('Valor entre 0 y 100 (o 999 para reiniciar)');return;}
   if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
   const exSeg=DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   const comentario=exSeg?.comentario||'';
@@ -3604,6 +3633,11 @@ function renderVerReuniones() {
     html += '</div></div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
     html += '<button class="btn btn-outline btn-sm" onclick="generarPDFReunionById(\''+selR.id+'\')">📄 Ver PDF</button>';
+    if(!selR.cerrada) {
+      html += '<button class="btn btn-outline btn-sm" onclick="abrirEditarReunionDesdeVer(\''+selR.id+'\')">✎ Editar reunión</button>';
+      html += '<button class="btn btn-primary btn-sm" id="btnGuardarCambiosReunion" disabled onclick="guardarCambiosReunion(\''+selR.id+'\')">💾 Guardar cambios</button>';
+      html += '<button class="btn btn-sm" style="background:var(--accent);color:#fff;border:1px solid var(--accent)" onclick="cerrarYEnviarReunionDesdeVer(\''+selR.id+'\')">✓ Cerrar y enviar</button>';
+    }
     if(selR.cerrada) {
       html += '<button class="btn-reabrir" style="font-size:12px" onclick="reabrirReunion(\''+selR.id+'\')">🔓 Reabrir reunión</button>';
     }
@@ -3617,10 +3651,15 @@ function renderVerReuniones() {
       partes.forEach(function(p){ html += '<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-size:12px">'+p.nombre+(p.correo?' <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</span>'; });
       html += '</div></div>';
     }
-    // Comentarios generales
-    if(selR.comentarios_generales) {
+    // Comentarios generales (editables si reunión abierta)
+    const cgVal = selR.comentarios_generales || '';
+    if(!selR.cerrada) {
       html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Comentarios generales</div>';
-      html += '<div style="background:var(--surface2);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6">'+selR.comentarios_generales.replace(/\n/g,'<br>')+'</div></div>';
+      html += '<textarea id="vrComentariosGenerales" oninput="marcarCambiosReunion()" placeholder="Sin comentarios — escribe aquí para agregarlos" style="width:100%;min-height:80px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6;font-family:inherit;color:var(--text);resize:vertical;outline:none" onfocus="this.style.borderColor=\'var(--accent)\';this.style.borderLeftColor=\'var(--accent2)\'" onblur="this.style.borderColor=\'var(--border)\';this.style.borderLeftColor=\'var(--accent2)\'">'+escapeHtmlPlan(cgVal)+'</textarea>';
+      html += '</div>';
+    } else if(cgVal) {
+      html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Comentarios generales</div>';
+      html += '<div style="background:var(--surface2);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6">'+cgVal.replace(/\n/g,'<br>')+'</div></div>';
     }
     // Seguimiento
     const accionesData = [];
@@ -3644,7 +3683,11 @@ function renderVerReuniones() {
           html += '<td style="font-size:11px;color:var(--muted)">'+fmtMes(seg.mes,true)+'</td>';
           html += '<td style="text-align:center;font-weight:600">'+(seg.porcentaje!==null?seg.porcentaje+'%':'—')+(seg.pendiente?' P':'')+'</td>';
           html += '<td style="text-align:center"><div class="semaforo '+est+'" style="font-size:10px">'+estL+'</div></td>';
-          html += '<td style="font-size:12px;color:var(--muted)">'+(seg.comentario||'—')+'</td></tr>';
+          if(!selR.cerrada) {
+            html += '<td style="font-size:12px"><input type="text" data-seg-id="'+seg.id+'" value="'+escapeHtmlPlan(seg.comentario||'')+'" oninput="marcarCambiosReunion()" placeholder="Sin comentario" style="width:100%;background:transparent;border:1px solid transparent;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;color:var(--text);outline:none" onfocus="this.style.background=\'#fff\';this.style.borderColor=\'var(--accent)\'" onblur="this.style.background=\'transparent\';this.style.borderColor=\'transparent\'"></td></tr>';
+          } else {
+            html += '<td style="font-size:12px;color:var(--muted)">'+(seg.comentario||'—')+'</td></tr>';
+          }
         });
       });
       html += '</tbody></table></div>';
@@ -3653,6 +3696,110 @@ function renderVerReuniones() {
   }
   html += '</div>'; // grid
   return html;
+}
+
+/* ====================== ACCIONES SOBRE REUNIÓN DESDE "VER REUNIONES" ====================== */
+
+/* Habilita el botón "Guardar cambios" cuando el usuario edita
+ * comentarios generales o comentarios de seguimiento en línea. */
+function marcarCambiosReunion(){
+  const btn = document.getElementById('btnGuardarCambiosReunion');
+  if(btn) btn.disabled = false;
+}
+
+/* Persiste los comentarios editables en línea sin cambiar el estado
+ * de la reunión (queda ABIERTA). Update solo de campos modificados. */
+async function guardarCambiosReunion(reunionId){
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === reunionId);
+  if(!reunion){ showToast('Reunión no encontrada'); return; }
+  if(reunion.cerrada){ showToast('La reunión está cerrada — reábrela primero'); return; }
+
+  const btn = document.getElementById('btnGuardarCambiosReunion');
+  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  try {
+    // 1) Comentarios generales de la reunión
+    const cgEl = document.getElementById('vrComentariosGenerales');
+    const nuevosCG = cgEl ? cgEl.value : null;
+    if(nuevosCG !== null && nuevosCG !== (reunion.comentarios_generales||'')){
+      const {error} = await sb.from('reuniones')
+        .update({comentarios_generales: nuevosCG || null, updated_at: new Date().toISOString()})
+        .eq('id', reunion.id);
+      if(error) throw error;
+      const idxR = DB.reuniones.findIndex(r => r.id === reunion.id);
+      if(idxR >= 0) DB.reuniones[idxR].comentarios_generales = nuevosCG || null;
+    }
+
+    // 2) Comentarios por seguimiento (inputs data-seg-id="...")
+    const inputs = document.querySelectorAll('input[data-seg-id]');
+    const updates = [];
+    inputs.forEach(function(inp){
+      const segId = inp.getAttribute('data-seg-id');
+      const seg = DB.seguimiento.find(s => s.id === segId);
+      if(!seg) return;
+      const nuevo = inp.value.trim();
+      const previo = (seg.comentario||'').trim();
+      if(nuevo !== previo){
+        updates.push(
+          sb.from('seguimiento')
+            .update({comentario: nuevo || null, updated_at: new Date().toISOString()})
+            .eq('id', segId)
+            .then(function(res){
+              if(res.error) throw res.error;
+              const i = DB.seguimiento.findIndex(s => s.id === segId);
+              if(i >= 0) DB.seguimiento[i].comentario = nuevo || null;
+            })
+        );
+      }
+    });
+    if(updates.length) await Promise.all(updates);
+
+    showToast('✓ Cambios guardados');
+    if(btn){ btn.textContent = '💾 Guardar cambios'; btn.disabled = true; }
+  } catch(err){
+    console.error('[guardarCambiosReunion] Error:', err);
+    showToast('Error al guardar: ' + (err.message||err));
+    if(btn){ btn.textContent = '💾 Guardar cambios'; btn.disabled = false; }
+  }
+}
+
+/* Cierra y envía la reunión desde la pantalla "Ver reuniones".
+ * Reutiliza el modal existente (abrirEnviarReunion) pero antes:
+ *  - Setea window._reunionActiva para que el modal sepa cuál es
+ *  - Guarda cambios editables en línea (si los hay) para no perderlos */
+async function cerrarYEnviarReunionDesdeVer(reunionId){
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede cerrar reuniones'); return; }
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === reunionId);
+  if(!reunion){ showToast('Reunión no encontrada'); return; }
+  if(reunion.cerrada){ showToast('La reunión ya está cerrada'); return; }
+
+  // Si el botón "Guardar cambios" está habilitado, hay ediciones pendientes:
+  // persistirlas antes de abrir el modal de cierre.
+  const btnG = document.getElementById('btnGuardarCambiosReunion');
+  if(btnG && !btnG.disabled){
+    await guardarCambiosReunion(reunionId);
+  }
+
+  // Sincronizar contexto con el modal existente
+  window._reunionActiva = reunionId;
+  if(!filterMes && Array.isArray(reunion.meses_evaluacion) && reunion.meses_evaluacion.length){
+    // Si no hay filtro de mes activo, usar el primer mes de evaluación de la reunión
+    // (abrirEnviarReunion usa filterMes||reunion.mes; aseguramos que reunion.mes exista)
+    if(!reunion.mes) reunion.mes = reunion.meses_evaluacion[0];
+  }
+
+  abrirEnviarReunion();
+}
+
+/* Abre el modal de edición de reunión desde la pantalla "Ver reuniones".
+ * abrirEditarReunion() usa window._reunionActiva, lo seteamos antes. */
+function abrirEditarReunionDesdeVer(reunionId){
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === reunionId);
+  if(!reunion){ showToast('Reunión no encontrada'); return; }
+  window._reunionActiva = reunionId;
+  abrirEditarReunion();
 }
 
 async function consultarIAInformes() {
@@ -4035,7 +4182,17 @@ async function confirmarCierreReunion() {
         const pctEl = document.getElementById('pct_'+ac.id);
         if(pctEl && pctEl.value !== '') {
           const pct = parseFloat(pctEl.value);
-          if(!isNaN(pct) && pct >= 0 && pct <= 100) {
+          // Sentinela 999: reset (DELETE del seguimiento si existe).
+          if(pct === 999) {
+            const ex = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === mes);
+            if(ex) {
+              promesas.push(sb.from('seguimiento').delete().eq('id', ex.id).then(() => {
+                const i = DB.seguimiento.findIndex(s => s.accion_id === ac.id && s.mes === mes);
+                if(i >= 0) DB.seguimiento.splice(i, 1);
+              }));
+            }
+            // Si no había registro previo, no hay nada que borrar — se ignora.
+          } else if(!isNaN(pct) && pct >= 0 && pct <= 100) {
             const ex = DB.seguimiento.find(s => s.accion_id === ac.id && s.mes === mes);
             const comentario = ex?.comentario || '';
             const pendiente = ex?.pendiente || false;
@@ -7559,13 +7716,20 @@ async function planGenerarPropuestas(){
         // 1. Buscar en planes_cache la fila correspondiente a esta causa × nivel.
         //    Aceptamos dos prefijos: 'causal|' (carga bulk con alternativas A/B/C)
         //    y 'precomp|' (legacy, plan ya armado con título/foco/pasos).
-        const suffix = (s.accion?.nombre||'') + '|' + nivelActual + '|' + causa.codigo;
-        const claves = ['precomp|' + suffix, 'causal|' + suffix];
-        try {
-          const { data: cachedRows } = await sb.from('planes_cache')
-            .select('cache_key,plan_data,curado')
-            .in('cache_key', claves)
-            .limit(1);
+        //    El cache_key usa el SLUG de la acción (ej. 'plan_evaluaciones'),
+        //    no el nombre legible (ej. 'Plan evaluaciones'). Sin esta
+        //    traducción, el lookup siempre falla y se cae al fallback de
+        //    ficha, mostrando textos pobres en lugar de las alternativas
+        //    A/B/C curadas en el Mapa de Acciones.
+        const slugAccion = _slugDeAccion(s.accion?.nombre || '');
+        if(slugAccion){
+          const suffix = slugAccion + '|' + nivelActual + '|' + causa.codigo;
+          const claves = ['precomp|' + suffix, 'causal|' + suffix];
+          try {
+            const { data: cachedRows } = await sb.from('planes_cache')
+              .select('cache_key,plan_data,curado')
+              .in('cache_key', claves)
+              .limit(1);
           const cached = cachedRows && cachedRows[0];
           const filaCache = cached?.plan_data?.[0];
           if(filaCache){
@@ -7602,6 +7766,7 @@ async function planGenerarPropuestas(){
             return { ...filaCache, id: 'linea_' + (i+1), _fromPrecomp: true };
           }
         } catch(e){ console.warn('precomp lookup:', e.message); }
+        } // fin if(slugAccion)
 
         // 2. Fallback: rec_a/b/c de la ficha (nivel-agnóstico)
         const causal = ficha.causales.find(c =>
@@ -7852,7 +8017,7 @@ function renderPaso4Constructor(){
           fuentesGlob.map(f => '<span class="plan-fuentes-chip">' + escapeHtmlPlan(f) + '</span>').join('') +
         '</div>' +
       '</div>'
-    : '<div class="plan-orient">Estas líneas son sugerencias generadas con IA. Revísalas y ajústalas según tu contexto.</div>';
+    : '';
 
   document.getElementById('planBody').innerHTML = `
     ${bannerFuentes}
@@ -9512,6 +9677,46 @@ const MAPA_CAUSAS_INFO = {
   C16: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
   C17: { grupo:'relacional',  nombre:'Compromiso de apoderados' }
 };
+
+/* Mapa nombre legible → slug usado en cache_key de planes_cache.
+ * Los slugs NO son derivables algorítmicamente: muchas acciones tienen
+ * nombres largos que en el slug se acortan (ej. "Análisis y fortalecimiento
+ * IDPS" → "analisis_idps"). Por eso el mapa es manual y debe mantenerse
+ * sincronizado si se renombra una acción en la tabla `acciones`.
+ *
+ * ⚠ La clave "Denuncias y segumiento" contiene un typo presente en BD
+ *    (falta una 'i'). Si se corrige en BD, hay que actualizar esta clave. */
+const ACCION_NOMBRE_A_SLUG = {
+  'Análisis resultados':                                                    'analisis_resultados',
+  'Análisis y fortalecimiento IDPS':                                        'analisis_idps',
+  'Calendario Evaluaciones Semestrales':                                    'calendario_evaluaciones',
+  'Denuncias y segumiento':                                                 'denuncias_seguimiento',
+  'Desarrollo profesional docente':                                         'desarrollo_profesional',
+  'Ejecución Plan Convivencia Escolar':                                     'ejecucion_plan_convivencia',
+  'Ensayos Simce, PAES y reforzamiento':                                    'ensayos_simce_paes',
+  'Evaluación y seguimiento PME':                                           'evaluacion_pme',
+  'Implementar talleres para la resoución pacifica de conflictos.':         'talleres_resolucion',
+  'Informe semestral y anual de término':                                   'informe_semestral',
+  'Monitoreo de Asistencia y Revinculación agregar DUPLA PSICOSOCIAL':      'monitoreo_asistencia',
+  'Monitoreo de incidentes':                                                'monitoreo_incidentes',
+  'Observación aula y retroalimentación':                                   'observacion_aula',
+  'Plan evaluaciones':                                                      'plan_evaluaciones',
+  'Planes apoyo alumnos en riesgo':                                         'planes_apoyo_riesgo',
+  'Retroalimentación y remediales de resultados DIA y CORPORATIVAS':        'retroalimentacion_dia',
+  'Reuniones departamentos':                                                'reuniones_departamentos',
+  'Seguimiento Estudiantes PIE':                                            'seguimiento_pie',
+  'Seguimiento Plan de Gestión Liderazgo':                                  'seguimiento_plan_liderazgo',
+  'Sistema de Reconocimiento':                                              'sistema_reconocimiento',
+  'Talleres Deportivos':                                                    'talleres_deportivos'
+};
+
+/* Devuelve el slug usado en cache_key para una acción dada, o null si la
+ * acción no está en el mapa (acción nueva, renombrada, o de otro colegio).
+ * Cuando devuelve null, el llamador debe caer al fallback de ficha. */
+function _slugDeAccion(accionNombre){
+  if(!accionNombre) return null;
+  return ACCION_NOMBRE_A_SLUG[accionNombre.trim()] || null;
+}
 
 // Ámbitos para las filas 'nivel|<accion>|<L>|<ambito>': pasos base sugeridos
 // para esa acción en ese nivel, segmentados por el "lugar" donde sucede el trabajo
