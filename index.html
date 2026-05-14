@@ -6770,10 +6770,27 @@ function planMarcarCambio(){
 
 async function planSyncSupabase(){
   if(!PLAN_STATE || !DB.colegio) return;
+
+  // CRÍTICO: nunca autosave sobre planes ya activados/completados.
+  // El autosave solo aplica a BORRADORES en construcción. Si el plan ya está
+  // ACTIVA, COMPLETADA o PROPUESTA, escribir aquí lo destruiría (revertiría
+  // a BORRADOR con causas/pasos/asignaciones en null porque PLAN_STATE
+  // no está completamente hidratado al ver un plan existente).
+  const s = PLAN_STATE;
+  if(s.existente && s.existente.estado && s.existente.estado !== 'BORRADOR'){
+    return;
+  }
+  // Mismo chequeo si tenemos el plan en cache DB (defensa adicional)
+  if(s.microaccionId){
+    const maExistente = (DB.microacciones||[]).find(m => m.id === s.microaccionId);
+    if(maExistente && maExistente.estado && maExistente.estado !== 'BORRADOR'){
+      return;
+    }
+  }
+
   const hash = planSnapshotHash();
   if(hash === PLAN_LAST_SAVED_HASH){ planSetSaveStatus('saved'); return; }
 
-  const s = PLAN_STATE;
   const payload = {
     colegio_id: DB.colegio.id,
     accion_id: s.accionId,
