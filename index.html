@@ -1021,6 +1021,61 @@ function puedeEditarSeguimientoMes(mes) {
 // CALCULATIONS
 function getEstado(p) { if(p===null||p===undefined) return 'sin_datos'; return p>=90?'verde':p>=70?'amarillo':'rojo'; }
 
+/* ===================== NIVELES DE LOGRO OFICIALES =====================
+ * Fuente única de verdad para los 5 niveles oficiales del sistema chileno EID.
+ * USAR SIEMPRE esta función en lugar de hardcodear bandas, nivelEID o cualquier
+ * otra clasificación de niveles. Cualquier cambio de paleta o umbral se hace
+ * acá una sola vez y se refleja en TODA la app.
+ *
+ * Rangos (alineados a Estándar Indicativo de Desempeño Mineduc):
+ *   1–25%   → Inicial         · proceso no existe o tiene debilidades críticas
+ *   25–50%  → Básico          · se realiza de forma irregular o mínima
+ *   50–70%  → En Desarrollo   · prácticas sistemáticas instalándose
+ *   70–90%  → Satisfactorio   · cumple el estándar de forma regular
+ *   ≥90%    → Consolidado     · práctica institucionalizada, alta calidad, modelo
+ *
+ * Devuelve null si no hay porcentaje (sin datos). */
+function nivelLogro(pct){
+  if(pct === null || pct === undefined || pct === '' || isNaN(pct)) return null;
+  const p = Number(pct);
+  if(p >= 90) return { codigo:'CONSOLIDADO',  nombre:'Consolidado',   rango:'≥ 90%',   color:'#173404', bg:'#EAF3DE', borde:'#C0DD97', textoSec:'#3B6D11', orden:5 };
+  if(p >= 70) return { codigo:'SATISFACTORIO',nombre:'Satisfactorio', rango:'70 – 90%',color:'#042C53', bg:'#E6F1FB', borde:'#B5D4F4', textoSec:'#185FA5', orden:4 };
+  if(p >= 50) return { codigo:'EN_DESARROLLO',nombre:'En Desarrollo', rango:'50 – 70%',color:'#2C2C2A', bg:'#F1EFE8', borde:'#D3D1C7', textoSec:'#5F5E5A', orden:3 };
+  if(p >= 25) return { codigo:'BASICO',       nombre:'Básico',        rango:'25 – 50%',color:'#412402', bg:'#FAEEDA', borde:'#FAC775', textoSec:'#854F0B', orden:2 };
+  return         { codigo:'INICIAL',      nombre:'Inicial',       rango:'1 – 25%', color:'#501313', bg:'#FCEBEB', borde:'#F7C1C1', textoSec:'#791F1F', orden:1 };
+}
+
+/* Bullets locales por nivel — red de seguridad si la IA cae del todo.
+ * El frontend siempre debe poder mostrar 3 bullets coherentes con el nivel,
+ * aunque la edge function generar-brecha-avanzado no responda. */
+const NIVEL_BULLETS_LOCALES = {
+  'INICIAL': [
+    'Definir qué prácticas mínimas debe instalar esta acción para empezar a operar en el colegio.',
+    'Asignar un responsable claro y un equipo acotado que pueda hacerse cargo de partir.',
+    'Acordar una primera fecha de revisión corta (4–6 semanas) para verificar que el proceso se haya activado.'
+  ],
+  'BASICO': [
+    'Diagnosticar por qué la acción se ejecuta de forma irregular y dónde se interrumpe.',
+    'Establecer una rutina mínima de seguimiento mensual que garantice que la acción no se discontinúe.',
+    'Definir indicadores observables de avance para detectar a tiempo cuando la implementación se relaja.'
+  ],
+  'EN_DESARROLLO': [
+    'Sistematizar las prácticas que están funcionando para que dejen de depender de personas específicas.',
+    'Identificar los nudos críticos que impiden alcanzar el estándar esperado en la acción.',
+    'Documentar los acuerdos y procedimientos para que la mejora sea reproducible y verificable.'
+  ],
+  'SATISFACTORIO': [
+    'Identificar qué prácticas específicas explican que la acción cumpla el estándar de forma regular.',
+    'Buscar pequeños ajustes que permitan elevar la calidad sin perder lo ya alcanzado.',
+    'Definir cómo se verificará que la mejora sostenida no se relaja con cambios de equipo o temporada.'
+  ],
+  'CONSOLIDADO': [
+    'Documentar la práctica con suficiente detalle para que pueda compartirse como referencia con otros colegios.',
+    'Definir cómo se sostiene la calidad ante rotaciones de equipo o cambios de contexto.',
+    'Explorar cómo profundizar el impacto: mayor alcance, mayor exigencia, o transferencia a otras áreas.'
+  ]
+};
+
 // Retorna el porcentaje de una acción solo si tiene seguimiento NO pendiente.
 // Si está pendiente o sin datos, retorna null (se excluye del cálculo).
 function calcAccion(id,mes) {
@@ -1058,7 +1113,7 @@ function misPlanesActualizarBadge(){
   const badge = document.getElementById('nav-mis-planes-count');
   if(!badge) return;
   const cartera = (DB.microacciones||[]).filter(m =>
-    m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA'
+    m.estado === 'ACTIVA' || m.estado === 'BORRADOR'
   );
   const alertas = cartera.filter(m => {
     if(m.estado !== 'ACTIVA') return false;
@@ -1209,11 +1264,11 @@ function renderSeguimiento() {
   html+='</div></div>';
   if(!mes) return html+'<div class="card"><div class="empty-state">Selecciona un mes en el filtro lateral.</div></div>';
 
-  // Banner de solo lectura para roles no superadmin
+  // Banner educativo para roles no superadmin (director, UTP, etc.)
   if(!esSuperadmin) {
     html+='<div class="banner-bloqueo info" style="background:#E8F0FB;border-color:#1F4E79;color:#1F4E79">';
-    html+='<div><div class="bb-title">👁 Modo solo lectura</div>';
-    html+='<div class="bb-sub">Tu rol ('+ROL_LABELS[SESSION.user.rol]+') te permite consultar la información, pero no editarla. Para registrar avances o cargar evidencias, contacta al administrador.</div></div>';
+    html+='<div><div class="bb-title">👁 Vista de consulta — los porcentajes se cargan en reunión</div>';
+    html+='<div class="bb-sub">En Gestión Estratégica, los porcentajes de cumplimiento mensual los registra el <strong>consultor durante la reunión</strong> de seguimiento, junto a ti y tu equipo. Esto asegura que cada cifra tenga conversación detrás.<br><br>Desde aquí puedes <strong>consultar avances, comentarios y evidencias</strong>. Para construir y dar seguimiento a tus planes de mejora, usa el menú <strong>"Mis planes"</strong>.</div></div>';
     html+='</div>';
   }
 
@@ -6787,7 +6842,7 @@ async function planSyncSupabase(){
 
   // CRÍTICO: nunca autosave sobre planes ya activados/completados.
   // El autosave solo aplica a BORRADORES en construcción. Si el plan ya está
-  // ACTIVA, COMPLETADA o PROPUESTA, escribir aquí lo destruiría (revertiría
+  // ACTIVA o COMPLETADA, escribir aquí lo destruiría (revertiría
   // a BORRADOR con causas/pasos/asignaciones en null porque PLAN_STATE
   // no está completamente hidratado al ver un plan existente).
   const s = PLAN_STATE;
@@ -6893,7 +6948,7 @@ function renderBotonPlan(accionId, mes, seg) {
   // En ese caso el plan debe seguir siendo accesible.
   const ma = (DB.microacciones||[]).find(m=>
     m.accion_id===accionId && m.mes===mes &&
-    (m.estado==='ACTIVA' || m.estado==='PROPUESTA' || m.estado==='COMPLETADA' || m.estado==='BORRADOR')
+    (m.estado==='ACTIVA' || m.estado==='COMPLETADA' || m.estado==='BORRADOR')
   );
 
   // Solo deshabilitar si no hay seguimiento Y tampoco hay plan previo.
@@ -6934,16 +6989,16 @@ function renderBotonPlan(accionId, mes, seg) {
 /* ====================== ABRIR / CERRAR ====================== */
 async function abrirPlan(accionId, mes){
   // Abre el drawer del plan EN LA MISMA PANTALLA. No usa nueva pestaña.
-  // Para planes ACTIVA/COMPLETADA/PROPUESTA → vista pedagógica (resumen).
+  // Para planes ACTIVA/COMPLETADA → vista pedagógica (resumen).
   // Para BORRADOR sin contenido → flujo de construcción desde el paso 1.
   return _abrirPlanInternal(accionId, mes);
 }
 async function _abrirPlanInternal(accionId, mes){
   const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
 
-  // 1. Buscar plan ACTIVO/COMPLETADO/PROPUESTA primero
+  // 1. Buscar plan ACTIVO/COMPLETADO primero
   const ma = (DB.microacciones||[]).find(m=>m.accion_id===accionId&&m.mes===mes
-    && (m.estado==='ACTIVA'||m.estado==='PROPUESTA'||m.estado==='COMPLETADA'));
+    && (m.estado==='ACTIVA'||m.estado==='COMPLETADA'));
 
   // Detectar también si hay un borrador en memoria (para no bloquear el
   // acceso cuando el seguimiento fue reiniciado con 999 pero el plan
@@ -7145,7 +7200,7 @@ async function planBuscarPlanAnterior(colegioId, accionId, mesActual){
       .eq('colegio_id', colegioId)
       .eq('accion_id', accionId)
       .lt('mes', mesActual)
-      .in('estado', ['ACTIVA','COMPLETADA','PROPUESTA','BORRADOR'])
+      .in('estado', ['ACTIVA','COMPLETADA','BORRADOR'])
       .order('mes', { ascending: false })
       .limit(5);
     if(error){ console.warn('planBuscarPlanAnterior:', error.message); return null; }
@@ -7396,7 +7451,7 @@ function renderPlanPaso(){
   }
 
   if(s.paso===99){
-    // Sub-vistas para planes ya creados (ACTIVA/COMPLETADA/PROPUESTA):
+    // Sub-vistas para planes ya creados (ACTIVA/COMPLETADA):
     //   'resumen'  → vista pedagógica grande (DEFAULT al entrar desde "Mis planes")
     //   'edicion'  → vista de edición paso a paso (la anterior)
     if(!s.vistaActiva) s.vistaActiva = 'resumen';
@@ -7433,52 +7488,16 @@ function renderPlanPaso(){
 async function renderPaso1Contexto(){
   const s = PLAN_STATE;
   const banda = s.banda;
-  const bandaLabel = banda==='CRITICO'?'Crítico':banda==='MEJORA'?'Mejora':'Consolidación';
-  const bandaClass = banda.toLowerCase();
-  const nivelEID = s.pct<70?'Incipiente':s.pct<90?'Satisfactorio':'Avanzado';
-
-  // Histórico simple
-  const histAll = DB.seguimiento.filter(x=>x.accion_id===s.accionId && x.porcentaje!=null && !x.pendiente);
-  const tendencia = histAll.length>=2 ? (s.pct - histAll[histAll.length-2].porcentaje) : 0;
-  const flecha = tendencia>0?'↑':tendencia<0?'↓':'→';
-
-  // Carga del responsable
-  const resps = (typeof getResps==='function')?getResps(s.accionId):[];
-  const respPrincipal = resps[0];
-  let cargaTexto = '';
-  if(respPrincipal){
-    const accionesResp = DB.accion_responsable.filter(ar=>ar.responsable_id===respPrincipal.id).length;
-    cargaTexto = respPrincipal.nombre+' lleva '+accionesResp+' acción(es) del PME.';
-  }
-
-  // Salud del área
-  const obj = DB.objetivos.find(o=>o.id===s.accion?.objetivo_id);
-  const area = obj ? DB.areas.find(a=>a.id===obj.area_id) : null;
-  let saludArea = '';
-  if(area){
-    const accionesArea = DB.acciones.filter(a=>{
-      const oids = DB.objetivos.filter(o=>o.area_id===area.id).map(o=>o.id);
-      return oids.includes(a.objetivo_id);
-    });
-    const segsArea = accionesArea.map(a=>{
-      const sg = DB.seguimiento.find(x=>x.accion_id===a.id&&x.mes===s.mes&&!x.pendiente);
-      return sg?.porcentaje;
-    }).filter(v=>v!=null);
-    if(segsArea.length){
-      const prom = Math.round(segsArea.reduce((a,b)=>a+b,0)/segsArea.length);
-      saludArea = 'Área '+area.nombre+' promedia '+prom+'% este mes.';
-    }
-  }
-
-  const pregunta = banda==='CRITICO'?'¿Qué podría estar bloqueando estructuralmente esta acción?':
-    banda==='MEJORA'?'¿Qué pequeño ajuste puede llevarte al estándar?':
-    '¿Cómo sostienes esto y lo escalas?';
+  // Nivel de logro oficial (5 niveles del sistema EID chileno). Reemplaza
+  // las antiguas bandas internas y el nivelEID legacy. Fuente única: nivelLogro().
+  const nivel = nivelLogro(s.pct) || nivelLogro(0);
 
   const banner = (s.causas.length || s.comentario || s.propuestas)
     ? '<div class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
     : '';
 
-  // Render inicial con loading mientras se cargan las brechas dinámicas
+  // Render inicial con loading. El recuadro narrativo de nivel + bullets se
+  // construye en _planRenderBrechaNarrativa() abajo, una vez resueltas las brechas.
   document.getElementById('planBody').innerHTML = `
     ${banner}
     <div class="plan-orient">Lo que verás aquí es un análisis automatizado para orientar tu decisión.</div>
@@ -7489,180 +7508,86 @@ async function renderPaso1Contexto(){
       ${s.accion?.descripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(s.accion.descripcion)+'</div>' : ''}
     </div>
 
-    <h3>Estado de la acción este mes</h3>
-    <p class="lead">Antes de diagnosticar, mira el panorama.</p>
-    <div class="plan-ctx-card">
-      <div class="plan-ctx-row">
-        <span class="label">Cumplimiento actual</span>
-        <span class="value">${s.pct}% ${flecha} ${tendencia!==0?Math.abs(tendencia)+' pts vs anterior':''}</span>
-      </div>
-      <div class="plan-ctx-row">
-        <span class="label">Banda</span>
-        <span class="plan-ctx-banda ${bandaClass}">${bandaLabel}</span>
-      </div>
-      <div class="plan-ctx-row">
-        <span class="label">Nivel según EID</span>
-        <span class="value">${nivelEID}</span>
+    <div id="planBrechasContenedor">
+      <div class="plan-loading-inline" style="padding:40px 20px;justify-content:center">
+        <div class="plan-loading-spin-sm"></div>
+        <span>Analizando contexto institucional…</span>
       </div>
     </div>
-
-    <div class="plan-brecha">
-      <h4>Las 3 brechas críticas para alcanzar el nivel Avanzado</h4>
-      <p class="plan-brecha-explicacion">Para que esta acción llegue al nivel <strong>Desarrollo Avanzado</strong> según el Estándar EID oficial del Mineduc, tu colegio debe cerrar las 3 brechas más relevantes que aparecen abajo. Fueron generadas considerando tu PEI, Reporte PME oficial, contexto institucional y cumplimiento histórico.</p>
-      <div id="planBrechasContenedor">
-        <div class="plan-loading-inline">
-          <div class="plan-loading-spin-sm"></div>
-          <span>Analizando contexto institucional…</span>
-        </div>
-      </div>
-    </div>
-
-    ${cargaTexto||saludArea ? `<div class="plan-brecha"><h4>Lectura sistémica</h4><ul>
-      ${cargaTexto?'<li>'+cargaTexto+'</li>':''}
-      ${saludArea?'<li>'+saludArea+'</li>':''}
-    </ul></div>`:''}
-    <div class="plan-pregunta">${pregunta}</div>
   `;
 
   document.getElementById('planFooter').innerHTML = `
     <span class="info">Paso 2 de 7</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planNext()">${banda==='CONSOLIDACION'?'Definir consolidación':'Diagnosticar'} →</button>
+      <button class="plan-btn-next" onclick="planNext()">${banda==='CONSOLIDACION'?'Definir consolidación →':'Continuar →'}</button>
     </div>`;
 
   // Cargar brechas dinámicas en background (no bloquea la pantalla)
-  const brechasResp = await planCargarBrechas(DB.colegio.id, s.accionId, s.mes, s.pct, banda);
+  let brechasResp = null;
+  try {
+    brechasResp = await planCargarBrechas(DB.colegio.id, s.accionId, s.mes, s.pct, banda);
+  } catch(e) {
+    console.warn('[Brechas] Error al cargar:', e.message);
+  }
   const cont = document.getElementById('planBrechasContenedor');
   if (!cont) return; // Drawer ya cerrado
 
-  if (!brechasResp) {
-    cont.innerHTML = '<div class="plan-brecha-error">No se pudo generar el análisis personalizado. Continúa con el flujo o intenta nuevamente.</div>';
-    return;
+  // Determinar bullets a mostrar según los 3 escenarios:
+  //   1) IA personalizada → usar b.diagnostico (frase corta) de cada brecha
+  //   2) FALLBACK_SIN_CONTEXTO → usar b.texto que viene del backend
+  //   3) IA caída del todo → usar NIVEL_BULLETS_LOCALES por nivel
+  let bullets = [];
+  let modoBullets = 'PERSONALIZADO'; // PERSONALIZADO | GENERICO_BACKEND | LOCAL
+  if (brechasResp && brechasResp.modo !== 'FALLBACK_SIN_CONTEXTO' && Array.isArray(brechasResp.brechas) && brechasResp.brechas.length) {
+    bullets = brechasResp.brechas.slice(0, 3).map(b => (b.diagnostico || b.texto || '').toString().trim()).filter(Boolean);
+  } else if (brechasResp && brechasResp.modo === 'FALLBACK_SIN_CONTEXTO' && Array.isArray(brechasResp.brechas) && brechasResp.brechas.length) {
+    bullets = brechasResp.brechas.slice(0, 3).map(b => (b.texto || b.diagnostico || b || '').toString().trim()).filter(Boolean);
+    modoBullets = 'GENERICO_BACKEND';
+  }
+  if (bullets.length < 3) {
+    // Completar con bullets locales para asegurar siempre 3
+    const locales = NIVEL_BULLETS_LOCALES[nivel.codigo] || [];
+    while (bullets.length < 3 && bullets.length < (locales.length)) bullets.push(locales[bullets.length]);
+    if (!brechasResp || !brechasResp.brechas || !brechasResp.brechas.length) modoBullets = 'LOCAL';
   }
 
-  if (brechasResp.modo === 'FALLBACK_SIN_CONTEXTO') {
-    const items = (brechasResp.brechas || []).map(b => '<li>' + escapeHtmlPlan(b.texto || b) + '</li>').join('');
-    cont.innerHTML =
-      '<div class="plan-brecha-fallback">' +
-        '<div class="plan-brecha-fallback-titulo">Brechas genéricas</div>' +
-        '<div class="plan-brecha-fallback-msg">' + escapeHtmlPlan(brechasResp.mensaje || '') + '</div>' +
-        '<ul class="plan-brecha-list-generica">' + items + '</ul>' +
-      '</div>';
-    return;
-  }
+  // Render del recuadro narrativo
+  const bulletsHtml = bullets.map((txt, i) => `
+    <li style="display:flex;gap:12px;padding:9px 0;${i<bullets.length-1?'border-bottom:1px solid rgba(0,0,0,0.06);':''}align-items:flex-start">
+      <span style="color:#888780;font-weight:600;flex-shrink:0;min-width:14px">${i+1}</span>
+      <span style="font-size:14px;line-height:1.55;color:#2C2C2A">${escapeHtmlPlan(txt)}</span>
+    </li>
+  `).join('');
 
-  // Modo personalizado
-  const estandarHeader = brechasResp.estandar_numero
-    ? '<div class="plan-brecha-estandar-tag">Estándar ' + escapeHtmlPlan(brechasResp.estandar_numero) + ' EID · ' + escapeHtmlPlan(brechasResp.estandar_titulo || '') + '</div>'
-    : '';
+  const fuenteTag = modoBullets === 'PERSONALIZADO'
+    ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Análisis personalizado para tu colegio${brechasResp?.estandar_numero?' · Estándar '+escapeHtmlPlan(brechasResp.estandar_numero)+' EID':''}</div>`
+    : modoBullets === 'GENERICO_BACKEND'
+      ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Orientaciones generales · ${escapeHtmlPlan(brechasResp?.mensaje || 'Carga el PEI de tu colegio para recibir un análisis personalizado.')}</div>`
+      : `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Orientaciones generales según el nivel de logro</div>`;
 
-  // Bloque de metadata: acción evaluada + relación PME oficial + relación PEI
-  const accionEvaluadaNombre = s.accion?.nombre || '';
-  const pmeRel = brechasResp.pme_oficial_relacion;
-  const peiRel = brechasResp.pei_relacion;
-
-  const pmeBloque = (pmeRel && pmeRel.encontrada)
-    ? '<div class="plan-brecha-meta-value">' +
-        escapeHtmlPlan(pmeRel.accion_pme || '(sin nombre de acción)') +
-        (pmeRel.dimension ? '<div class="plan-brecha-meta-extra">Dimensión: ' + escapeHtmlPlan(pmeRel.dimension) + '</div>' : '') +
-        (pmeRel.justificacion ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(pmeRel.justificacion) + '</div>' : '') +
-      '</div>'
-    : '<div class="plan-brecha-meta-value plan-brecha-meta-vacio">Esta acción no aparece en el PME oficial 2025 del Mineduc para tu colegio.</div>';
-
-  const peiBloque = (peiRel && peiRel.encontrada)
-    ? '<div class="plan-brecha-meta-value">' +
-        escapeHtmlPlan(peiRel.parte || '(sin sección identificada)') +
-        (peiRel.contenido ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(peiRel.contenido) + '</div>' : '') +
-        (peiRel.justificacion ? '<div class="plan-brecha-meta-extra">' + escapeHtmlPlan(peiRel.justificacion) + '</div>' : '') +
-      '</div>'
-    : '<div class="plan-brecha-meta-value plan-brecha-meta-vacio">No se identifica una relación directa con el PEI del establecimiento.</div>';
-
-  const metaBloque = (accionEvaluadaNombre || pmeRel || peiRel)
-    ? '<div class="plan-brecha-meta">' +
-        '<div class="plan-brecha-meta-row">' +
-          '<div class="plan-brecha-meta-label">Acción evaluada</div>' +
-          '<div class="plan-brecha-meta-value">' + escapeHtmlPlan(accionEvaluadaNombre) + '</div>' +
-        '</div>' +
-        '<div class="plan-brecha-meta-row">' +
-          '<div class="plan-brecha-meta-label">En el PME oficial 2025 Mineduc</div>' +
-          pmeBloque +
-        '</div>' +
-        '<div class="plan-brecha-meta-row">' +
-          '<div class="plan-brecha-meta-label">En el PEI del establecimiento</div>' +
-          peiBloque +
-        '</div>' +
-      '</div>'
-    : '';
-
-  // ── Configuración visual por tipo de fuente ──────────────────────────────
-  const BRECHA_THEME = {
-    eid:     { headBg:'#E6F1FB', bodyBg:'#F4F9FE', borderCol:'#B5D4F4', badgeBg:'#B5D4F4', badgeColor:'#042C53', diagColor:'#0C447C', stdBg:'#378ADD', stdColor:'#E6F1FB', chipBg:'#B5D4F4', chipColor:'#042C53' },
-    uc:      { headBg:'#E1F5EE', bodyBg:'#F1FAF6', borderCol:'#9FE1CB', badgeBg:'#9FE1CB', badgeColor:'#04342C', diagColor:'#0F6E56', stdBg:'',        stdColor:'',        chipBg:'#9FE1CB', chipColor:'#04342C' },
-    harvard: { headBg:'#FAEEDA', bodyBg:'#FDF7EC', borderCol:'#FAC775', badgeBg:'#FAC775', badgeColor:'#412402', diagColor:'#854F0B', stdBg:'',        stdColor:'',        chipBg:'#FAC775', chipColor:'#412402' },
-    default: { headBg:'#F1EFE8', bodyBg:'#F8F7F2', borderCol:'#D3D1C7', badgeBg:'#D3D1C7', badgeColor:'#2C2C2A', diagColor:'#444441', stdBg:'',        stdColor:'',        chipBg:'#D3D1C7', chipColor:'#2C2C2A' },
-  };
-  const BRECHA_ICON = { eid:'ti-certificate', uc:'ti-school', harvard:'ti-brain', default:'ti-chart-bar' };
-
-  function brechaRenderNew(b, i) {
-    const tipo = (b.fuente_tipo || 'default').toLowerCase();
-    const th = BRECHA_THEME[tipo] || BRECHA_THEME.default;
-    const icon = BRECHA_ICON[tipo] || BRECHA_ICON.default;
-    const stdPill = b.estandar_num
-      ? `<span class="plan-brecha-std-pill" style="background:${th.stdBg||th.badgeBg};color:${th.stdColor||th.badgeColor}">${escapeHtmlPlan(b.estandar_num)}</span>`
-      : '';
-    const rolesHtml = (b.para_superar || []).map(r =>
-      `<div class="plan-brecha-rol-row">
-        <span class="plan-brecha-rol-chip" style="background:${th.chipBg};color:${th.chipColor}">${escapeHtmlPlan(r.rol)}</span>
-        <span class="plan-brecha-rol-text">${escapeHtmlPlan(r.accion)}</span>
-      </div>`
-    ).join('');
-    const qLabel = tipo === 'eid' ? '¿Qué exige el estándar?' : tipo === 'uc' ? '¿Qué dice la UC?' : tipo === 'harvard' ? '¿Qué dice Harvard?' : '¿Qué dice la fuente?';
-    return `<div class="plan-brecha-item" style="border-color:${th.borderCol}">
-      <div class="plan-brecha-head" style="background:${th.headBg}">
-        <span class="plan-brecha-source-badge" style="background:${th.badgeBg};color:${th.badgeColor}">${escapeHtmlPlan(b.fuente_label||'Fuente')}</span>
-        ${stdPill}
-        <span class="plan-brecha-diag" style="color:${th.diagColor}">${escapeHtmlPlan(b.diagnostico||'')}</span>
-      </div>
-      <div class="plan-brecha-cuerpo" style="background:${th.bodyBg}">
-        <div>
-          <p class="plan-brecha-q">${qLabel}</p>
-          <p class="plan-brecha-quote">${escapeHtmlPlan(b.que_dice||b.texto||'')}</p>
+  cont.innerHTML = `
+    <div style="background:#fff;border:1px solid #e0d8c4;border-radius:14px;padding:24px 26px;margin-top:8px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:28px;align-items:flex-start">
+        <div style="background:${nivel.bg};border-radius:10px;padding:20px 16px;text-align:center;border:1px solid ${nivel.borde}">
+          <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:${nivel.textoSec};font-weight:600;margin-bottom:10px">Nivel de logro</div>
+          <div style="font-family:'DM Serif Display',serif;font-size:28px;line-height:1.1;color:${nivel.color};margin-bottom:8px">${escapeHtmlPlan(nivel.nombre)}</div>
+          <div style="font-size:13px;color:${nivel.textoSec};font-weight:500">${s.pct}% · cumplimiento</div>
+          <div style="font-size:11px;color:${nivel.textoSec};opacity:.75;margin-top:4px">${escapeHtmlPlan(nivel.rango)}</div>
         </div>
-        <div class="plan-brecha-divider"></div>
         <div>
-          <p class="plan-brecha-q">Para superar esta brecha, el colegio debe:</p>
-          <div class="plan-brecha-roles">${rolesHtml}</div>
+          <div style="font-size:15px;line-height:1.65;color:#2C2C2A;margin-bottom:14px">
+            En función a lo que hemos visto en las recomendaciones de cada institución y la normativa, deberías trabajar en:
+          </div>
+          <ul style="list-style:none;padding:0;margin:0">${bulletsHtml}</ul>
+          <div style="font-size:13px;line-height:1.65;color:#5F5E5A;font-style:italic;border-top:1px solid rgba(0,0,0,0.08);padding-top:14px;margin-top:16px">
+            Para esto te invitamos al siguiente paso, donde podrás identificar las causales de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
+          </div>
+          ${fuenteTag}
         </div>
       </div>
-    </div>`;
-  }
-
-  // Compatibilidad retroactiva: si viene formato viejo ({texto:...}), usar fallback visual
-  function brechaRenderLegacy(b, i) {
-    return `<div class="plan-brecha-item">
-      <div class="plan-brecha-head" style="background:#E6F1FB">
-        <span class="plan-brecha-source-badge" style="background:#B5D4F4;color:#042C53">Brecha ${i+1}</span>
-        <span class="plan-brecha-diag" style="color:#0C447C">${escapeHtmlPlan((b.texto||'').split('.')[0].slice(0,60))}</span>
-      </div>
-      <div class="plan-brecha-cuerpo">
-        <p class="plan-brecha-quote">${escapeHtmlPlan(b.texto||'')}</p>
-      </div>
-    </div>`;
-  }
-
-  const brechasHtml = (brechasResp.brechas || []).map((b, i) =>
-    b.para_superar ? brechaRenderNew(b, i) : brechaRenderLegacy(b, i)
-  ).join('');
-
-    const fuentes = brechasResp.fuentes_consultadas || [];
-  const fuentesHtml = fuentes.length > 0
-    ? '<details class="plan-brecha-fuentes-detalle"><summary>Fuentes consultadas (' + fuentes.length + ')</summary><ul>' +
-        fuentes.map(f => '<li>' + escapeHtmlPlan(f) + '</li>').join('') +
-      '</ul></details>'
-    : '';
-
-  cont.innerHTML = estandarHeader + metaBloque + '<div class="plan-brecha-list-personalizada">' + brechasHtml + '</div>' + fuentesHtml;
+    </div>
+  `;
 }
 
 async function planEliminarBorrador(){
@@ -9167,7 +9092,7 @@ function renderPaso7Confirmacion(){
 /* ====================== VISTA PLAN EXISTENTE ====================== */
 /* ====================== VISTA PEDAGÓGICA (RESUMEN) ====================== */
 /* Vista de lectura grande, pedagógica, para entender el plan como un todo.
- * Es la vista por defecto al entrar a un plan ACTIVA/COMPLETADA/PROPUESTA
+ * Es la vista por defecto al entrar a un plan ACTIVA/COMPLETADA
  * desde "Mis planes" o "Biblioteca". Para editar pasos hay un botón que
  * cambia a la vista de edición (renderPasoExistente). */
 function renderPlanResumenPedagogico(){
@@ -9675,7 +9600,7 @@ function _plazoBadge(fechaISO){
 /* Calcula el bucket "Mis planes activos" — los que cuentan como cartera del directivo */
 function _planesActivos(){
   return (DB.microacciones||[]).filter(m =>
-    m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA'
+    m.estado === 'ACTIVA' || m.estado === 'BORRADOR'
   );
 }
 
@@ -9724,11 +9649,11 @@ async function renderMisPlanes(){
   if(f.estado)      lista = lista.filter(m => m.estado === f.estado);
   if(f.responsable) lista = lista.filter(m => m.acuerdo_quien === f.responsable || m.acuerdo_co === f.responsable);
 
-  // Por defecto si NO hay filtros, mostrar solo activos/borrador/propuesta del mes actual + planes con plazos vencidos de cualquier mes
+  // Por defecto si NO hay filtros, mostrar solo activos/borrador del mes actual + planes con plazos vencidos de cualquier mes
   if(!f.area && !f.mes && !f.estado && !f.responsable){
     const mesAct = _mesActualISO();
     lista = lista.filter(m => {
-      const esCarteraActual = (m.estado === 'ACTIVA' || m.estado === 'BORRADOR' || m.estado === 'PROPUESTA');
+      const esCarteraActual = (m.estado === 'ACTIVA' || m.estado === 'BORRADOR');
       const dias = _diasHastaFecha(m.fecha_objetivo);
       const vencidoActiva = m.estado === 'ACTIVA' && dias !== null && dias < 0;
       return (esCarteraActual && m.mes === mesAct) || vencidoActiva;
@@ -9827,7 +9752,6 @@ async function renderMisPlanes(){
             <option value="">Todos</option>
             <option value="ACTIVA"${f.estado==='ACTIVA'?' selected':''}>Activa</option>
             <option value="BORRADOR"${f.estado==='BORRADOR'?' selected':''}>Borrador</option>
-            <option value="PROPUESTA"${f.estado==='PROPUESTA'?' selected':''}>Propuesta</option>
             <option value="COMPLETADA"${f.estado==='COMPLETADA'?' selected':''}>Completada</option>
           </select>
         </div>
@@ -10200,7 +10124,7 @@ async function renderBiblioteca(){
       const mejor = _bibliotecaMejorVersion(versiones);
       const expandida = f.expandidas.has(aid);
 
-      const numActivos = versiones.filter(v => v.estado === 'ACTIVA' || v.estado === 'BORRADOR' || v.estado === 'PROPUESTA').length;
+      const numActivos = versiones.filter(v => v.estado === 'ACTIVA' || v.estado === 'BORRADOR').length;
       const numCompletados = versiones.filter(v => v.estado === 'COMPLETADA').length;
 
       html += `
