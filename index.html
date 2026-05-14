@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--bg:#F4F2EE;--surface:#FFF;--surface2:#F9F8F6;--border:#E4E0D8;--text:#1A1916;--muted:#7A7670;--accent:#1E3A2F;--accent2:#2D5A42;--gold:#C4962A;--green:#2E7D52;--yellow:#B8860B;--red:#9B2335;--green-bg:#E8F5EE;--yellow-bg:#FDF6E3;--red-bg:#FCEEED;--r:8px;--shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.05)}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -985,6 +986,7 @@ function renderSidebar() {
       '<div class="nav-item" onclick="showPanel(\'admin-estructura\')" id="nav-admin-estructura"><span class="icon">s</span> Estructura</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-responsables\')" id="nav-admin-responsables"><span class="icon">r</span> Responsables</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-cargos\')" id="nav-admin-cargos"><span class="icon">c</span> Cargos</div>' +
+      '<div class="nav-item" onclick="showPanel(\'admin-documentos\')" id="nav-admin-documentos"><span class="icon">d</span> Documentos</div>' +
       '</div>' : '') +
     (cu ? '<div class="nav-divider"></div><div class="nav-section"><div class="nav-label">Acceso</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-usuarios\')" id="nav-admin-usuarios"><span class="icon">u</span> Usuarios</div>' +
@@ -1148,6 +1150,7 @@ function renderCurrentPanel() {
     case 'admin-estructura':   main.innerHTML = renderAdminEstructura(); break;
     case 'admin-responsables': main.innerHTML = renderAdminResponsables(); break;
     case 'admin-cargos':       main.innerHTML = renderAdminCargos(); break;
+    case 'admin-documentos':   renderAdminDocumentos(); break;
     case 'admin-usuarios':     main.innerHTML = renderAdminUsuarios(); break;
     case 'denuncias':          main.innerHTML = renderDenuncias(); break;
     case 'denuncia-detalle':   main.innerHTML = renderDenunciaDetalle(); break;
@@ -2516,6 +2519,270 @@ async function saveCargo(){const nombre=document.getElementById('f-nombre')?.val
 function editCargo(id){const c=DB.cargos.find(c=>c.id===id);openModal('Editar cargo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" value="'+c.nombre+'"></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateCargo('"+id+"')"}]);}
 async function updateCargo(id){const nombre=document.getElementById('f-nombre')?.value.trim();if(!nombre)return;const{error}=await sb.from('cargos').update({nombre}).eq('id',id);if(error){showToast('Error: '+error.message);return;}const c=DB.cargos.find(c=>c.id===id);if(c){c.nombre=nombre;DB.responsables.filter(r=>r.cargo_id===id).forEach(r=>r.cargo=nombre);}closeModal();renderCurrentPanel();showToast('Actualizado');initFilters();}
 async function deleteCargo(id){if(!confirm('Eliminar?'))return;const{error}=await sb.from('cargos').delete().eq('id',id);if(error){showToast('Error: '+error.message);return;}DB.cargos=DB.cargos.filter(c=>c.id!==id);renderCurrentPanel();}
+
+// ====================== ADMIN DOCUMENTOS ======================
+// Carga los 3 documentos institucionales del colegio (PEI, PME 2025, Fase 2026)
+// a Supabase Storage + extrae el texto con pdf.js y lo guarda en colegio_documentos.
+// La edge function generar-brecha-avanzado consume colegio_documentos.texto_extraido
+// para personalizar las brechas con citas reales del PEI del colegio.
+
+const DOC_TIPOS = [
+  { tipo:'PEI',      titulo:'PEI · Proyecto Educativo Institucional', desc:'Documento institucional con misión, visión, sellos y proyecto educativo del colegio.', color:'#1E3A2F', bg:'#E8F5EE' },
+  { tipo:'PME_2025', titulo:'Análisis PME 2025 del Mineduc',          desc:'Documento oficial del Mineduc con el análisis estratégico del PME del colegio para 2025.', color:'#0C447C', bg:'#E6F1FB' },
+  { tipo:'FASE_2026',titulo:'Fase Estratégica PME 2026',              desc:'Planificación estratégica del Plan de Mejoramiento Educacional para el período 2026.', color:'#854F0B', bg:'#FAEEDA' }
+];
+
+let _DOC_CACHE = null; // cache local de los documentos del colegio actual
+
+async function _docCargarLista(forzar){
+  if(_DOC_CACHE && !forzar) return _DOC_CACHE;
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  if(!colId) return [];
+  const { data, error } = await sb.from('colegio_documentos')
+    .select('id, tipo, nombre_archivo, tamano_bytes, storage_path, paginas, estado, error_mensaje, created_at, updated_at')
+    .eq('colegio_id', colId);
+  if(error){ console.warn('[Documentos] Error cargar lista:', error.message); return []; }
+  _DOC_CACHE = data || [];
+  return _DOC_CACHE;
+}
+
+async function renderAdminDocumentos(){
+  const main = document.getElementById('mainContent');
+  if(!main) return;
+  main.innerHTML = `
+    <div class="page-header">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="page-title">Documentos del colegio</div>
+          <div class="page-sub">Cargar los 3 documentos institucionales permite que el análisis de brechas se personalice usando el contexto específico del colegio.</div>
+        </div>
+      </div>
+    </div>
+    <div id="documentosListaWrap"><div class="card"><div class="empty-state"><div class="loading-spinner" style="margin:0 auto"></div></div></div></div>
+  `;
+  const docs = await _docCargarLista(true);
+  _docRenderLista(docs);
+}
+
+function _docRenderLista(docs){
+  const wrap = document.getElementById('documentosListaWrap');
+  if(!wrap) return;
+  const fmtBytes = b => b < 1024 ? b+' B' : b < 1048576 ? (b/1024).toFixed(1)+' KB' : (b/1048576).toFixed(1)+' MB';
+  const fmtFecha = ts => ts ? new Date(ts).toLocaleDateString('es-CL',{day:'numeric',month:'short',year:'numeric'}) : '';
+
+  wrap.innerHTML = DOC_TIPOS.map(meta => {
+    const d = docs.find(x => x.tipo === meta.tipo);
+    if(d && d.estado === 'LISTO'){
+      // Tarjeta documento cargado
+      return `
+        <div class="card" style="margin-bottom:12px;padding:18px 20px">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div style="width:40px;height:40px;border-radius:8px;background:${meta.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${meta.color};font-size:18px;font-weight:600">📄</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap">
+                <span style="font-weight:500;font-size:15px">${escapeHtmlPlan(meta.titulo)}</span>
+                <span style="background:var(--green-bg);color:var(--green);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px">✓ Cargado</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${escapeHtmlPlan(d.nombre_archivo)} · ${fmtBytes(d.tamano_bytes)}${d.paginas?' · '+d.paginas+' páginas':''} · cargado el ${fmtFecha(d.created_at)}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" onclick="documentoDescargar('${d.id}')">↓ Descargar</button>
+                <button class="btn btn-outline btn-sm" onclick="documentoReemplazar('${meta.tipo}')">↻ Reemplazar</button>
+                <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red)" onclick="documentoEliminar('${d.id}','${meta.tipo}')">× Eliminar</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    } else if(d && d.estado === 'PROCESANDO'){
+      // Tarjeta procesando
+      return `
+        <div class="card" style="margin-bottom:12px;padding:18px 20px">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div style="width:40px;height:40px;border-radius:8px;background:var(--yellow-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--yellow);font-size:18px">⏳</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <span style="font-weight:500;font-size:15px">${escapeHtmlPlan(meta.titulo)}</span>
+                <span style="background:var(--yellow-bg);color:var(--yellow);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px">Procesando…</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted)">${escapeHtmlPlan(d.nombre_archivo)} · extrayendo texto del PDF…</div>
+            </div>
+          </div>
+        </div>`;
+    } else if(d && d.estado === 'ERROR'){
+      // Tarjeta con error
+      return `
+        <div class="card" style="margin-bottom:12px;padding:18px 20px">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div style="width:40px;height:40px;border-radius:8px;background:var(--red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--red);font-size:18px">⚠</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <span style="font-weight:500;font-size:15px">${escapeHtmlPlan(meta.titulo)}</span>
+                <span style="background:var(--red-bg);color:var(--red);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px">Error</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${escapeHtmlPlan(d.error_mensaje || 'No se pudo procesar el documento.')}</div>
+              <button class="btn btn-outline btn-sm" onclick="documentoReemplazar('${meta.tipo}')">Volver a intentar</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      // Tarjeta vacía con dropzone
+      const inputId = 'docInput_'+meta.tipo;
+      return `
+        <div class="card" style="margin-bottom:12px;padding:18px 20px">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div style="width:40px;height:40px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);font-size:18px">📄</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <span style="font-weight:500;font-size:15px">${escapeHtmlPlan(meta.titulo)}</span>
+                <span style="background:var(--surface2);color:var(--muted);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px">No cargado</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${escapeHtmlPlan(meta.desc)}</div>
+              <div onclick="document.getElementById('${inputId}').click()" style="border:1.5px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;background:var(--surface2);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--bg)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">
+                <div style="font-size:24px;margin-bottom:4px;opacity:.5">⬆</div>
+                <div style="font-size:13px;color:var(--muted)">Click para seleccionar PDF</div>
+                <div style="font-size:11px;color:var(--muted);opacity:.7;margin-top:4px">Solo PDF · máx. 10 MB</div>
+              </div>
+              <input type="file" id="${inputId}" accept="application/pdf,.pdf" style="display:none" onchange="documentoCargar('${meta.tipo}', this.files[0]); this.value=''">
+            </div>
+          </div>
+        </div>`;
+    }
+  }).join('');
+}
+
+/* Sube un PDF: 1) extrae texto con pdf.js, 2) sube a Storage, 3) inserta fila en colegio_documentos.
+ * Si ya existe un documento de ese tipo para el colegio, lo reemplaza (DELETE + INSERT). */
+async function documentoCargar(tipo, file){
+  if(!file){ showToast('Selecciona un archivo'); return; }
+  if(file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+    showToast('Solo se aceptan archivos PDF'); return;
+  }
+  if(file.size > 10 * 1024 * 1024){
+    showToast('El archivo supera el límite de 10 MB'); return;
+  }
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  if(!colId){ showToast('No hay colegio activo'); return; }
+
+  try {
+    showToast('Subiendo y procesando '+tipo+'…');
+
+    // 1. Si existe registro previo para este tipo, marcarlo y luego eliminarlo
+    const existente = (_DOC_CACHE || []).find(d => d.tipo === tipo);
+    if(existente){
+      try { await sb.storage.from('documentos-colegios').remove([existente.storage_path]); } catch(_){}
+      await sb.from('colegio_documentos').delete().eq('id', existente.id);
+    }
+
+    // 2. Subir PDF a Storage
+    const ts = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `${colId}/${tipo}/${ts}_${safeName}`;
+    const { error: upErr } = await sb.storage
+      .from('documentos-colegios')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: true });
+    if(upErr) throw new Error('Storage: '+upErr.message);
+
+    // 3. Insertar fila en PROCESANDO
+    const insertPayload = {
+      colegio_id: colId,
+      tipo: tipo,
+      nombre_archivo: file.name,
+      tamano_bytes: file.size,
+      storage_path: storagePath,
+      estado: 'PROCESANDO',
+      subido_por: SESSION.user?.usuario || SESSION.user?.email || null
+    };
+    const { data: docRow, error: insErr } = await sb.from('colegio_documentos').insert(insertPayload).select().single();
+    if(insErr) throw new Error('BD: '+insErr.message);
+
+    // 4. Refrescar UI mostrando estado PROCESANDO
+    await _docCargarLista(true);
+    _docRenderLista(_DOC_CACHE);
+
+    // 5. Extraer texto con pdf.js en background
+    let textoExtraido = '';
+    let paginas = 0;
+    let errorTexto = null;
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      if(typeof pdfjsLib === 'undefined') throw new Error('pdf.js no está cargado');
+      // Configurar worker (necesario para pdf.js)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      paginas = pdf.numPages;
+      const partes = [];
+      for(let i = 1; i <= pdf.numPages; i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(it => it.str).join(' ');
+        partes.push(pageText);
+      }
+      textoExtraido = partes.join('\n\n').trim();
+      if(!textoExtraido) errorTexto = 'El PDF no contiene texto extraíble (¿es un PDF escaneado?)';
+    } catch(e){
+      console.error('[Documentos] Error pdf.js:', e);
+      errorTexto = 'No se pudo extraer texto: '+e.message;
+    }
+
+    // 6. Actualizar fila a LISTO o ERROR
+    const updatePayload = errorTexto
+      ? { estado: 'ERROR', error_mensaje: errorTexto, updated_at: new Date().toISOString() }
+      : { estado: 'LISTO', texto_extraido: textoExtraido, paginas: paginas, updated_at: new Date().toISOString() };
+    const { error: updErr } = await sb.from('colegio_documentos').update(updatePayload).eq('id', docRow.id);
+    if(updErr) console.warn('[Documentos] Update final:', updErr.message);
+
+    // 7. Refrescar UI con estado final
+    await _docCargarLista(true);
+    _docRenderLista(_DOC_CACHE);
+    showToast(errorTexto ? '⚠ Documento subido pero con error de extracción' : '✓ Documento cargado correctamente');
+
+  } catch(e){
+    console.error('[documentoCargar]', e);
+    showToast('Error: '+e.message);
+  }
+}
+
+async function documentoReemplazar(tipo){
+  // Trigger del input file de ese tipo (el mismo que está en la card vacía)
+  // Si la card está cargada, no hay input visible; creamos uno temporal.
+  const existente = document.getElementById('docInput_'+tipo);
+  if(existente){ existente.click(); return; }
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/pdf,.pdf';
+  inp.style.display = 'none';
+  inp.onchange = () => { if(inp.files[0]) documentoCargar(tipo, inp.files[0]); inp.remove(); };
+  document.body.appendChild(inp);
+  inp.click();
+}
+
+async function documentoEliminar(docId, tipo){
+  if(!confirm('¿Eliminar este documento? La IA dejará de tener acceso a su contenido para generar brechas.')) return;
+  try {
+    const doc = (_DOC_CACHE || []).find(d => d.id === docId);
+    if(doc?.storage_path){
+      try { await sb.storage.from('documentos-colegios').remove([doc.storage_path]); } catch(_){}
+    }
+    const { error } = await sb.from('colegio_documentos').delete().eq('id', docId);
+    if(error) throw error;
+    await _docCargarLista(true);
+    _docRenderLista(_DOC_CACHE);
+    showToast('Documento eliminado');
+  } catch(e){
+    showToast('Error: '+e.message);
+  }
+}
+
+async function documentoDescargar(docId){
+  try {
+    const doc = (_DOC_CACHE || []).find(d => d.id === docId);
+    if(!doc?.storage_path){ showToast('Documento no encontrado'); return; }
+    const { data, error } = await sb.storage.from('documentos-colegios').createSignedUrl(doc.storage_path, 60);
+    if(error || !data?.signedUrl){ showToast('Error: '+(error?.message||'sin URL')); return; }
+    window.open(data.signedUrl, '_blank');
+  } catch(e){
+    showToast('Error: '+e.message);
+  }
+}
 
 // ADMIN USUARIOS
 function renderAdminUsuarios(){
@@ -6592,6 +6859,13 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   // 3. Generar con IA por primera vez y persistir
   PLAN_BRECHAS_LOADING = true;
   try {
+    // Obtener nombre y descripción de la acción para enriquecer el contexto
+    // que recibe la edge function. Antes solo se mandaba el accion_id, lo que
+    // dejaba a la IA sin saber cuál era la acción a analizar.
+    const _accionObj = (DB.acciones || []).find(a => a.id === accionId);
+    const _accionNombre = _accionObj?.nombre || '';
+    const _accionDescripcion = _accionObj?.descripcion || '';
+
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
       method: 'POST',
       headers: {
@@ -6601,6 +6875,8 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
       body: JSON.stringify({
         colegio_id: colegioId,
         accion_id: accionId,
+        accion_nombre: _accionNombre,
+        accion_descripcion: _accionDescripcion,
         mes: mes,
         pct: pct,
         banda: banda
