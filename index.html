@@ -8380,6 +8380,10 @@ async function planConfirmar(){
     const maxPlazo = Math.max(...Object.values(s.asignaciones).map(a=>a.plazo_dias||0), ...pasos.map(p=>p.plazo_dias||0));
     const fechaObj = new Date(); fechaObj.setDate(fechaObj.getDate()+maxPlazo);
 
+    // Momento de activación del plan (lo usamos como metadata)
+    const fechaActivacion = new Date().toISOString();
+    s.fechaActivacion = fechaActivacion;
+
     const updatePayload = {
       estado: 'ACTIVA',
       paso_actual: 5,
@@ -8414,6 +8418,11 @@ async function planConfirmar(){
     }
 
     // Insertar pasos en tabla microacciones_pasos
+    // CRÍTICO: borrar los pasos previos antes de insertar, así si esta función
+    // se ejecuta varias veces (reintentos, re-guardado) no se acumulan duplicados.
+    const {error: eDel} = await sb.from('microacciones_pasos').delete().eq('microaccion_id', ma.id);
+    if(eDel) throw eDel;
+
     const pasosPayload = pasos.map((p,i)=>{
       const a = s.asignaciones[p._asignKey] || {};
       const fecha = new Date(); fecha.setDate(fecha.getDate()+(a.plazo_dias||p.plazo_dias));
@@ -8434,13 +8443,16 @@ async function planConfirmar(){
     const {error:e2} = await sb.from('microacciones_pasos').insert(pasosPayload);
     if(e2) throw e2;
 
-    // Refrescar caché local
+    // Refrescar caché local: primero filtrar pasos viejos de esta microacción
+    if(!DB.pasos) DB.pasos=[];
+    DB.pasos = DB.pasos.filter(p => p.microaccion_id !== ma.id);
+
+    // Refrescar caché local de microacciones
     if(!DB.microacciones) DB.microacciones=[];
     const idxExist = DB.microacciones.findIndex(m=>m.id===ma.id);
     if(idxExist>=0) DB.microacciones[idxExist] = ma;
     else DB.microacciones.push(ma);
 
-    if(!DB.pasos) DB.pasos=[];
     pasosPayload.forEach(p=>DB.pasos.push({...p, microaccion_id:ma.id}));
 
     // Limpiar localStorage del borrador
@@ -8498,6 +8510,57 @@ function planGuardarEdicionPaso(pasoKey, nuevoTexto){
   const s = PLAN_STATE;
   const idx = (s.pasosSeleccionados||[]).findIndex(p=>(p.key||p.id||p.descripcion)===pasoKey);
   if(idx >= 0){ s.pasosSeleccionados[idx].descripcion = nuevoTexto; planMarcarCambio(); planSyncSupabase(); }
+}
+
+/* ====================== HELPERS: cargo y fecha ====================== */
+/* Resolver cargo de un responsable buscando por nombre exacto en DB.responsables.
+ * Si no se encuentra, devuelve string vacío. */
+function _planCargoDeResponsable(nombre){
+  if(!nombre || typeof nombre !== 'string') return '';
+  const n = nombre.trim().toLowerCase();
+  if(!n) return '';
+  const resp = (DB.responsables||[]).find(r => (r.nombre||'').trim().toLowerCase() === n);
+  return resp?.cargo || '';
+}
+
+/* Devuelve "Nombre · Cargo" si el responsable está y tiene cargo. Si solo hay
+ * nombre pero no cargo, devuelve solo el nombre. Si no hay nombre, devuelve
+ * el placeholder "Sin asignar". */
+function _planNombreConCargo(nombre){
+  const n = (nombre||'').trim();
+  if(!n) return 'Sin asignar';
+  const cargo = _planCargoDeResponsable(n);
+  return cargo ? n + ' · ' + cargo : n;
+}
+
+/* Formatea una fecha ISO en "14 de mayo de 2026 · 15:25" usando hora local CL */
+function _planFechaHoraFmt(isoString){
+  if(!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    const fecha = d.toLocaleDateString('es-CL', {day:'numeric', month:'long', year:'numeric'});
+    const hora = d.toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit', hour12:false});
+    return fecha + ' · ' + hora;
+  } catch(e) { return ''; }
+}
+
+/* Resuelve la fecha de activación del plan en el orden de preferencia:
+ *   1. PLAN_STATE.fechaActivacion (recién activado en esta sesión)
+ *   2. updated_at del plan existente (cuando entras desde Mis Planes)
+ *   3. created_at del primer paso del plan (fallback histórico)
+ */
+function _planFechaActivacion(){
+  const s = PLAN_STATE;
+  if(s?.fechaActivacion) return s.fechaActivacion;
+  if(s?.existente?.updated_at) return s.existente.updated_at;
+  if(s?.microaccionId){
+    const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === s.microaccionId);
+    if(pasos.length){
+      const fechas = pasos.map(p => p.created_at).filter(Boolean).sort();
+      if(fechas.length) return fechas[0];
+    }
+  }
+  return null;
 }
 
 /* ====================== HELPER: armar datos para Word/PDF ====================== */
@@ -8585,8 +8648,10 @@ function planDescargarWord(){
   const respTxt = d.responsablesUnicos.length === 0
     ? 'sin responsables asignados aún'
     : d.responsablesUnicos.length === 1
-      ? d.responsablesUnicos[0] + ' a cargo'
-      : d.responsablesUnicos.length + ' personas involucradas (' + d.responsablesUnicos.join(', ') + ')';
+      ? _planNombreConCargo(d.responsablesUnicos[0]) + ' a cargo'
+      : d.responsablesUnicos.length + ' personas involucradas (' + d.responsablesUnicos.map(r => _planNombreConCargo(r)).join(', ') + ')';
+
+  const fechaActivacionFmt = _planFechaHoraFmt(_planFechaActivacion());
 
   let lineasHtml = '';
   d.lineas.forEach((linea, idx) => {
@@ -8598,7 +8663,7 @@ function planDescargarWord(){
             <span style="display:inline-block;width:22px;height:22px;background:#1f5f47;color:#fff;border-radius:50%;text-align:center;font-weight:700;font-size:10pt;margin-right:8px">${i+1}</span>${_planBoldHTML(p.descripcion)}
           </div>
           <div style="font-size:9.5pt;color:#666;margin-top:6px;padding-left:30px">
-            <b>Responsable:</b> ${p.responsable||'Sin asignar'} &nbsp;&nbsp; <b>Plazo:</b> ${p.plazo_dias} días &nbsp;&nbsp; <b>Esfuerzo:</b> ${p.esfuerzo}
+            <b>Responsable:</b> ${_planNombreConCargo(p.responsable)} &nbsp;&nbsp; <b>Plazo:</b> ${p.plazo_dias} días &nbsp;&nbsp; <b>Esfuerzo:</b> ${p.esfuerzo}
           </div>
         </div>`;
     });
@@ -8625,6 +8690,7 @@ function planDescargarWord(){
         ${respTxt}.
         Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
       </div>
+      ${fechaActivacionFmt ? `<div style="font-size:9pt;color:#888;margin-top:10px;padding-top:8px;border-top:1px solid #d8d2c0">Plan creado el ${fechaActivacionFmt}</div>` : ''}
     </div>
     ${lineasHtml}
   `;
@@ -8651,8 +8717,10 @@ function planDescargarPDF(){
   const respTxt = d.responsablesUnicos.length === 0
     ? 'sin responsables asignados aún'
     : d.responsablesUnicos.length === 1
-      ? '<b>'+d.responsablesUnicos[0]+'</b> a cargo'
-      : '<b>'+d.responsablesUnicos.length+'</b> personas involucradas (' + d.responsablesUnicos.join(', ') + ')';
+      ? '<b>'+_planNombreConCargo(d.responsablesUnicos[0])+'</b> a cargo'
+      : '<b>'+d.responsablesUnicos.length+'</b> personas involucradas (' + d.responsablesUnicos.map(r => _planNombreConCargo(r)).join(', ') + ')';
+
+  const fechaActivacionFmt = _planFechaHoraFmt(_planFechaActivacion());
 
   let lineasHtml = '';
   d.lineas.forEach((linea, idx) => {
@@ -8665,7 +8733,7 @@ function planDescargarPDF(){
             <div class="pdesc">${_planBoldHTML(p.descripcion)}</div>
           </div>
           <div class="pmeta">
-            <span><b>Responsable:</b> ${p.responsable||'Sin asignar'}</span>
+            <span><b>Responsable:</b> ${_planNombreConCargo(p.responsable)}</span>
             <span><b>Plazo:</b> ${p.plazo_dias} días</span>
             <span><b>Esfuerzo:</b> ${p.esfuerzo}</span>
           </div>
@@ -8694,6 +8762,7 @@ function planDescargarPDF(){
       .header .kicker{font-size:9pt;letter-spacing:1.5pt;color:#666;text-transform:uppercase;margin-bottom:6px}
       .header h1{font-family:Georgia,'Times New Roman',serif;font-size:22pt;color:#222;margin:0 0 12px;font-weight:normal}
       .header .resumen{font-size:11pt;line-height:1.65;color:#444}
+      .header .meta-creacion{font-size:9pt;color:#888;margin-top:10px;padding-top:8px;border-top:1px solid #d8d2c0}
       .linea{margin-bottom:18px;padding:18px 22px;border:1px solid #d4cdb8;border-radius:10px;page-break-inside:avoid}
       .linea-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8}
       .big-num{font-family:Georgia,serif;font-size:38pt;line-height:0.95;color:#1f5f47;flex-shrink:0;min-width:40px;text-align:center}
@@ -8718,6 +8787,7 @@ function planDescargarPDF(){
         ${respTxt}.
         Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
       </div>
+      ${fechaActivacionFmt ? `<div class="meta-creacion">Plan creado el ${fechaActivacionFmt}</div>` : ''}
     </div>
     ${lineasHtml}
     </body></html>`);
@@ -8797,7 +8867,7 @@ function renderPaso7Confirmacion(){
             onblur="this.style.borderColor='transparent';this.style.background='transparent';planGuardarEdicionPaso('${pasoKey}',this.innerText.trim())"
           >${planBoldTituloPaso(desc)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;padding-left:4px">
-            <span>👤 ${escapeHtmlPlan(responsable)}</span>
+            <span>👤 ${escapeHtmlPlan(_planNombreConCargo(responsable))}</span>
             <span>📅 ${plazoDias} días</span>
             <span style="color:${esfuerzoColor(esfuerzo)};font-weight:600">${esfuerzo}</span>
           </div>
@@ -8822,8 +8892,8 @@ function renderPaso7Confirmacion(){
   const respLista = responsablesUnicos.length === 0
     ? 'sin responsables asignados aún'
     : responsablesUnicos.length === 1
-      ? `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(responsablesUnicos[0])}</strong> a cargo`
-      : `<strong style="color:var(--text);font-weight:600">${responsablesUnicos.length}</strong> personas involucradas (${responsablesUnicos.map(r=>escapeHtmlPlan(r)).join(', ')})`;
+      ? `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(_planNombreConCargo(responsablesUnicos[0]))}</strong> a cargo`
+      : `<strong style="color:var(--text);font-weight:600">${responsablesUnicos.length}</strong> personas involucradas (${responsablesUnicos.map(r=>escapeHtmlPlan(_planNombreConCargo(r))).join(', ')})`;
 
   // ── Plazo en lenguaje natural según los días ──
   let plazoTexto;
@@ -8870,6 +8940,11 @@ function renderPaso7Confirmacion(){
       <div style="font-size:13px;line-height:1.6;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.06)">
         <strong style="color:var(--text);font-weight:600">${todosPasos.length}</strong> ${todosPasos.length===1?'paso':'pasos'} · ${respLista} · fecha estimada de cierre: <strong style="color:var(--text);font-weight:600">${fechaCierreTxt}</strong>
       </div>
+      ${(() => {
+        const fAct = _planFechaActivacion();
+        const fActFmt = _planFechaHoraFmt(fAct);
+        return fActFmt ? `<div style="font-size:11.5px;color:var(--muted);margin-top:8px;opacity:.8">Plan creado el ${fActFmt}</div>` : '';
+      })()}
     </div>`;
 
   document.getElementById('planBody').innerHTML = `
@@ -8941,7 +9016,7 @@ function renderPlanResumenPedagogico(){
             ${planBoldTituloPaso(p.descripcion)}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)">
-            <span>👤 <strong style="color:var(--text)">${escapeHtmlPlan(p.responsable||'Sin asignar')}</strong></span>
+            <span>👤 <strong style="color:var(--text)">${escapeHtmlPlan(_planNombreConCargo(p.responsable))}</strong></span>
             <span>📅 <strong style="color:var(--text)">${p.plazo_dias} días</strong></span>
             <span>⚡ ${escapeHtmlPlan(p.esfuerzo||'MEDIO')}</span>
             ${p.linea_foco ? `<span style="color:var(--muted)">· ${escapeHtmlPlan(p.linea_foco)}</span>` : ''}
@@ -8979,6 +9054,11 @@ function renderPlanResumenPedagogico(){
         <span style="color:var(--muted);font-size:14px">·</span>
         <span style="font-size:14px;color:${plazoColor};font-weight:600">📅 ${escapeHtmlPlan(plazoLabel)}</span>
       </div>
+      ${(() => {
+        const fAct = _planFechaActivacion();
+        const fActFmt = _planFechaHoraFmt(fAct);
+        return fActFmt ? `<div style="font-size:12px;color:var(--muted);margin-top:12px;opacity:.85">Plan creado el ${fActFmt}</div>` : '';
+      })()}
     </div>
 
     <div style="margin-bottom:28px">
