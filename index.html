@@ -8665,18 +8665,50 @@ function renderPaso7Confirmacion(){
       ? `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(responsablesUnicos[0])}</strong> a cargo`
       : `<strong style="color:var(--text);font-weight:600">${responsablesUnicos.length}</strong> personas involucradas (${responsablesUnicos.map(r=>escapeHtmlPlan(r)).join(', ')})`;
 
+  // ── Plazo en lenguaje natural según los días ──
+  let plazoTexto;
+  if(maxPlazo <= 0)           plazoTexto = 'los próximos días';
+  else if(maxPlazo <= 4)      plazoTexto = `los próximos ${maxPlazo} días`;
+  else if(maxPlazo <= 9)      plazoTexto = 'la próxima semana';
+  else if(maxPlazo <= 16)     plazoTexto = 'las próximas 2 semanas';
+  else if(maxPlazo <= 23)     plazoTexto = 'las próximas 3 semanas';
+  else if(maxPlazo <= 35)     plazoTexto = 'el próximo mes';
+  else                        plazoTexto = `los próximos ${maxPlazo} días`;
+
+  // ── Temas (focos) de las alternativas elegidas, en lenguaje legible ──
+  // Limpia "FOCO EN " del inicio, baja a minúsculas, junta con "y" la última.
+  const temas = lineas
+    .map(l => (l.foco || l.titulo || '').replace(/^FOCO EN\s+/i, '').replace(/^Estrategia\s*[·•-]\s*/i, '').trim().toLowerCase())
+    .filter(Boolean);
+  let temasFraseada;
+  if(temas.length === 0)        temasFraseada = '';
+  else if(temas.length === 1)   temasFraseada = `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(temas[0])}</strong>`;
+  else if(temas.length === 2)   temasFraseada = `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(temas[0])}</strong> y <strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(temas[1])}</strong>`;
+  else {
+    const ultima = temas[temas.length-1];
+    const previas = temas.slice(0,-1).map(t => `<strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(t)}</strong>`).join(', ');
+    temasFraseada = `${previas} y <strong style="color:var(--text);font-weight:600">${escapeHtmlPlan(ultima)}</strong>`;
+  }
+
+  const accionNombre = escapeHtmlPlan(s.accion?.nombre || 'tu acción');
+  const totalAltStrong = `<strong style="color:var(--text);font-weight:600">${totalAlternativas}</strong>`;
+  const altPalabra = totalAlternativas === 1 ? 'alternativa de acción' : 'alternativas de acción';
+
+  // Construir el párrafo narrativo
+  let parrafo = `Has elegido ${totalAltStrong} ${altPalabra}`;
+  if(temasFraseada) parrafo += `: trabajar en ${temasFraseada}`;
+  parrafo += `. Son ${totalAlternativas === 1 ? 'un foco concreto' : 'focos concretos'} que, en ${plazoTexto}, deberían generar avances visibles en tu acción <strong style="color:var(--text);font-weight:600">${accionNombre}</strong>. Confiamos en que el equipo podrá sostener este trabajo.`;
+
   const encabezado = `
     <div style="background:var(--surface2,#f5f1e8);border-radius:12px;padding:22px 26px;margin-bottom:20px">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
         <div style="width:32px;height:32px;border-radius:50%;background:var(--green,#38a169);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0">✓</div>
         <div style="font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase">Plan guardado</div>
       </div>
-      <div style="font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;line-height:1.3;margin-bottom:10px;color:var(--text)">${escapeHtmlPlan(s.accion?.nombre||'Tu plan')}</div>
-      <div style="font-size:14px;line-height:1.6;color:var(--muted)">
-        Tu plan contiene <strong style="color:var(--text);font-weight:600">${totalAlternativas}</strong> ${totalAlternativas===1?'alternativa de acción':'alternativas de acción'}
-        con <strong style="color:var(--text);font-weight:600">${todosPasos.length}</strong> ${todosPasos.length===1?'paso':'pasos'} en marcha,
-        ${respLista}.
-        El plan debería completarse antes del <strong style="color:var(--text);font-weight:600">${fechaCierreTxt}</strong>.
+      <div style="font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;line-height:1.3;margin-bottom:10px;color:var(--text)">${accionNombre}</div>
+      <div style="font-size:14px;line-height:1.65;color:var(--muted)">${parrafo}</div>
+      <div style="font-size:13px;line-height:1.6;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.06)">
+        <strong style="color:var(--text);font-weight:600">${todosPasos.length}</strong> ${todosPasos.length===1?'paso':'pasos'} · ${respLista} · fecha estimada de cierre: <strong style="color:var(--text);font-weight:600">${fechaCierreTxt}</strong>
       </div>
     </div>`;
 
