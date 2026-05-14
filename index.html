@@ -6013,7 +6013,7 @@ const PLAN_CSS = `
 .plan-progress-bar{width:100%;height:3px;border-radius:2px;background:var(--border);transition:background .25s}
 .plan-progress-step.done .plan-progress-bar{background:#7ED4A0}
 .plan-progress-step.current .plan-progress-bar{background:var(--accent2)}
-.plan-progress-label{font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
+.plan-progress-label{font-size:14px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;transition:color .25s;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
 .plan-progress-step.done .plan-progress-label{color:#2C7A4B}
 .plan-progress-step.current .plan-progress-label{color:var(--accent2);font-weight:600}
 
@@ -6647,17 +6647,28 @@ function planInitState(accionId, mes, seg, borrador) {
 function planSanearBorrador(){
   const s = PLAN_STATE;
 
-  // (1) Filtrar pasosSeleccionados huérfanos (lineaId que ya no existe en propuestas)
-  if(Array.isArray(s.propuestas) && s.propuestas.length){
-    const lineasValidas = new Set(s.propuestas.map(l=>l.id));
+  // (1) Filtrar pasosSeleccionados huérfanos. Solo eliminamos pasos que están
+  //     estructuralmente rotos o que pertenecen a líneas que ya no cargamos.
+  //     NO eliminamos pasos cuyo lineaId todavía es válido aunque temporalmente
+  //     no esté en s.propuestas (porque las propuestas se recargan async después).
+  if(Array.isArray(s.pasosSeleccionados) && s.pasosSeleccionados.length){
     const antes = s.pasosSeleccionados.length;
-    s.pasosSeleccionados = s.pasosSeleccionados.filter(p=>{
-      // Si el paso tiene lineaId y esa línea ya no existe, es huérfano
-      if(p.lineaId && !lineasValidas.has(p.lineaId)) return false;
+    const eliminados = [];
+    s.pasosSeleccionados = s.pasosSeleccionados.filter(p => {
+      // Sin lineaId ni key: estructuralmente roto, eliminar
+      if(!p.lineaId && !p.key){
+        eliminados.push({ motivo:'sin lineaId/key', desc:p.descripcion });
+        return false;
+      }
+      // Líneas de ámbito (linea_nivel_*): ya no las cargamos, eliminar selecciones huérfanas
+      if(p.lineaId && p.lineaId.startsWith('linea_nivel_')){
+        eliminados.push({ motivo:'línea de ámbito desactivada', desc:p.descripcion });
+        return false;
+      }
       return true;
     });
-    if(s.pasosSeleccionados.length !== antes){
-      console.info('[planSanearBorrador] Eliminados', (antes - s.pasosSeleccionados.length), 'pasos huérfanos');
+    if(eliminados.length){
+      console.info('[planSanearBorrador] Eliminados', eliminados.length, 'pasos huérfanos:', eliminados);
     }
   }
 
@@ -6766,7 +6777,7 @@ async function planSyncSupabase(){
     mes: s.mes,
     estado: 'BORRADOR',
     modo: s.banda,
-    paso_actual: Math.min(s.paso, 6),
+    paso_actual: Math.min(s.paso, 5),
     causas: s.causas.length ? s.causas : null,
     causas_otros: s.causasOtros.length ? s.causasOtros : null,
     comentario: s.comentario || null,
@@ -6862,7 +6873,7 @@ function renderBotonPlan(accionId, mes, seg) {
       +'<span class="plan-dot"></span>Plan</button>';
   }
   if(ma && ma.estado==='BORRADOR'){
-    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/6)">'
+    return '<button class="plan-btn borrador" onclick="abrirPlan(\''+accionId+'\',\''+mes+'\')" title="Borrador en proceso (paso '+(ma.paso_actual||1)+'/5)">'
       +'<span class="plan-dot"></span>Borrador</button>';
   }
   if(ma){
@@ -7248,13 +7259,13 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Causales','Plan','Acuerdos','Listo'];
+  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
-  for(let i=1;i<=6;i++){
+  for(let i=1;i<=5;i++){
     const d=document.createElement('div');
     d.className='plan-progress-step'+(s.paso===99?'':(i<s.paso?' done':i===s.paso?' current':''));
-    if(s.paso===99 && i<=6) d.classList.add('done');
+    if(s.paso===99 && i<=5) d.classList.add('done');
     const maxAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado||1);
     const isFuture = s.paso !== 99 && i > maxAlcanzado + 1;
     if(isFuture) d.classList.add('future');
@@ -7278,8 +7289,7 @@ function renderPlanPaso(){
     case 2: renderPaso1Contexto(); break;
     case 3: renderPaso2Diagnostico(); break;
     case 4: renderPaso4Constructor(); break;
-    case 5: renderPaso6Acuerdos(); break;
-    case 6: renderPaso7Confirmacion(); break;
+    case 5: renderPaso7Confirmacion(); break;
   }
 
   // Indicador "Guardando…/Guardado" en footer
@@ -7855,75 +7865,6 @@ async function planGenerarPropuestas(){
         };
       }));
 
-      // ── PROPUESTAS DE NIVEL (ámbito): además de las causales, traer los
-      // pasos base asociados al ámbito de la acción (Aula, Gestión, etc.).
-      // Se cargan desde filas 'nivel|<accion>|<L>|<ambito>' en planes_cache.
-      // IMPORTANTE: las filas nivel guardan el contenido como
-      //   plan_data[0].pasos = ['paso 1', 'paso 2', 'paso 3']   (array de strings)
-      // mientras que las filas causal guardan:
-      //   plan_data[0].alternativas = {A:'...', B:'...', C:'...'}
-      // Este código soporta ambos formatos para máxima compatibilidad.
-      if(slugAccion){
-        try {
-          const prefix = 'nivel|' + slugAccion + '|' + nivelActual + '|';
-          const { data: nivelRows } = await sb.from('planes_cache')
-            .select('cache_key,plan_data,curado')
-            .like('cache_key', prefix + '%');
-          if(Array.isArray(nivelRows) && nivelRows.length){
-            // Ordenar para presentación estable (por ámbito alfabético)
-            nivelRows.sort((a,b) => (a.cache_key||'').localeCompare(b.cache_key||''));
-            nivelRows.forEach((row, j) => {
-              const partes = (row.cache_key||'').split('|');
-              const ambito = partes[3] || '';
-              const filaCache = row?.plan_data?.[0];
-              if(!filaCache) return;
-
-              const ambitoInfo = (typeof MAPA_AMBITOS_INFO !== 'undefined') ? MAPA_AMBITOS_INFO[ambito] : null;
-              const etiqueta = ambitoInfo?.etiqueta || ambito;
-
-              // Construir lista de textos según el formato encontrado
-              const textos = [];
-              if(Array.isArray(filaCache.pasos)){
-                // Formato nivel real: pasos como array de strings
-                filaCache.pasos.forEach(t => {
-                  const s = (t||'').trim();
-                  if(s) textos.push(s);
-                });
-              } else if(filaCache.alternativas){
-                // Formato legacy: alternativas A/B/C
-                ['A','B','C'].forEach(letra => {
-                  const s = (filaCache.alternativas[letra]||'').trim();
-                  if(s) textos.push(s);
-                });
-              }
-
-              if(!textos.length) return;
-
-              const pasos = textos.map((texto, k) => ({
-                id: 'n' + (j+1) + '.' + (k+1),
-                descripcion: texto,
-                responsable_sugerido: '',
-                plazo_dias: 14,
-                esfuerzo: 'MEDIO'
-              }));
-
-              propuestas.push({
-                id: 'linea_nivel_' + (j+1),
-                titulo: 'Ámbito · ' + etiqueta,
-                foco: 'FOCO EN ' + etiqueta.toUpperCase(),
-                descripcion_corta: 'Pasos base sugeridos para el ámbito "' + etiqueta + '". Elegí los que mejor se adapten y editalos para tu contexto. Borrá los que no uses.',
-                causa_atacada: 'nivel',
-                _ambito: etiqueta,
-                pasos,
-                _fromPrecomp: true
-              });
-            });
-          }
-        } catch(e){
-          console.warn('[planGenerarPropuestas] nivel| lookup:', e.message);
-        }
-      }
-
       // NOTA: el Núcleo se eliminó. Las recs por causal se cruzan con el nivel
       // cuando se complete el pre-cómputo con Gemini (accion × nivel × causal).
 
@@ -8337,7 +8278,7 @@ function renderPaso4Constructor(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planNext()" ${totalPasos===0?'disabled':''}>Acuerdos y compromisos →</button>
+      <button class="plan-btn-next" onclick="planConfirmar()" ${totalPasos===0?'disabled':''}>Guardar plan</button>
     </div>`;
 }
 
@@ -8419,67 +8360,19 @@ function obtenerTodosLosPasos(){
 }
 
 /* ====================== PASO 6: ACUERDOS ====================== */
-function renderPaso6Acuerdos(){
-  const s = PLAN_STATE;
-  const pasos = obtenerTodosLosPasos();
-  const resumen = pasos.map((p,i)=>'• '+p.descripcion).join('\n');
-  if(!s.acuerdos.qhe) s.acuerdos.qhe = resumen;
-
-  // Detectar si los acuerdos vienen heredados del plan anterior
-  const acuerdosHeredados = s.acuerdos._heredado === true;
-  const mesHeredadoLabel = s.acuerdos._heredadoDeMes
-    ? (typeof fmtMes==='function' ? fmtMes(s.acuerdos._heredadoDeMes) : s.acuerdos._heredadoDeMes)
-    : '';
-  const bannerHeredado = acuerdosHeredados ? `
-    <div class="aviso-disclaimer" style="margin-bottom:14px;background:#fff7e6;border-left:3px solid #f59e0b">
-      <strong>⚠ Acuerdos heredados de ${escapeHtmlPlan(mesHeredadoLabel||'plan anterior')}</strong> — revisa que el responsable y los compromisos sigan vigentes este mes.
-      Al editar cualquier campo, el aviso desaparecerá automáticamente.
-    </div>` : '';
-
-  // Wrap de eventos para limpiar flag al editar
-  const onInputClean = (campo) => `if(PLAN_STATE.acuerdos._heredado){ delete PLAN_STATE.acuerdos._heredado; delete PLAN_STATE.acuerdos._heredadoDeMes; renderPlanPaso(); return; } PLAN_STATE.acuerdos.${campo}=this.value;planMarcarCambio()`;
-
-  document.getElementById('planBody').innerHTML = `
-    <div class="plan-orient">El plan que estás por confirmar es responsabilidad del equipo directivo. Las sugerencias del sistema solo orientaron la decisión.</div>
-    <h3>Acuerdos y compromisos</h3>
-    <p class="lead">El cierre del protocolo. Aquí el equipo se compromete públicamente.</p>
-    ${bannerHeredado}
-    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
-      <label>Qué haremos${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
-      <textarea id="acu_qhe" oninput="${onInputClean('qhe')}">${escapeHtmlPlan(s.acuerdos.qhe)}</textarea>
-    </div>
-    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
-      <label>Quién se compromete (responsable principal)${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
-      <input type="text" id="acu_quien" value="${escapeHtmlPlan(s.acuerdos.quien)}" oninput="${onInputClean('quien')}" placeholder="Nombre del responsable">
-    </div>
-    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
-      <label>Co-responsable (opcional)${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
-      <input type="text" id="acu_co" value="${escapeHtmlPlan(s.acuerdos.co)}" oninput="${onInputClean('co')}" placeholder="Nombre del co-responsable">
-    </div>
-    <div class="plan-acuerdo-field"${acuerdosHeredados?' style="border-left:3px solid #f59e0b;padding-left:10px"':''}>
-      <label>Cómo sabremos que avanzamos a 15 días${acuerdosHeredados?' <span style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:2px 6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px">⚠ Heredado · confirmar</span>':''}</label>
-      <textarea id="acu_como" oninput="${onInputClean('como')}" placeholder="Ej: 80% de docentes habrán recibido retroalimentación documentada">${escapeHtmlPlan(s.acuerdos.como)}</textarea>
-    </div>
-  `;
-  document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 6 de 7</span>
-    <div style="display:flex;gap:8px">
-      <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planConfirmar()">Confirmar plan →</button>
-    </div>`;
-}
-
 /* ====================== PASO 7: CONFIRMACIÓN + GUARDADO ====================== */
 async function planConfirmar(){
   const s = PLAN_STATE;
-  if(!s.acuerdos.quien.trim()){ showToast('Indica quién se compromete'); return; }
+  // Validación mínima: al menos un paso seleccionado
+  const totalPasos = (s.pasosSeleccionados?.length||0) + Object.values(s.pasosOtrosLinea||{}).reduce((a,b)=>a+b.length,0) + (s.pasosFocoPropio?.length||0);
+  if(totalPasos === 0){ showToast('Selecciona al menos un paso antes de guardar el plan'); return; }
 
   // Asegurar que último cambio está sincronizado antes de confirmar
   if(PLAN_AUTOSAVE_TIMER){ clearTimeout(PLAN_AUTOSAVE_TIMER); PLAN_AUTOSAVE_TIMER=null; }
   await planSyncSupabase();
 
   document.getElementById('planBody').innerHTML = `
-    <div class="plan-loading"><div class="plan-loading-spin"></div><p>Confirmando plan...</p></div>`;
+    <div class="plan-loading"><div class="plan-loading-spin"></div><p>Guardando plan...</p></div>`;
   document.getElementById('planFooter').innerHTML = '';
 
   try {
@@ -8489,13 +8382,9 @@ async function planConfirmar(){
 
     const updatePayload = {
       estado: 'ACTIVA',
-      paso_actual: 6,
+      paso_actual: 5,
       fecha_objetivo: fechaObj.toISOString().split('T')[0],
-      titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes),
-      acuerdo_que: s.acuerdos.qhe,
-      acuerdo_quien: s.acuerdos.quien,
-      acuerdo_co: s.acuerdos.co||null,
-      acuerdo_como: s.acuerdos.como||null
+      titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes)
     };
 
     let ma;
