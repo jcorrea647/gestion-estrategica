@@ -8500,76 +8500,227 @@ function planGuardarEdicionPaso(pasoKey, nuevoTexto){
   if(idx >= 0){ s.pasosSeleccionados[idx].descripcion = nuevoTexto; planMarcarCambio(); planSyncSupabase(); }
 }
 
-function planDescargarWord(){
+/* ====================== HELPER: armar datos para Word/PDF ====================== */
+/* Reutiliza la misma lógica que la pantalla de Planes para que el documento
+ * salga consistente con lo que el usuario ve en la app. Crítico: usa _asignKey
+ * para leer responsables/plazos desde s.asignaciones, igual que la UI.
+ */
+function _planArmarDatosExportar(){
   const s = PLAN_STATE;
-  const nombre = s.accion?.nombre || 'Plan';
-  const mes = typeof fmtMes==='function' ? fmtMes(s.mes) : (s.mes||'');
-  const resp = [s.acuerdos?.quien, s.acuerdos?.co].filter(Boolean).join(' + ') || '—';
+
+  // Agrupar pasos en líneas (mismo orden que la pantalla)
   const lineasMap = {};
-  (s.pasosSeleccionados||[]).forEach(p=>{
-    const k = p.lineaId||p.lineaTitulo||'Sin línea';
-    if(!lineasMap[k]) lineasMap[k]={titulo:p.lineaTitulo||k, foco:p.lineaFoco||'', pasos:[]};
-    lineasMap[k].pasos.push(p);
+  (s.pasosSeleccionados||[]).forEach(p => {
+    const k = p.lineaId || p.lineaTitulo || 'Sin línea';
+    if(!lineasMap[k]) lineasMap[k] = { titulo: p.lineaTitulo||k, foco: p.lineaFoco||'', pasos:[] };
+    lineasMap[k].pasos.push({ ...p, _asignKey: p.key });
   });
-  let body = `<h1 style="color:#1E3A2F">Plan PME — ${nombre}</h1>
-    <p><b>Período:</b> ${mes} &nbsp;|&nbsp; <b>Responsable:</b> ${resp}</p><hr>`;
-  Object.values(lineasMap).forEach(linea=>{
-    body += `<h2 style="color:#1E3A2F;margin-top:18px">${linea.titulo}</h2>`;
-    body += `<p style="font-size:9pt;text-transform:uppercase;letter-spacing:.5pt;color:#666;margin:0 0 8px">${linea.foco}</p>`;
-    body += `<table border="1" cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:10pt">
-      <tr style="background:#1E3A2F;color:white"><th width="5%">#</th><th width="55%">Paso</th><th width="20%">Responsable</th><th width="10%">Plazo</th><th width="10%">Esfuerzo</th></tr>`;
-    linea.pasos.forEach((p,i)=>{
-      body += `<tr><td align="center"><b>${i+1}</b></td><td>${p.descripcion||''}</td><td>${p.responsable||p.responsable_sugerido||'—'}</td><td>${p.plazo_dias||14} días</td><td>${p.esfuerzo||'—'}</td></tr>`;
+  Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
+    if(!pasos.length) return;
+    const ln = (s.propuestas||[]).find(l=>l.id===lineaId);
+    const k2 = lineaId+'_otros';
+    if(!lineasMap[k2]) lineasMap[k2] = { titulo:(ln?.titulo||'Línea')+' · Pasos propios', foco:ln?.foco||'', pasos:[] };
+    pasos.forEach((p, oi) => {
+      lineasMap[k2].pasos.push({ ...p, _asignKey: p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi) });
     });
-    body += `</table>`;
   });
-  if(s.acuerdos?.como) body += `<h3 style="margin-top:16px;color:#1E3A2F">¿Cómo sabremos que avanzamos?</h3><p>${s.acuerdos.como}</p>`;
+  if((s.pasosFocoPropio||[]).length){
+    lineasMap['__foco__'] = { titulo:'Foco propio', foco:'FOCO PROPIO', pasos: s.pasosFocoPropio.map((p,i)=>({
+      ...p, _asignKey: p.uid ? ('foco|'+p.uid) : ('foco|'+i)
+    })) };
+  }
+
+  // Resolver asignaciones
+  const lineas = Object.values(lineasMap).map(linea => ({
+    ...linea,
+    pasos: linea.pasos.map(p => {
+      const a = (s.asignaciones||{})[p._asignKey] || {};
+      return {
+        descripcion: p.descripcion || p.descripcion_sugerida || '',
+        responsable: a.responsable || p.responsable || p.responsable_sugerido || '',
+        plazo_dias: a.plazo_dias || p.plazo_dias || 14,
+        esfuerzo: a.esfuerzo || p.esfuerzo || 'MEDIO'
+      };
+    })
+  }));
+
+  // Datos resumen
+  const allPasos = lineas.flatMap(l => l.pasos);
+  const totalAlternativas = lineas.length;
+  const totalPasos = allPasos.length;
+  const responsablesUnicos = [...new Set(allPasos.map(p => p.responsable).filter(r => r && r.trim()))];
+  const maxPlazo = Math.max(...allPasos.map(p => p.plazo_dias||0), 0);
+  const fechaCierre = new Date();
+  fechaCierre.setDate(fechaCierre.getDate() + maxPlazo);
+  const fechaCierreTxt = fechaCierre.toLocaleDateString('es-CL',{day:'numeric',month:'long',year:'numeric'});
+
+  return {
+    nombreAccion: s.accion?.nombre || 'Plan',
+    mes: typeof fmtMes==='function' ? fmtMes(s.mes) : (s.mes||''),
+    lineas,
+    totalAlternativas,
+    totalPasos,
+    responsablesUnicos,
+    maxPlazo,
+    fechaCierreTxt
+  };
+}
+
+/* Helper: aplicar negrita al patrón "Título: descripción" (versión simplificada
+ * para HTML estático de Word/PDF, sin tooltips ni contenteditable) */
+function _planBoldHTML(texto){
+  const t = String(texto||'').trim();
+  const idx = t.indexOf(':');
+  if(idx >= 5 && idx <= 80){
+    const titulo = t.slice(0, idx);
+    const resto = t.slice(idx);
+    return '<strong>' + titulo + '</strong>' + resto;
+  }
+  return t;
+}
+
+function planDescargarWord(){
+  const d = _planArmarDatosExportar();
+
+  const respTxt = d.responsablesUnicos.length === 0
+    ? 'sin responsables asignados aún'
+    : d.responsablesUnicos.length === 1
+      ? d.responsablesUnicos[0] + ' a cargo'
+      : d.responsablesUnicos.length + ' personas involucradas (' + d.responsablesUnicos.join(', ') + ')';
+
+  let lineasHtml = '';
+  d.lineas.forEach((linea, idx) => {
+    let pasosHtml = '';
+    linea.pasos.forEach((p, i) => {
+      pasosHtml += `
+        <div style="margin:10px 0;padding:10px 14px;border-left:3px solid #1f5f47;background:#fafaf7">
+          <div style="font-size:11pt;line-height:1.5;color:#222">
+            <span style="display:inline-block;width:22px;height:22px;background:#1f5f47;color:#fff;border-radius:50%;text-align:center;font-weight:700;font-size:10pt;margin-right:8px">${i+1}</span>${_planBoldHTML(p.descripcion)}
+          </div>
+          <div style="font-size:9.5pt;color:#666;margin-top:6px;padding-left:30px">
+            <b>Responsable:</b> ${p.responsable||'Sin asignar'} &nbsp;&nbsp; <b>Plazo:</b> ${p.plazo_dias} días &nbsp;&nbsp; <b>Esfuerzo:</b> ${p.esfuerzo}
+          </div>
+        </div>`;
+    });
+    lineasHtml += `
+      <div style="margin:24px 0;padding:18px 22px;border:1px solid #d4cdb8;border-radius:8px;page-break-inside:avoid">
+        <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8">
+          <div style="font-family:Georgia,serif;font-size:36pt;line-height:1;color:#1f5f47;font-weight:normal">${idx+1}</div>
+          <div style="flex:1">
+            <div style="font-size:9pt;font-weight:700;color:#1f5f47;letter-spacing:1.5pt;text-transform:uppercase;margin-bottom:4px">${linea.foco}</div>
+            <div style="font-family:Georgia,serif;font-size:16pt;color:#222;line-height:1.25">${linea.titulo}</div>
+          </div>
+        </div>
+        ${pasosHtml}
+      </div>`;
+  });
+
+  const body = `
+    <div style="background:#f5f1e8;padding:24px 28px;border-radius:10px;margin-bottom:20px">
+      <div style="font-size:9pt;letter-spacing:1.5pt;color:#666;text-transform:uppercase;margin-bottom:6px">Plan PME · ${d.mes}</div>
+      <h1 style="font-family:Georgia,serif;font-size:22pt;color:#222;margin:0 0 12px;font-weight:normal">${d.nombreAccion}</h1>
+      <div style="font-size:11pt;line-height:1.6;color:#444">
+        Plan compuesto por <b>${d.totalAlternativas}</b> ${d.totalAlternativas===1?'alternativa de acción':'alternativas de acción'}
+        con <b>${d.totalPasos}</b> ${d.totalPasos===1?'paso':'pasos'} en marcha,
+        ${respTxt}.
+        Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
+      </div>
+    </div>
+    ${lineasHtml}
+  `;
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>body{font-family:Arial,sans-serif;font-size:11pt;margin:40px}</style>
+    <style>
+      @page{size:A4;margin:2.2cm}
+      body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;margin:0}
+    </style>
     </head><body>${body}</body></html>`;
-  const blob = new Blob(['﻿', html], {type:'application/msword'});
-  const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob), download:`Plan_${nombre.replace(/[^a-z0-9]/gi,'_')}_${s.mes||''}.doc`});
-  a.click(); URL.revokeObjectURL(a.href);
+
+  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  const a = Object.assign(document.createElement('a'),{
+    href: URL.createObjectURL(blob),
+    download: 'Plan_'+d.nombreAccion.replace(/[^a-z0-9]/gi,'_')+'_'+(PLAN_STATE.mes||'')+'.doc'
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function planDescargarPDF(){
-  const s = PLAN_STATE;
-  const nombre = s.accion?.nombre || 'Plan';
-  const mes = typeof fmtMes==='function' ? fmtMes(s.mes) : (s.mes||'');
-  const resp = [s.acuerdos?.quien, s.acuerdos?.co].filter(Boolean).join(' + ') || '—';
-  const lineasMap = {};
-  (s.pasosSeleccionados||[]).forEach(p=>{
-    const k = p.lineaId||p.lineaTitulo||'Sin línea';
-    if(!lineasMap[k]) lineasMap[k]={titulo:p.lineaTitulo||k, foco:p.lineaFoco||'', pasos:[]};
-    lineasMap[k].pasos.push(p);
-  });
-  let body = `<h1>Plan PME — ${nombre}</h1><p class="meta">Período: ${mes} &nbsp;·&nbsp; Responsable: ${resp}</p>`;
-  Object.values(lineasMap).forEach(linea=>{
-    body += `<div class="linea"><div class="foco">${linea.foco}</div><h2>${linea.titulo}</h2>`;
-    linea.pasos.forEach((p,i)=>{
-      body += `<div class="paso"><div class="num">${i+1}</div><div class="pbody"><div class="pdesc">${p.descripcion||''}</div><div class="pmeta">👤 ${p.responsable||p.responsable_sugerido||'—'} &nbsp;·&nbsp; 📅 ${p.plazo_dias||14} días ${p.esfuerzo?'&nbsp;·&nbsp; '+p.esfuerzo:''}</div></div></div>`;
+  const d = _planArmarDatosExportar();
+
+  const respTxt = d.responsablesUnicos.length === 0
+    ? 'sin responsables asignados aún'
+    : d.responsablesUnicos.length === 1
+      ? '<b>'+d.responsablesUnicos[0]+'</b> a cargo'
+      : '<b>'+d.responsablesUnicos.length+'</b> personas involucradas (' + d.responsablesUnicos.join(', ') + ')';
+
+  let lineasHtml = '';
+  d.lineas.forEach((linea, idx) => {
+    let pasosHtml = '';
+    linea.pasos.forEach((p, i) => {
+      pasosHtml += `
+        <div class="paso">
+          <div class="paso-head">
+            <div class="num">${i+1}</div>
+            <div class="pdesc">${_planBoldHTML(p.descripcion)}</div>
+          </div>
+          <div class="pmeta">
+            <span><b>Responsable:</b> ${p.responsable||'Sin asignar'}</span>
+            <span><b>Plazo:</b> ${p.plazo_dias} días</span>
+            <span><b>Esfuerzo:</b> ${p.esfuerzo}</span>
+          </div>
+        </div>`;
     });
-    body += `</div>`;
+    lineasHtml += `
+      <div class="linea">
+        <div class="linea-head">
+          <div class="big-num">${idx+1}</div>
+          <div class="titulos">
+            <div class="foco">${linea.foco}</div>
+            <h2>${linea.titulo}</h2>
+          </div>
+        </div>
+        ${pasosHtml}
+      </div>`;
   });
-  if(s.acuerdos?.como) body += `<div class="como"><b>¿Cómo sabremos que avanzamos?</b><p>${s.acuerdos.como}</p></div>`;
-  const win = window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plan PME — ${nombre}</title>
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plan PME — ${d.nombreAccion}</title>
     <style>
-      body{font-family:Arial,sans-serif;font-size:11pt;margin:32px;color:#111}
-      h1{color:#1E3A2F;font-size:17pt;margin-bottom:2px}
-      h2{color:#1E3A2F;font-size:12pt;margin:8px 0 6px}
-      .meta{font-size:10pt;color:#555;margin:0 0 14px}
-      .linea{border:1px solid #ccc;border-radius:6px;padding:12px 14px;margin-bottom:14px;page-break-inside:avoid}
-      .foco{font-size:8.5pt;text-transform:uppercase;letter-spacing:.5pt;color:#888;margin-bottom:4px}
-      .paso{display:flex;gap:10px;padding:6px 0;border-top:1px solid #eee;align-items:flex-start}
-      .num{width:20px;height:20px;background:#2C7A4B;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9pt;font-weight:700;flex-shrink:0;margin-top:1px}
-      .pdesc{font-size:10.5pt}
-      .pmeta{font-size:8.5pt;color:#666;margin-top:2px}
-      .como{margin-top:14px;padding:10px 12px;background:#f5f5f5;border-radius:4px;font-size:10.5pt}
-      @media print{.linea{page-break-inside:avoid}button{display:none}}
+      @page{size:A4;margin:2cm}
+      *{box-sizing:border-box}
+      body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11pt;color:#222;margin:0;background:#fff;line-height:1.5}
+      .header{background:#f5f1e8;padding:24px 28px;border-radius:10px;margin-bottom:22px}
+      .header .kicker{font-size:9pt;letter-spacing:1.5pt;color:#666;text-transform:uppercase;margin-bottom:6px}
+      .header h1{font-family:Georgia,'Times New Roman',serif;font-size:22pt;color:#222;margin:0 0 12px;font-weight:normal}
+      .header .resumen{font-size:11pt;line-height:1.65;color:#444}
+      .linea{margin-bottom:18px;padding:18px 22px;border:1px solid #d4cdb8;border-radius:10px;page-break-inside:avoid}
+      .linea-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8}
+      .big-num{font-family:Georgia,serif;font-size:38pt;line-height:0.95;color:#1f5f47;flex-shrink:0;min-width:40px;text-align:center}
+      .titulos{flex:1}
+      .foco{font-size:9pt;font-weight:700;color:#1f5f47;letter-spacing:1.2pt;text-transform:uppercase;margin-bottom:4px}
+      h2{font-family:Georgia,serif;font-size:16pt;color:#222;margin:0;font-weight:normal;line-height:1.25}
+      .paso{margin:10px 0;padding:10px 14px;border-left:3px solid #1f5f47;background:#fafaf7;border-radius:0 4px 4px 0;page-break-inside:avoid}
+      .paso-head{display:flex;gap:10px;align-items:flex-start}
+      .num{width:22px;height:22px;background:#1f5f47;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:700;flex-shrink:0;margin-top:1px}
+      .pdesc{flex:1;font-size:11pt;line-height:1.5;color:#222}
+      .pmeta{font-size:9.5pt;color:#666;margin-top:6px;padding-left:32px;display:flex;flex-wrap:wrap;gap:14px}
+      button.print-btn{position:fixed;top:14px;right:14px;padding:8px 18px;background:#1f5f47;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11pt;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+      @media print{button.print-btn{display:none}.linea{page-break-inside:avoid}}
     </style></head><body>
-    <button onclick="window.print()" style="margin-bottom:14px;padding:6px 16px;background:#1E3A2F;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11pt">🖨 Imprimir / Guardar PDF</button>
-    ${body}</body></html>`);
+    <button class="print-btn" onclick="window.print()">Imprimir / PDF</button>
+    <div class="header">
+      <div class="kicker">Plan PME · ${d.mes}</div>
+      <h1>${d.nombreAccion}</h1>
+      <div class="resumen">
+        Plan compuesto por <b>${d.totalAlternativas}</b> ${d.totalAlternativas===1?'alternativa de acción':'alternativas de acción'}
+        con <b>${d.totalPasos}</b> ${d.totalPasos===1?'paso':'pasos'} en marcha,
+        ${respTxt}.
+        Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
+      </div>
+    </div>
+    ${lineasHtml}
+    </body></html>`);
   win.document.close();
 }
 
@@ -8578,23 +8729,32 @@ function renderPaso7Confirmacion(){
   const todosPasos = obtenerTodosLosPasos();
 
   // Agrupar pasos por línea (cada línea/foco propio/pasos otros = una alternativa elegida)
+  // IMPORTANTE: anotamos _asignKey en cada paso usando la misma lógica que
+  // obtenerTodosLosPasos(), para que s.asignaciones[_asignKey] resuelva bien
+  // y se muestren los responsables/plazos correctos.
   const lineasMap = {};
   (s.pasosSeleccionados||[]).forEach(p => {
     const key = p.lineaId || p.lineaTitulo || 'Sin línea';
     if(!lineasMap[key]) lineasMap[key] = { titulo: p.lineaTitulo||key, foco: p.lineaFoco||'', pasos:[] };
-    lineasMap[key].pasos.push(p);
+    lineasMap[key].pasos.push({ ...p, _asignKey: p.key });
   });
-  if((s.pasosFocoPropio||[]).length){
-    lineasMap['__foco__'] = { titulo:'Foco propio', foco:'FOCO PROPIO', pasos: s.pasosFocoPropio };
-  }
   Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
     if(pasos.length){
       const ln = (s.propuestas||[]).find(l=>l.id===lineaId);
       const k2 = lineaId+'_otros';
       if(!lineasMap[k2]) lineasMap[k2] = { titulo:(ln?.titulo||'Línea')+' · Pasos propios', foco:ln?.foco||'', pasos:[] };
-      pasos.forEach(p => lineasMap[k2].pasos.push(p));
+      pasos.forEach((p, oi) => {
+        const aKey = p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi);
+        lineasMap[k2].pasos.push({ ...p, _asignKey: aKey });
+      });
     }
   });
+  if((s.pasosFocoPropio||[]).length){
+    lineasMap['__foco__'] = { titulo:'Foco propio', foco:'FOCO PROPIO', pasos: (s.pasosFocoPropio||[]).map((p,i)=>{
+      const aKey = p.uid ? ('foco|'+p.uid) : ('foco|'+i);
+      return { ...p, _asignKey: aKey };
+    }) };
+  }
 
   const esfuerzoColor = e => e==='BAJO' ? 'var(--green)' : e==='ALTO' ? '#e53e3e' : 'var(--accent)';
 
