@@ -894,7 +894,8 @@ async function loadColegio(colegioId) {
   SESSION.colegioActivo = colegioId;
   const [
     {data:colegio},{data:cargos},{data:responsables},{data:areas},{data:objetivos},
-    {data:acciones},{data:ar},{data:segs},{data:reuniones}
+    {data:acciones},{data:ar},{data:segs},{data:reuniones},
+    causalesCatalogo
   ] = await Promise.all([
     sb.from('colegios').select('*').eq('id',colegioId).single(),
     sb.from('cargos').select('*').eq('colegio_id',colegioId).order('nombre'),
@@ -905,7 +906,10 @@ async function loadColegio(colegioId) {
     sb.from('accion_responsable').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',colegioId),
     sb.from('reuniones').select('*,reunion_participantes(*)').eq('colegio_id',colegioId).order('created_at'),
+    loadCausalesCatalogo(),
   ]);
+  // Hidratar el catálogo global de causales (desde tabla causales_catalogo)
+  CAUSAS_TAXONOMIA = causalesCatalogo;
   // Cargar evidencias filtrando por las acciones del colegio (más confiable que JOIN)
   let evidencias = [];
   const accionIds = (acciones || []).map(function(a){ return a.id; });
@@ -6428,29 +6432,38 @@ const PLAN_LS_PREFIX = 'plan_borrador_v2_';
 /* Catálogo definitivo: 9 estructurales + 8 relacionales = 17 causales.
  * Las etiquetas coinciden literalmente con plan_data->>'causal_nombre' en
  * planes_cache (validado contra BD: 105 filas por código, sin variantes). */
-const CAUSAS_TAXONOMIA = {
-  estructurales: [
-    {codigo:'C1', etiqueta:'Tiempo', desc:'No alcanzaron las horas disponibles, los plazos fueron muy ajustados o se priorizaron otras tareas urgentes.'},
-    {codigo:'C2', etiqueta:'Recursos materiales', desc:'Faltaron materiales, infraestructura, equipamiento, presupuesto o insumos para ejecutar la acción.'},
-    {codigo:'C3', etiqueta:'Recursos humanos', desc:'No había suficientes personas, hubo licencias, rotación, o el equipo quedó incompleto para sostener la acción.'},
-    {codigo:'C4', etiqueta:'Competencias técnicas', desc:'El equipo no contaba con las habilidades, conocimientos o capacitación necesarias para implementar la acción.'},
-    {codigo:'C5', etiqueta:'Coordinación entre cargos', desc:'Falló la articulación entre roles o equipos (UTP, jefes, docentes): tareas duplicadas, sin dueño claro o desincronizadas.'},
-    {codigo:'C6', etiqueta:'Definición poco clara', desc:'La acción no estaba bien delimitada: metas ambiguas, alcance impreciso o pasos no acordados desde el inicio.'},
-    {codigo:'C7', etiqueta:'Datos o información', desc:'Faltaron datos confiables, oportunos o accesibles para tomar decisiones o monitorear avances.'},
-    {codigo:'C8', etiqueta:'Evaluación y monitoreo', desc:'No hubo seguimiento sistemático: no se midieron avances, no se ajustó a tiempo o no se detectaron desviaciones.'},
-    {codigo:'C9', etiqueta:'Causas externas', desc:'Factores fuera del control del colegio: paros, emergencias, cambios normativos, problemas de la comunidad.'}
-  ],
-  relacionales: [
-    {codigo:'C10', etiqueta:'Liderazgo Intermedio', desc:'Los mandos medios (jefes de UTP, coordinadores) no lograron empujar, alinear o sostener la acción en sus equipos.'},
-    {codigo:'C11', etiqueta:'Clima Laboral', desc:'Tensiones, conflictos o desgaste en el equipo afectaron la disposición a colaborar y sostener la acción.'},
-    {codigo:'C12', etiqueta:'Comunicación interna', desc:'La información no fluyó entre quienes debían saber: mensajes confusos, canales débiles o decisiones sin bajar al equipo.'},
-    {codigo:'C13', etiqueta:'Resistencia cultural', desc:'Hábitos instalados, escepticismo o rechazo a cambiar la forma de trabajo dificultaron la implementación.'},
-    {codigo:'C14', etiqueta:'Compromiso docente', desc:'Los docentes no se involucraron activamente: baja motivación, desafección o priorización de otras tareas.'},
-    {codigo:'C15', etiqueta:'Involucramiento Estudiantes', desc:'Los estudiantes no participaron como se esperaba: baja asistencia, desinterés o falta de adherencia a la actividad.'},
-    {codigo:'C16', etiqueta:'Comunicación con apoderados', desc:'La información hacia las familias no llegó, llegó tarde o no logró el efecto esperado.'},
-    {codigo:'C17', etiqueta:'Compromiso de apoderados', desc:'Los apoderados no respondieron o no se involucraron en las acciones que requerían su participación.'}
-  ]
-};
+/* CAUSAS_TAXONOMIA — hidratado desde Supabase (tabla causales_catalogo) en
+ * loadColegio(). Hasta entonces queda vacío. Las 3 referencias son:
+ *   - renderPaso2Diagnostico (paso "Causales" del wizard)
+ *   - planNormalizarCodigoCausa (retro-compat de borradores con códigos antiguos)
+ * Cualquier código que itere arrays vacíos no rompe; el wizard solo se abre
+ * después de que loadColegio terminó. */
+let CAUSAS_TAXONOMIA = { estructurales: [], relacionales: [] };
+
+/* Carga el catálogo global de causales desde Supabase. Llamada UNA vez por
+ * sesión dentro de loadColegio(). El campo `descripcion` de la BD se mapea a
+ * `desc` para mantener compatibilidad con el código existente. */
+async function loadCausalesCatalogo(){
+  const { data, error } = await sb
+    .from('causales_catalogo')
+    .select('codigo, etiqueta, grupo, descripcion, orden')
+    .eq('activa', true)
+    .order('orden');
+  if(error){
+    console.error('[loadCausalesCatalogo]', error);
+    return { estructurales: [], relacionales: [] };
+  }
+  const cat = { estructurales: [], relacionales: [] };
+  (data||[]).forEach(row => {
+    const grupo = row.grupo === 'estructurales' ? 'estructurales' : 'relacionales';
+    cat[grupo].push({
+      codigo: row.codigo,
+      etiqueta: row.etiqueta,
+      desc: row.descripcion || ''
+    });
+  });
+  return cat;
+}
 
 /* Mapa de retro-compatibilidad: traduce códigos legacy (texto plano de borradores
  * antiguos) a los códigos C1..C17 del catálogo definitivo.
