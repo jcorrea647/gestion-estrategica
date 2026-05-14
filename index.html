@@ -7036,7 +7036,7 @@ async function _abrirPlanInternal(accionId, mes){
     PLAN_STATE.existente = ma;
     PLAN_STATE.microaccionId = ma.id;
     PLAN_STATE.fechaActivacion = ma.updated_at;
-    PLAN_STATE.paso = 99;
+    PLAN_STATE.paso = 5;
     asegurarDrawer();
     document.getElementById('planOverlay').classList.add('show');
     document.getElementById('planDrawer').classList.add('show');
@@ -8995,6 +8995,14 @@ function renderPaso7Confirmacion(){
   const fechaCierreTxt = fechaCierre.toLocaleDateString('es-CL',{day:'numeric',month:'long',year:'numeric'});
 
   // ── Cards numeradas (estilo Providencia) ──
+  // Si el plan ya está ACTIVA, tenemos pasos persistidos en DB.pasos con su
+  // porcentaje_avance. Construimos un map descripcion → pasoBD para enriquecer
+  // cada paso de la card con su id y porcentaje real.
+  const planActivo = s.existente && s.existente.estado === 'ACTIVA';
+  const pasosBD = planActivo ? (DB.pasos||[]).filter(p => p.microaccion_id === s.existente.id) : [];
+  const pasoBdPorDescripcion = new Map();
+  pasosBD.forEach(p => pasoBdPorDescripcion.set((p.descripcion||'').trim(), p));
+
   const lineasHtml = lineas.map((linea, lineaIdx) => {
     const numero = lineaIdx + 1;
     const pasosHtml = linea.pasos.map((p,i) => {
@@ -9004,22 +9012,50 @@ function renderPaso7Confirmacion(){
       const responsable = asign.responsable || p.responsable || p.responsable_sugerido || 'Sin asignar';
       const plazoDias = asign.plazo_dias || p.plazo_dias || 14;
       const esfuerzo = asign.esfuerzo || p.esfuerzo || 'MEDIO';
+
+      // Buscar paso en BD por descripción (si existe = plan ACTIVA)
+      const pBD = pasoBdPorDescripcion.get((desc||'').trim());
+      const pasoIdBD = pBD?.id;
+      const pctAvance = pBD ? (Number(pBD.porcentaje_avance) || 0) : 0;
+      const estaCompleto = pBD?.estado === 'COMPLETADO' || pctAvance === 100;
+
+      // Color del número según avance
+      let numBgColor = 'var(--accent)';
+      if(planActivo){
+        if(estaCompleto) numBgColor = '#10b981';
+        else if(pctAvance > 0) numBgColor = '#d97706';
+        else numBgColor = '#9ca3af';
+      }
+
+      // Slider de avance: solo si el plan está ACTIVA (no en wizard de creación)
+      const sliderHtml = (planActivo && pasoIdBD) ? `
+        <div style="margin-top:10px;padding:8px 10px;background:${estaCompleto?'#f0fdf4':'var(--surface2,#f9f7f1)'};border-radius:6px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase">Avance</span>
+            <span data-pct-readout="${pasoIdBD}" style="font-size:13px;font-weight:700;color:${estaCompleto?'#10b981':pctAvance>0?'#d97706':'var(--muted)'};margin-left:auto">${pctAvance}%</span>
+            ${!estaCompleto ? `<button onclick="planMarcarPasoCompleto('${pasoIdBD}')" style="background:transparent;border:1px solid #10b981;color:#10b981;font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;cursor:pointer;transition:all .15s" onmouseover="this.style.background='#10b981';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#10b981'">✓ Marcar completado</button>` : `<span style="font-size:11px;font-weight:600;color:#10b981">✓ Completado</span>`}
+          </div>
+          <input type="range" min="0" max="100" step="10" value="${pctAvance}"
+            oninput="planActualizarPorcentajePaso('${pasoIdBD}', this.value)"
+            style="width:100%;accent-color:${estaCompleto?'#10b981':'#d97706'};margin:0">
+        </div>` : '';
+
       return `
-      <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:flex-start">
-        <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">${i+1}</div>
+      <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:flex-start;${estaCompleto?'opacity:.7':''}">
+        <div style="width:22px;height:22px;border-radius:50%;background:${numBgColor};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">${estaCompleto?'✓':(i+1)}</div>
         <div style="flex:1;min-width:0">
-          <div contenteditable="true"
+          <div contenteditable="${planActivo?'false':'true'}"
             data-paso-key="${pasoKey}"
-            title="Clic para editar"
-            style="font-size:13px;color:var(--text);outline:none;border-radius:4px;padding:2px 4px;cursor:text;border:1px solid transparent;transition:border-color .15s;line-height:1.5"
-            onfocus="this.style.borderColor='var(--accent)';this.style.background='var(--bg-soft,#f8f9fa)'"
-            onblur="this.style.borderColor='transparent';this.style.background='transparent';planGuardarEdicionPaso('${pasoKey}',this.innerText.trim())"
+            title="${planActivo?'':'Clic para editar'}"
+            style="font-size:13px;color:var(--text);outline:none;border-radius:4px;padding:2px 4px;${planActivo?'':'cursor:text;'}border:1px solid transparent;transition:border-color .15s;line-height:1.5;${estaCompleto?'text-decoration:line-through':''}"
+            ${planActivo?'':`onfocus="this.style.borderColor='var(--accent)';this.style.background='var(--bg-soft,#f8f9fa)'" onblur="this.style.borderColor='transparent';this.style.background='transparent';planGuardarEdicionPaso('${pasoKey}',this.innerText.trim())"`}
           >${planBoldTituloPaso(desc)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;padding-left:4px">
             <span>👤 ${escapeHtmlPlan(_planNombreConCargo(responsable))}</span>
             <span>📅 ${plazoDias} días</span>
             <span style="color:${esfuerzoColor(esfuerzo)};font-weight:600">${esfuerzo}</span>
           </div>
+          ${sliderHtml}
         </div>
       </div>`;
     }).join('');
@@ -9337,12 +9373,76 @@ function renderPasoExistente(){
 
 async function planMarcarPasoCompleto(pasoId){
   const {error} = await sb.from('microacciones_pasos').update({
-    estado:'COMPLETADO', fecha_completado:new Date().toISOString()
+    estado:'COMPLETADO',
+    porcentaje_avance: 100,
+    fecha_completado: new Date().toISOString()
   }).eq('id',pasoId);
   if(error){ showToast('Error: '+error.message); return; }
   const i = (DB.pasos||[]).findIndex(p=>p.id===pasoId);
-  if(i>=0) DB.pasos[i].estado='COMPLETADO';
+  if(i>=0){
+    DB.pasos[i].estado='COMPLETADO';
+    DB.pasos[i].porcentaje_avance = 100;
+    DB.pasos[i].fecha_completado = new Date().toISOString();
+  }
   renderPlanPaso();
+}
+
+/* Actualiza el porcentaje de avance de un paso. Si llega a 100, marca como
+ * COMPLETADO automáticamente. Si baja de 100, vuelve a PENDIENTE. */
+let _PORCENTAJE_DEBOUNCE_TIMER = null;
+function planActualizarPorcentajePaso(pasoId, porcentajeStr){
+  const pct = Math.max(0, Math.min(100, parseInt(porcentajeStr, 10) || 0));
+
+  // Actualizar UI inmediatamente (sin esperar BD) para feedback fluido
+  const i = (DB.pasos||[]).findIndex(p=>p.id===pasoId);
+  if(i>=0){
+    DB.pasos[i].porcentaje_avance = pct;
+    DB.pasos[i].estado = pct === 100 ? 'COMPLETADO' : 'PENDIENTE';
+    if(pct === 100) DB.pasos[i].fecha_completado = new Date().toISOString();
+    else DB.pasos[i].fecha_completado = null;
+  }
+
+  // Actualizar readout del porcentaje sin re-render completo
+  const readout = document.querySelector(`[data-pct-readout="${pasoId}"]`);
+  if(readout) readout.textContent = pct + '%';
+
+  // Actualizar barra de progreso global sin re-render completo
+  _planActualizarProgresoGlobalUI();
+
+  // Debounce: persistir en BD solo cuando el usuario deja de mover el slider
+  if(_PORCENTAJE_DEBOUNCE_TIMER) clearTimeout(_PORCENTAJE_DEBOUNCE_TIMER);
+  _PORCENTAJE_DEBOUNCE_TIMER = setTimeout(async () => {
+    const payload = {
+      porcentaje_avance: pct,
+      estado: pct === 100 ? 'COMPLETADO' : 'PENDIENTE',
+      fecha_completado: pct === 100 ? new Date().toISOString() : null
+    };
+    const {error} = await sb.from('microacciones_pasos').update(payload).eq('id', pasoId);
+    if(error){
+      showToast('Error guardando: '+error.message);
+      console.error('[planActualizarPorcentajePaso]', error);
+    }
+  }, 450);
+}
+
+/* Recalcula y refresca solo la barra de progreso global del plan, sin re-render. */
+function _planActualizarProgresoGlobalUI(){
+  if(!PLAN_STATE?.microaccionId) return;
+  const pasosPlan = (DB.pasos||[]).filter(p => p.microaccion_id === PLAN_STATE.microaccionId);
+  if(!pasosPlan.length) return;
+  const sumaAvance = pasosPlan.reduce((acc,p) => acc + (Number(p.porcentaje_avance)||0), 0);
+  const pctGlobal = Math.round(sumaAvance / pasosPlan.length);
+  const completados = pasosPlan.filter(p => p.estado === 'COMPLETADO').length;
+
+  const elPct = document.getElementById('plan-progreso-pct');
+  const elContador = document.getElementById('plan-progreso-contador');
+  const elBarra = document.getElementById('plan-progreso-barra');
+  if(elPct) elPct.textContent = pctGlobal + '%';
+  if(elContador) elContador.textContent = completados + ' de ' + pasosPlan.length + ' pasos completados';
+  if(elBarra){
+    elBarra.style.width = pctGlobal + '%';
+    elBarra.style.background = pctGlobal >= 100 ? '#10b981' : pctGlobal >= 50 ? '#1f5f47' : pctGlobal > 0 ? '#d97706' : '#9ca3af';
+  }
 }
 
 async function planCerrarMicroaccion(){
