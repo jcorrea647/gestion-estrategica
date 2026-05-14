@@ -955,6 +955,7 @@ function renderSidebar() {
     '<div class="nav-item active" onclick="showPanel(\'dashboard\')" id="nav-dashboard"><span class="icon">o</span> Dashboard</div>' +
     '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
     '<div class="nav-item" onclick="showPanel(\'mis-planes\')" id="nav-mis-planes"><span class="icon">p</span> Mis planes <span id="nav-mis-planes-count" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
+    '<div class="nav-item" onclick="showPanel(\'ver-reuniones\')" id="nav-ver-reuniones"><span class="icon">r</span> Reuniones</div>' +
     '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' +
     '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
     '</div>' +
@@ -6429,25 +6430,25 @@ const PLAN_LS_PREFIX = 'plan_borrador_v2_';
  * planes_cache (validado contra BD: 105 filas por código, sin variantes). */
 const CAUSAS_TAXONOMIA = {
   estructurales: [
-    {codigo:'C1', etiqueta:'Tiempo'},
-    {codigo:'C2', etiqueta:'Recursos materiales'},
-    {codigo:'C3', etiqueta:'Recursos humanos'},
-    {codigo:'C4', etiqueta:'Competencias técnicas'},
-    {codigo:'C5', etiqueta:'Coordinación entre cargos'},
-    {codigo:'C6', etiqueta:'Definición poco clara'},
-    {codigo:'C7', etiqueta:'Datos o información'},
-    {codigo:'C8', etiqueta:'Evaluación y monitoreo'},
-    {codigo:'C9', etiqueta:'Causas externas'}
+    {codigo:'C1', etiqueta:'Tiempo', desc:'No alcanzaron las horas disponibles, los plazos fueron muy ajustados o se priorizaron otras tareas urgentes.'},
+    {codigo:'C2', etiqueta:'Recursos materiales', desc:'Faltaron materiales, infraestructura, equipamiento, presupuesto o insumos para ejecutar la acción.'},
+    {codigo:'C3', etiqueta:'Recursos humanos', desc:'No había suficientes personas, hubo licencias, rotación, o el equipo quedó incompleto para sostener la acción.'},
+    {codigo:'C4', etiqueta:'Competencias técnicas', desc:'El equipo no contaba con las habilidades, conocimientos o capacitación necesarias para implementar la acción.'},
+    {codigo:'C5', etiqueta:'Coordinación entre cargos', desc:'Falló la articulación entre roles o equipos (UTP, jefes, docentes): tareas duplicadas, sin dueño claro o desincronizadas.'},
+    {codigo:'C6', etiqueta:'Definición poco clara', desc:'La acción no estaba bien delimitada: metas ambiguas, alcance impreciso o pasos no acordados desde el inicio.'},
+    {codigo:'C7', etiqueta:'Datos o información', desc:'Faltaron datos confiables, oportunos o accesibles para tomar decisiones o monitorear avances.'},
+    {codigo:'C8', etiqueta:'Evaluación y monitoreo', desc:'No hubo seguimiento sistemático: no se midieron avances, no se ajustó a tiempo o no se detectaron desviaciones.'},
+    {codigo:'C9', etiqueta:'Causas externas', desc:'Factores fuera del control del colegio: paros, emergencias, cambios normativos, problemas de la comunidad.'}
   ],
   relacionales: [
-    {codigo:'C10', etiqueta:'Liderazgo Intermedio'},
-    {codigo:'C11', etiqueta:'Clima Laboral'},
-    {codigo:'C12', etiqueta:'Comunicación interna'},
-    {codigo:'C13', etiqueta:'Resistencia cultural'},
-    {codigo:'C14', etiqueta:'Compromiso docente'},
-    {codigo:'C15', etiqueta:'Involucramiento Estudiantes'},
-    {codigo:'C16', etiqueta:'Comunicación con apoderados'},
-    {codigo:'C17', etiqueta:'Compromiso de apoderados'}
+    {codigo:'C10', etiqueta:'Liderazgo Intermedio', desc:'Los mandos medios (jefes de UTP, coordinadores) no lograron empujar, alinear o sostener la acción en sus equipos.'},
+    {codigo:'C11', etiqueta:'Clima Laboral', desc:'Tensiones, conflictos o desgaste en el equipo afectaron la disposición a colaborar y sostener la acción.'},
+    {codigo:'C12', etiqueta:'Comunicación interna', desc:'La información no fluyó entre quienes debían saber: mensajes confusos, canales débiles o decisiones sin bajar al equipo.'},
+    {codigo:'C13', etiqueta:'Resistencia cultural', desc:'Hábitos instalados, escepticismo o rechazo a cambiar la forma de trabajo dificultaron la implementación.'},
+    {codigo:'C14', etiqueta:'Compromiso docente', desc:'Los docentes no se involucraron activamente: baja motivación, desafección o priorización de otras tareas.'},
+    {codigo:'C15', etiqueta:'Involucramiento Estudiantes', desc:'Los estudiantes no participaron como se esperaba: baja asistencia, desinterés o falta de adherencia a la actividad.'},
+    {codigo:'C16', etiqueta:'Comunicación con apoderados', desc:'La información hacia las familias no llegó, llegó tarde o no logró el efecto esperado.'},
+    {codigo:'C17', etiqueta:'Compromiso de apoderados', desc:'Los apoderados no respondieron o no se involucraron en las acciones que requerían su participación.'}
   ]
 };
 
@@ -7678,7 +7679,8 @@ function renderPaso2Diagnostico(){
       const idx = s.causas.findIndex(x=>x.codigo===c.codigo);
       const sel = idx>=0;
       const num = sel ? (idx+1) : '';
-      return `<button class="plan-causa${sel?' selected':''}" onclick="planToggleCausa('${c.codigo}','${c.etiqueta}','${grupoCode}')">
+      const tip = c.desc ? ` title="${escapeHtmlPlan(c.desc)}"` : '';
+      return `<button class="plan-causa${sel?' selected':''}"${tip} onclick="planToggleCausa('${c.codigo}','${c.etiqueta}','${grupoCode}')">
         <span class="plan-causa-num">${num}</span><span>${c.etiqueta}</span></button>`;
     }).join('');
     return `<div class="plan-causas-grupo">${titulo}</div><div class="plan-causas-grid">${items}</div>`;
