@@ -6946,9 +6946,96 @@ async function _abrirPlanInternal(accionId, mes){
   }
 
   if(ma){
-    planInitState(accionId, mes, seg, null);
+    // Cargar los pasos del plan desde DB.pasos para reconstruir PLAN_STATE
+    const pasosPlan = (DB.pasos||[]).filter(p => p.microaccion_id === ma.id);
+
+    // Reconstruir pasosSeleccionados, pasosOtrosLinea, pasosFocoPropio desde
+    // los pasos guardados, agrupados por origen.
+    const pasosSeleccionados = [];
+    const pasosOtrosLinea = {};
+    const pasosFocoPropio = [];
+    pasosPlan.forEach(p => {
+      const linea = (ma.propuestas_llm||[]).find(l => l.titulo === p.linea_titulo);
+      const lineaId = linea?.id || null;
+      if(p.origen === 'FOCO_PROPIO' || p.linea_titulo === 'Foco propio'){
+        pasosFocoPropio.push({
+          id: p.id, descripcion: p.descripcion,
+          plazo_dias: p.plazo_dias, esfuerzo: p.esfuerzo,
+          responsable: p.responsable
+        });
+      } else if(p.origen === 'OTROS_LINEA' && lineaId){
+        if(!pasosOtrosLinea[lineaId]) pasosOtrosLinea[lineaId] = [];
+        pasosOtrosLinea[lineaId].push({
+          id: p.id, descripcion: p.descripcion,
+          plazo_dias: p.plazo_dias, esfuerzo: p.esfuerzo,
+          responsable: p.responsable
+        });
+      } else {
+        // Paso de propuesta normal (LINEA)
+        pasosSeleccionados.push({
+          id: p.id, descripcion: p.descripcion,
+          plazo_dias: p.plazo_dias, esfuerzo: p.esfuerzo,
+          responsable: p.responsable,
+          lineaId: lineaId,
+          lineaTitulo: p.linea_titulo,
+          lineaFoco: p.linea_foco,
+          key: lineaId ? (lineaId+'_'+p.id) : p.id
+        });
+      }
+    });
+
+    // Reconstruir asignaciones (key estable por paso)
+    const asignaciones = {};
+    pasosSeleccionados.forEach(p => {
+      asignaciones[p.key] = {
+        responsable: p.responsable || '',
+        plazo_dias: p.plazo_dias || 14,
+        esfuerzo: p.esfuerzo || 'MEDIO'
+      };
+    });
+    Object.entries(pasosOtrosLinea).forEach(([lineaId, pasos]) => {
+      pasos.forEach((p, oi) => {
+        const k = p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi);
+        asignaciones[k] = {
+          responsable: p.responsable || '',
+          plazo_dias: p.plazo_dias || 14,
+          esfuerzo: p.esfuerzo || 'MEDIO'
+        };
+      });
+    });
+    pasosFocoPropio.forEach((p, i) => {
+      const k = p.uid ? ('foco|'+p.uid) : ('foco|'+i);
+      asignaciones[k] = {
+        responsable: p.responsable || '',
+        plazo_dias: p.plazo_dias || 14,
+        esfuerzo: p.esfuerzo || 'MEDIO'
+      };
+    });
+
+    // Construir el "borrador-like" para hidratar PLAN_STATE
+    const hidratacion = {
+      id: ma.id,
+      modo: ma.modo,
+      causas: ma.causas || [],
+      causas_otros: ma.causas_otros || [],
+      comentario: ma.comentario,
+      propuestas_llm: ma.propuestas_llm,
+      pasos_seleccionados: pasosSeleccionados,
+      pasos_otros_linea: pasosOtrosLinea,
+      pasos_foco_propio: pasosFocoPropio,
+      asignaciones,
+      acuerdo_que: ma.acuerdo_que,
+      acuerdo_quien: ma.acuerdo_quien,
+      acuerdo_co: ma.acuerdo_co,
+      acuerdo_como: ma.acuerdo_como,
+      consolidacion_modos: ma.consolidacion_modos,
+      brechas_data: ma.brechas_data
+    };
+
+    planInitState(accionId, mes, seg, hidratacion);
     PLAN_STATE.existente = ma;
     PLAN_STATE.microaccionId = ma.id;
+    PLAN_STATE.fechaActivacion = ma.updated_at;
     PLAN_STATE.paso = 99;
     asegurarDrawer();
     document.getElementById('planOverlay').classList.add('show');
