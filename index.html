@@ -6112,6 +6112,9 @@ const PLAN_CSS = `
 .plan-linea h4{font-family:'DM Serif Display',serif;font-size:15px;
   margin-bottom:4px;color:var(--accent);font-weight:400}
 .plan-linea-desc{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+/* Agrandar 20% el contenido del lado izquierdo en Construye tu plan */
+.plan-p4-left{font-size:1.2em}
+.plan-p4-left .plan-paso{font-size:13.2px}
 .plan-paso{display:flex;gap:8px;padding:8px 10px;border:1px solid var(--border);
   border-radius:6px;cursor:pointer;margin-bottom:6px;font-size:11px;
   line-height:1.4;transition:all .15s;background:var(--surface)}
@@ -8180,14 +8183,40 @@ function renderPaso4Constructor(){
           </div>`;
         };
 
-        const items = [];
-        // Iteramos exactamente en el mismo orden que obtenerTodosLosPasos()
-        // y usamos p._asignKey para acceder a la asignación correcta.
+        // ─── Colores pastel por causal (cíclicos si hay muchas causales) ───
+        const COLORES_PASTEL_BLOQUE = [
+          { bg:'#E6F1FB', border:'#B5D4F4', titulo:'#0C447C' }, // azul
+          { bg:'#FBEAF0', border:'#F4C0D1', titulo:'#72243E' }, // rosa
+          { bg:'#FAEEDA', border:'#FAC775', titulo:'#633806' }, // amarillo
+          { bg:'#EAF3DE', border:'#C0DD97', titulo:'#27500A' }, // verde
+          { bg:'#EEEDFE', border:'#CECBF6', titulo:'#26215C' }, // lila
+          { bg:'#E1F5EE', border:'#9FE1CB', titulo:'#04342C' }, // teal
+          { bg:'#FAECE7', border:'#F5C4B3', titulo:'#4A1B0C' }, // coral
+          { bg:'#F1EFE8', border:'#D3D1C7', titulo:'#2C2C2A' }  // gris (fallback)
+        ];
+
+        // ─── Agrupar todos los pasos seleccionados por causa ───
+        const grupos = new Map(); // clave -> {label, color, items[]}
+        let colorIdx = 0;
+        const obtenerOAsignarGrupo = (clave, label) => {
+          if(!grupos.has(clave)){
+            const color = COLORES_PASTEL_BLOQUE[colorIdx % COLORES_PASTEL_BLOQUE.length];
+            colorIdx++;
+            grupos.set(clave, { label, color, items: [] });
+          }
+          return grupos.get(clave);
+        };
+
+        // 1. Pasos seleccionados de propuestas (causales)
         s.pasosSeleccionados.forEach((p) => {
           const ln = (s.propuestas||[]).find(l=>l.id===p.lineaId);
+          const causa = (ln?.causa_atacada || p.lineaFoco || 'Sin causa').toString().trim();
+          const claveGrupo = causa.toLowerCase();
+          const labelGrupo = ln?._ambito ? ('Ámbito · ' + ln._ambito) : causa;
+          const grupo = obtenerOAsignarGrupo(claveGrupo, labelGrupo);
           const pk = escapeHtmlPlan(p.key||p.id);
-          items.push(`
-            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+          grupo.items.push(`
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:10px;background:#fff;border:1px solid ${grupo.color.border};border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
               <span style="color:var(--accent2);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
               <div style="flex:1;min-width:0">
                 <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
@@ -8200,18 +8229,22 @@ function renderPaso4Constructor(){
                     title="Clic para editar">${planBoldTituloPaso(p.descripcion||'')}</div>
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
-                <div style="font-size:10px;color:var(--accent2);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">${escapeHtmlPlan(ln?.foco||p.lineaFoco||'')}</div>
                 ${asignBlock(p.key)}
               </div>
             </div>`);
         });
-        // Orden y mapeo idéntico a obtenerTodosLosPasos(): primero pasosOtrosLinea, luego focoPropio.
+
+        // 2. Pasos "otros" de cada línea — van al grupo de la causal de esa línea
         Object.entries(s.pasosOtrosLinea||{}).forEach(([lineaId, pasos]) => {
+          const ln = (s.propuestas||[]).find(l=>l.id===lineaId);
+          const causa = (ln?.causa_atacada || ln?.foco || 'Sin causa').toString().trim();
+          const claveGrupo = causa.toLowerCase();
+          const labelGrupo = ln?._ambito ? ('Ámbito · ' + ln._ambito) : causa;
           (pasos||[]).forEach((p, oi) => {
-            // Key estable basada en uid (fallback a índice solo para compat)
+            const grupo = obtenerOAsignarGrupo(claveGrupo, labelGrupo);
             const otroKey = p.uid ? ('otros|'+p.uid) : ('otros|'+lineaId+'|'+oi);
-            items.push(`
-              <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+            grupo.items.push(`
+              <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:10px;background:#fff;border:1px solid ${grupo.color.border};border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
                 <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
                 <div style="flex:1;min-width:0">
                   <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
@@ -8230,12 +8263,13 @@ function renderPaso4Constructor(){
               </div>`);
           });
         });
+
+        // 3. Pasos de "foco propio" — grupo aparte, siempre al final
         (s.pasosFocoPropio||[]).forEach((p, i) => {
-          const fpk = 'fp_' + (p.id || i);
-          // Key estable basada en uid (fallback a índice solo para compat)
+          const grupo = obtenerOAsignarGrupo('__foco_propio__', 'Foco propio');
           const focoKey = p.uid ? ('foco|'+p.uid) : ('foco|'+i);
-          items.push(`
-            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+          grupo.items.push(`
+            <div class="plan-edit-row" style="display:flex;align-items:flex-start;gap:8px;padding:12px 13px;margin-bottom:10px;background:#fff;border:1px solid ${grupo.color.border};border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
               <span style="color:var(--muted);flex-shrink:0;margin-top:10px;font-size:13px">•</span>
               <div style="flex:1;min-width:0">
                 <div class="plan-edit-field" style="position:relative;background:#ffffff;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:9px 32px 9px 12px;transition:all .15s;cursor:text"
@@ -8248,9 +8282,20 @@ function renderPaso4Constructor(){
                     title="Clic para editar">${planBoldTituloPaso(p.descripcion||'')}</div>
                   <span class="plan-edit-icon" style="position:absolute;right:10px;top:10px;font-size:14px;color:var(--muted);opacity:0.45;pointer-events:none">✎</span>
                 </div>
-                <div style="font-size:10px;color:var(--muted);margin-top:4px;padding-left:2px;font-weight:600;letter-spacing:.04em">FOCO PROPIO</div>
                 ${asignBlock(focoKey)}
               </div>
+            </div>`);
+        });
+
+        // ─── Renderizar grupos como bloques con su color pastel y nombre de causa ───
+        const items = [];
+        grupos.forEach(grupo => {
+          items.push(`
+            <div style="background:${grupo.color.bg};border:1px solid ${grupo.color.border};border-radius:10px;padding:14px 14px 4px;margin-bottom:18px">
+              <div style="font-size:11px;font-weight:700;color:${grupo.color.titulo};letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;padding:0 2px">
+                ${escapeHtmlPlan(grupo.label)}
+              </div>
+              ${grupo.items.join('')}
             </div>`);
         });
 
