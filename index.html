@@ -9632,16 +9632,31 @@ function _planArmarDatosExportar(){
     })) };
   }
 
-  // Resolver asignaciones
+  // Si el plan ya está ACTIVA, cruzar con DB.pasos para traer porcentaje_avance
+  // y estado real. Match por descripción (igual lógica que renderPaso7Confirmacion).
+  const planActivo = s.existente && (s.existente.estado === 'ACTIVA' || s.existente.estado === 'COMPLETADA');
+  const pasosBD = planActivo ? (DB.pasos||[]).filter(p => p.microaccion_id === s.existente.id) : [];
+  const pasoBdPorDescripcion = new Map();
+  pasosBD.forEach(p => pasoBdPorDescripcion.set((p.descripcion||'').trim(), p));
+
+  // Resolver asignaciones (+ avance/estado si plan ACTIVA)
   const lineas = Object.values(lineasMap).map(linea => ({
     ...linea,
     pasos: linea.pasos.map(p => {
       const a = (s.asignaciones||{})[p._asignKey] || {};
+      const desc = p.descripcion || p.descripcion_sugerida || '';
+      const pBD = pasoBdPorDescripcion.get(desc.trim());
+      const pctAvance = pBD ? (Number(pBD.porcentaje_avance) || 0) : 0;
+      const estaCompleto = pBD?.estado === 'COMPLETADO' || pctAvance === 100;
       return {
-        descripcion: p.descripcion || p.descripcion_sugerida || '',
+        descripcion: desc,
         responsable: a.responsable || p.responsable || p.responsable_sugerido || '',
         plazo_dias: a.plazo_dias || p.plazo_dias || 14,
-        esfuerzo: a.esfuerzo || p.esfuerzo || 'MEDIO'
+        esfuerzo: a.esfuerzo || p.esfuerzo || 'MEDIO',
+        // Campos de seguimiento (solo significativos si plan ACTIVA)
+        pctAvance,
+        estaCompleto,
+        tieneAvance: planActivo
       };
     })
   }));
@@ -9656,6 +9671,12 @@ function _planArmarDatosExportar(){
   fechaCierre.setDate(fechaCierre.getDate() + maxPlazo);
   const fechaCierreTxt = fechaCierre.toLocaleDateString('es-CL',{day:'numeric',month:'long',year:'numeric'});
 
+  // Resumen de avance (solo significativo si plan ACTIVA)
+  const pasosCompletos = allPasos.filter(p => p.estaCompleto).length;
+  const avancePromedio = totalPasos > 0
+    ? Math.round(allPasos.reduce((sum, p) => sum + (p.pctAvance||0), 0) / totalPasos)
+    : 0;
+
   return {
     nombreAccion: s.accion?.nombre || 'Plan',
     mes: typeof fmtMes==='function' ? fmtMes(s.mes) : (s.mes||''),
@@ -9664,7 +9685,11 @@ function _planArmarDatosExportar(){
     totalPasos,
     responsablesUnicos,
     maxPlazo,
-    fechaCierreTxt
+    fechaCierreTxt,
+    // Nuevos campos de seguimiento
+    planActivo,
+    pasosCompletos,
+    avancePromedio
   };
 }
 
@@ -9692,18 +9717,44 @@ function planDescargarWord(){
 
   const fechaActivacionFmt = _planFechaHoraFmt(_planFechaActivacion());
 
+  // Helper: renderizar barra de avance como HTML inline (Word entiende esto)
+  const _barraAvance = (pct, completo) => {
+    const color = completo ? '#10b981' : pct > 0 ? '#d97706' : '#9ca3af';
+    const pctSafe = Math.max(0, Math.min(100, pct));
+    return `
+      <table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:8px;border-collapse:collapse">
+        <tr>
+          <td style="font-size:9pt;color:#666;font-weight:700;letter-spacing:.5pt;text-transform:uppercase;padding-right:10px;white-space:nowrap">Avance</td>
+          <td style="width:100%;padding:0 10px">
+            <table cellpadding="0" cellspacing="0" border="0" style="width:100%;height:8px;background:#e5e7eb;border-collapse:collapse">
+              <tr>
+                <td style="background:${color};width:${pctSafe}%;height:8px;font-size:1px;line-height:1px">&nbsp;</td>
+                <td style="width:${100-pctSafe}%;height:8px;font-size:1px;line-height:1px">&nbsp;</td>
+              </tr>
+            </table>
+          </td>
+          <td style="font-size:10pt;font-weight:700;color:${color};white-space:nowrap;padding-left:10px">${pctSafe}%${completo?' ✓':''}</td>
+        </tr>
+      </table>`;
+  };
+
   let lineasHtml = '';
   d.lineas.forEach((linea, idx) => {
     let pasosHtml = '';
     linea.pasos.forEach((p, i) => {
+      const pasoColorBorde = p.tieneAvance
+        ? (p.estaCompleto ? '#10b981' : p.pctAvance > 0 ? '#d97706' : '#9ca3af')
+        : '#1f5f47';
+      const numColor = pasoColorBorde;
       pasosHtml += `
-        <div style="margin:10px 0;padding:10px 14px;border-left:3px solid #1f5f47;background:#fafaf7">
+        <div style="margin:10px 0;padding:10px 14px;border-left:3px solid ${pasoColorBorde};background:#fafaf7">
           <div style="font-size:11pt;line-height:1.5;color:#222">
-            <span style="display:inline-block;width:22px;height:22px;background:#1f5f47;color:#fff;border-radius:50%;text-align:center;font-weight:700;font-size:10pt;margin-right:8px">${i+1}</span>${_planBoldHTML(p.descripcion)}
+            <span style="display:inline-block;width:22px;height:22px;background:${numColor};color:#fff;border-radius:50%;text-align:center;font-weight:700;font-size:10pt;margin-right:8px">${p.estaCompleto?'✓':(i+1)}</span>${_planBoldHTML(p.descripcion)}
           </div>
           <div style="font-size:9.5pt;color:#666;margin-top:6px;padding-left:30px">
             <b>Responsable:</b> ${_planNombreConCargo(p.responsable)} &nbsp;&nbsp; <b>Plazo:</b> ${p.plazo_dias} días &nbsp;&nbsp; <b>Esfuerzo:</b> ${p.esfuerzo}
           </div>
+          ${p.tieneAvance ? '<div style="padding-left:30px">'+_barraAvance(p.pctAvance, p.estaCompleto)+'</div>' : ''}
         </div>`;
     });
     lineasHtml += `
@@ -9719,6 +9770,13 @@ function planDescargarWord(){
       </div>`;
   });
 
+  // Bloque de resumen de avance global (solo si el plan está ACTIVA)
+  const resumenAvanceHtml = d.planActivo ? `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d8d2c0;font-size:10.5pt;color:#444">
+      <b>Avance del plan:</b> ${d.pasosCompletos} de ${d.totalPasos} pasos completados · promedio ${d.avancePromedio}%
+    </div>
+  ` : '';
+
   const body = `
     <div style="background:#f5f1e8;padding:24px 28px;border-radius:10px;margin-bottom:20px">
       <div style="font-size:9pt;letter-spacing:1.5pt;color:#666;text-transform:uppercase;margin-bottom:6px">Plan PME · ${d.mes}</div>
@@ -9729,6 +9787,7 @@ function planDescargarWord(){
         ${respTxt}.
         Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
       </div>
+      ${resumenAvanceHtml}
       ${fechaActivacionFmt ? `<div style="font-size:9pt;color:#888;margin-top:10px;padding-top:8px;border-top:1px solid #d8d2c0">Plan creado el ${fechaActivacionFmt}</div>` : ''}
     </div>
     ${lineasHtml}
@@ -9765,10 +9824,21 @@ function planDescargarPDF(){
   d.lineas.forEach((linea, idx) => {
     let pasosHtml = '';
     linea.pasos.forEach((p, i) => {
+      // Color del borde y número según avance (solo si plan ACTIVA)
+      const colorEstado = p.tieneAvance
+        ? (p.estaCompleto ? '#10b981' : p.pctAvance > 0 ? '#d97706' : '#9ca3af')
+        : '#1f5f47';
+      // Barra de avance (solo si plan ACTIVA)
+      const barraHtml = p.tieneAvance ? `
+        <div class="pavance">
+          <div class="pavance-label">Avance</div>
+          <div class="pavance-bar"><div class="pavance-fill" style="width:${Math.max(0,Math.min(100,p.pctAvance))}%;background:${colorEstado}"></div></div>
+          <div class="pavance-num" style="color:${colorEstado}">${Math.max(0,Math.min(100,p.pctAvance))}%${p.estaCompleto?' ✓':''}</div>
+        </div>` : '';
       pasosHtml += `
-        <div class="paso">
+        <div class="paso" style="border-left-color:${colorEstado}">
           <div class="paso-head">
-            <div class="num">${i+1}</div>
+            <div class="num" style="background:${colorEstado}">${p.estaCompleto?'✓':(i+1)}</div>
             <div class="pdesc">${_planBoldHTML(p.descripcion)}</div>
           </div>
           <div class="pmeta">
@@ -9776,6 +9846,7 @@ function planDescargarPDF(){
             <span><b>Plazo:</b> ${p.plazo_dias} días</span>
             <span><b>Esfuerzo:</b> ${p.esfuerzo}</span>
           </div>
+          ${barraHtml}
         </div>`;
     });
     lineasHtml += `
@@ -9791,6 +9862,13 @@ function planDescargarPDF(){
       </div>`;
   });
 
+  // Bloque de resumen de avance global (solo si plan ACTIVA)
+  const resumenAvanceHtml = d.planActivo ? `
+    <div class="resumen-avance">
+      <b>Avance del plan:</b> ${d.pasosCompletos} de ${d.totalPasos} pasos completados · promedio ${d.avancePromedio}%
+    </div>
+  ` : '';
+
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plan PME — ${d.nombreAccion}</title>
     <style>
@@ -9801,6 +9879,7 @@ function planDescargarPDF(){
       .header .kicker{font-size:9pt;letter-spacing:1.5pt;color:#666;text-transform:uppercase;margin-bottom:6px}
       .header h1{font-family:Georgia,'Times New Roman',serif;font-size:22pt;color:#222;margin:0 0 12px;font-weight:normal}
       .header .resumen{font-size:11pt;line-height:1.65;color:#444}
+      .header .resumen-avance{font-size:10.5pt;color:#444;margin-top:12px;padding-top:10px;border-top:1px solid #d8d2c0}
       .header .meta-creacion{font-size:9pt;color:#888;margin-top:10px;padding-top:8px;border-top:1px solid #d8d2c0}
       .linea{margin-bottom:18px;padding:18px 22px;border:1px solid #d4cdb8;border-radius:10px;page-break-inside:avoid}
       .linea-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8}
@@ -9813,8 +9892,13 @@ function planDescargarPDF(){
       .num{width:22px;height:22px;background:#1f5f47;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:700;flex-shrink:0;margin-top:1px}
       .pdesc{flex:1;font-size:11pt;line-height:1.5;color:#222}
       .pmeta{font-size:9.5pt;color:#666;margin-top:6px;padding-left:32px;display:flex;flex-wrap:wrap;gap:14px}
+      .pavance{display:flex;align-items:center;gap:10px;margin-top:8px;padding-left:32px}
+      .pavance-label{font-size:8.5pt;color:#666;font-weight:700;letter-spacing:.5pt;text-transform:uppercase;white-space:nowrap}
+      .pavance-bar{flex:1;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;min-width:60px}
+      .pavance-fill{height:100%;border-radius:4px}
+      .pavance-num{font-size:10pt;font-weight:700;white-space:nowrap;min-width:54px;text-align:right}
       button.print-btn{position:fixed;top:14px;right:14px;padding:8px 18px;background:#1f5f47;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11pt;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
-      @media print{button.print-btn{display:none}.linea{page-break-inside:avoid}}
+      @media print{button.print-btn{display:none}.linea{page-break-inside:avoid}.pavance-fill{print-color-adjust:exact;-webkit-print-color-adjust:exact}.num{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
     </style></head><body>
     <button class="print-btn" onclick="window.print()">Imprimir / PDF</button>
     <div class="header">
@@ -9826,6 +9910,7 @@ function planDescargarPDF(){
         ${respTxt}.
         Fecha estimada de cierre: <b>${d.fechaCierreTxt}</b>.
       </div>
+      ${resumenAvanceHtml}
       ${fechaActivacionFmt ? `<div class="meta-creacion">Plan creado el ${fechaActivacionFmt}</div>` : ''}
     </div>
     ${lineasHtml}
