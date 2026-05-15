@@ -8831,11 +8831,14 @@ async function planGenerarPropuestas(){
         };
       })();
 
-      // Prepend: los ámbitos arriba, después la línea de brechas, después las causales.
+      // Orden de prioridad pedagógica (de más personalizado a más genérico):
+      // 1. 🎯 Acciones del análisis de brechas (IA personalizada al colegio)
+      // 2. Causas identificadas (Definición poco clara, Evaluación y monitoreo, etc.)
+      // 3. 🎓 Ámbitos Aula / Gestión / etc. (pasos base por nivel, genéricos)
       s.propuestas = [
-        ...lineasAmbito,
         ...(lineaBrechas ? [lineaBrechas] : []),
-        ...propuestas.filter(Boolean)
+        ...propuestas.filter(Boolean),
+        ...lineasAmbito
       ];
       s.fuentesGlobales = [];
       s.paso = 4;
