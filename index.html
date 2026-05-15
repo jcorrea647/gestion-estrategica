@@ -8037,43 +8037,55 @@ async function renderPaso1Contexto(){
   }
 
   // ── PRE-MARCADO DE CAUSALES SUGERIDAS POR LAS BRECHAS ──
-  // v7.0: cada brecha trae un ARRAY causales_sugeridas con hasta 3 entradas.
-  // Consolidamos todas las causales de todas las brechas en una lista única,
-  // preservando el orden de aparición y fusionando justificaciones.
-  // Si el director todavía no marcó nada (s.causas vacío), pre-marcamos hasta 3.
+  // v7.2: la IA devuelve un campo top-level "causales_top_3" con los códigos
+  // de las 3 causales más recurrentes EN EL ORDEN exacto que aparecen en el
+  // texto del resumen. Usamos ESE campo (no un cálculo propio) para garantizar
+  // que las causales pre-marcadas coincidan exactamente con la frase
+  // "Las 3 causales más recurrentes son X, Y, Z" del resumen.
+  //
+  // Para cada causal del top-3 buscamos en TODOS los arrays causales_sugeridas
+  // de las brechas la primera justificación correspondiente (si existe), para
+  // poder mostrarla en el tooltip del paso "Causales".
+  //
+  // Si el director ya marcó algo manualmente (s.causas no vacío), respetamos
+  // su elección.
   if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length === 0){
-    const sugeridasUnicas = []; // [{codigo, etiqueta, grupo, _sugeridaPorIA, _justificacion}]
-    bullets.forEach(b => {
-      (b.causales_sugeridas || []).forEach(c => {
-        const cod = (c.codigo || '').toString().trim().toUpperCase();
-        if(!cod || !cod.match(/^C\d{1,2}$/)) return;
-        const justif = (c.justificacion || '').toString().trim();
-        const existente = sugeridasUnicas.find(x => x.codigo === cod);
-        if(existente){
-          if(justif && !existente._justificacion.includes(justif)){
-            existente._justificacion += ' · ' + justif;
+    const top3 = Array.isArray(brechasResp?.causales_top_3) ? brechasResp.causales_top_3 : [];
+    const sugeridasUnicas = [];
+    top3.forEach(rawCod => {
+      const cod = (rawCod || '').toString().trim().toUpperCase();
+      if(!cod || !cod.match(/^C\d{1,2}$/)) return;
+      // Evitar duplicados (por si la IA pone el mismo código dos veces)
+      if(sugeridasUnicas.find(x => x.codigo === cod)) return;
+      // Buscar la causal en el catálogo
+      const buscarEn = (lista) => lista.find(x => x.codigo === cod);
+      let encontrada = null, grupoCode = '';
+      if(CAUSAS_TAXONOMIA.estructurales){
+        encontrada = buscarEn(CAUSAS_TAXONOMIA.estructurales);
+        if(encontrada) grupoCode = 'ESTRUCTURAL';
+      }
+      if(!encontrada && CAUSAS_TAXONOMIA.relacionales){
+        encontrada = buscarEn(CAUSAS_TAXONOMIA.relacionales);
+        if(encontrada) grupoCode = 'RELACIONAL';
+      }
+      if(!encontrada) return;
+      // Buscar justificaciones de esta causal a través de todas las brechas
+      // (para que el tooltip en el paso Causales muestre el porqué de la IA)
+      let justificaciones = [];
+      bullets.forEach(b => {
+        (b.causales_sugeridas || []).forEach(c => {
+          if((c.codigo || '').toString().trim().toUpperCase() === cod){
+            const j = (c.justificacion || '').toString().trim();
+            if(j && !justificaciones.includes(j)) justificaciones.push(j);
           }
-          return;
-        }
-        const buscarEn = (lista) => lista.find(x => x.codigo === cod);
-        let encontrada = null, grupoCode = '';
-        if(CAUSAS_TAXONOMIA.estructurales){
-          encontrada = buscarEn(CAUSAS_TAXONOMIA.estructurales);
-          if(encontrada) grupoCode = 'ESTRUCTURAL';
-        }
-        if(!encontrada && CAUSAS_TAXONOMIA.relacionales){
-          encontrada = buscarEn(CAUSAS_TAXONOMIA.relacionales);
-          if(encontrada) grupoCode = 'RELACIONAL';
-        }
-        if(encontrada){
-          sugeridasUnicas.push({
-            codigo: encontrada.codigo,
-            etiqueta: encontrada.etiqueta,
-            grupo: grupoCode,
-            _sugeridaPorIA: true,
-            _justificacion: justif
-          });
-        }
+        });
+      });
+      sugeridasUnicas.push({
+        codigo: encontrada.codigo,
+        etiqueta: encontrada.etiqueta,
+        grupo: grupoCode,
+        _sugeridaPorIA: true,
+        _justificacion: justificaciones.join(' · ')
       });
     });
     if(sugeridasUnicas.length > 0){
