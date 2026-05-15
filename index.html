@@ -8002,85 +8002,145 @@ async function renderPaso1Contexto(){
   // Determinar bullets a mostrar según los 3 escenarios:
   //   1) IA personalizada → usar b.diagnostico (frase corta) de cada brecha
   //   2) FALLBACK_SIN_CONTEXTO → usar b.texto que viene del backend
-  //   3) IA caída del todo → usar NIVEL_BULLETS_LOCALES por nivel
-  let bullets = [];
+  //   3) IA caída del todo → usar NIVEL_BULLETS_LOCALES por nivel (fallback)
+  //
+  // v7.0+: la estructura de respuesta cambió. Cada brecha ahora trae:
+  //   - fuente_doc: 'PEI' | 'PME_2025' | 'FASE_2026' | 'ninguna'
+  //   - cita_textual: cita literal del documento
+  //   - diagnostico: análisis de la cita
+  //   - causales_sugeridas: array de {codigo, justificacion} (1-3 causales)
+  // Hay también un campo top-level "resumen" (string vacío si solo hay 1 brecha).
+  let bullets = []; // bullets enriquecidos con fuente, cita y causales
   let modoBullets = 'PERSONALIZADO'; // PERSONALIZADO | GENERICO_BACKEND | LOCAL
+  let resumenIA = '';
   if (brechasResp && brechasResp.modo !== 'FALLBACK_SIN_CONTEXTO' && Array.isArray(brechasResp.brechas) && brechasResp.brechas.length) {
-    bullets = brechasResp.brechas.slice(0, 3).map(b => (b.diagnostico || b.texto || '').toString().trim()).filter(Boolean);
+    resumenIA = (brechasResp.resumen || '').toString().trim();
+    bullets = brechasResp.brechas.map(b => ({
+      diagnostico: (b.diagnostico || b.texto || '').toString().trim(),
+      fuente_doc: (b.fuente_doc || '').toString().trim(),
+      cita_textual: (b.cita_textual || '').toString().trim(),
+      causales_sugeridas: Array.isArray(b.causales_sugeridas) ? b.causales_sugeridas : []
+    })).filter(b => b.diagnostico);
   } else if (brechasResp && brechasResp.modo === 'FALLBACK_SIN_CONTEXTO' && Array.isArray(brechasResp.brechas) && brechasResp.brechas.length) {
-    bullets = brechasResp.brechas.slice(0, 3).map(b => (b.texto || b.diagnostico || b || '').toString().trim()).filter(Boolean);
+    bullets = brechasResp.brechas.slice(0, 3).map(b => ({
+      diagnostico: (b.texto || b.diagnostico || b || '').toString().trim(),
+      fuente_doc: '', cita_textual: '', causales_sugeridas: []
+    })).filter(b => b.diagnostico);
     modoBullets = 'GENERICO_BACKEND';
   }
-  if (bullets.length < 3) {
-    // Completar con bullets locales para asegurar siempre 3
+  if (bullets.length === 0) {
     const locales = NIVEL_BULLETS_LOCALES[nivel.codigo] || [];
-    while (bullets.length < 3 && bullets.length < (locales.length)) bullets.push(locales[bullets.length]);
+    bullets = locales.slice(0, 3).map(txt => ({
+      diagnostico: txt, fuente_doc: '', cita_textual: '', causales_sugeridas: []
+    }));
     if (!brechasResp || !brechasResp.brechas || !brechasResp.brechas.length) modoBullets = 'LOCAL';
   }
 
   // ── PRE-MARCADO DE CAUSALES SUGERIDAS POR LAS BRECHAS ──
-  // Cada brecha de la IA viene con un campo "causal_sugerida" (ej. "C8") y
-  // desde v6.7 también "causal_justificacion" (frase corta de por qué).
-  // Si el director todavía no ha marcado ninguna causal (s.causas vacío),
-  // pre-marcamos las 3 causales sugeridas. Si ya marcó algo, respetamos su
-  // elección (no sobreescribimos lo que el director ya decidió).
-  if(modoBullets === 'PERSONALIZADO' && Array.isArray(brechasResp?.brechas) && (s.causas || []).length === 0){
-    const sugeridas = []; // [{codigo, etiqueta, grupo, _sugeridaPorIA: true, _justificacion}]
-    brechasResp.brechas.forEach(b => {
-      const cod = (b.causal_sugerida || '').toString().trim().toUpperCase();
-      if(!cod || !cod.match(/^C\d{1,2}$/)) return;
-      const justif = (b.causal_justificacion || '').toString().trim();
-      // Si la causal ya estaba sugerida por una brecha anterior, agregamos
-      // la nueva justificación al final separada por "; " (la IA ahora puede
-      // repetir causales si dos brechas convergen).
-      const existente = sugeridas.find(c => c.codigo === cod);
-      if(existente){
-        if(justif && !existente._justificacion.includes(justif)){
-          existente._justificacion += ' · ' + justif;
+  // v7.0: cada brecha trae un ARRAY causales_sugeridas con hasta 3 entradas.
+  // Consolidamos todas las causales de todas las brechas en una lista única,
+  // preservando el orden de aparición y fusionando justificaciones.
+  // Si el director todavía no marcó nada (s.causas vacío), pre-marcamos hasta 3.
+  if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length === 0){
+    const sugeridasUnicas = []; // [{codigo, etiqueta, grupo, _sugeridaPorIA, _justificacion}]
+    bullets.forEach(b => {
+      (b.causales_sugeridas || []).forEach(c => {
+        const cod = (c.codigo || '').toString().trim().toUpperCase();
+        if(!cod || !cod.match(/^C\d{1,2}$/)) return;
+        const justif = (c.justificacion || '').toString().trim();
+        const existente = sugeridasUnicas.find(x => x.codigo === cod);
+        if(existente){
+          if(justif && !existente._justificacion.includes(justif)){
+            existente._justificacion += ' · ' + justif;
+          }
+          return;
         }
-        return;
-      }
-      // Buscar la causal en el catálogo cargado en CAUSAS_TAXONOMIA
-      const buscarEn = (lista) => lista.find(c => c.codigo === cod);
-      let encontrada = null;
-      let grupoCode = '';
-      if(CAUSAS_TAXONOMIA.estructurales){
-        encontrada = buscarEn(CAUSAS_TAXONOMIA.estructurales);
-        if(encontrada) grupoCode = 'ESTRUCTURAL';
-      }
-      if(!encontrada && CAUSAS_TAXONOMIA.relacionales){
-        encontrada = buscarEn(CAUSAS_TAXONOMIA.relacionales);
-        if(encontrada) grupoCode = 'RELACIONAL';
-      }
-      if(encontrada){
-        sugeridas.push({
-          codigo: encontrada.codigo,
-          etiqueta: encontrada.etiqueta,
-          grupo: grupoCode,
-          _sugeridaPorIA: true,
-          _justificacion: justif
-        });
-      }
+        const buscarEn = (lista) => lista.find(x => x.codigo === cod);
+        let encontrada = null, grupoCode = '';
+        if(CAUSAS_TAXONOMIA.estructurales){
+          encontrada = buscarEn(CAUSAS_TAXONOMIA.estructurales);
+          if(encontrada) grupoCode = 'ESTRUCTURAL';
+        }
+        if(!encontrada && CAUSAS_TAXONOMIA.relacionales){
+          encontrada = buscarEn(CAUSAS_TAXONOMIA.relacionales);
+          if(encontrada) grupoCode = 'RELACIONAL';
+        }
+        if(encontrada){
+          sugeridasUnicas.push({
+            codigo: encontrada.codigo,
+            etiqueta: encontrada.etiqueta,
+            grupo: grupoCode,
+            _sugeridaPorIA: true,
+            _justificacion: justif
+          });
+        }
+      });
     });
-    if(sugeridas.length > 0){
-      // Si la IA repitió causales, podríamos terminar con menos de 3.
-      // El director puede agregar manualmente las que falten desde el paso 3.
-      s.causas = sugeridas.slice(0, 3);
+    if(sugeridasUnicas.length > 0){
+      s.causas = sugeridasUnicas.slice(0, 3);
       planMarcarCambio();
       if(typeof planSyncSupabase === 'function') planSyncSupabase();
     }
   }
 
-  // Render del recuadro narrativo
-  const bulletsHtml = bullets.map((txt, i) => `
-    <li style="display:flex;gap:12px;padding:9px 0;${i<bullets.length-1?'border-bottom:1px solid rgba(0,0,0,0.06);':''}align-items:flex-start">
-      <span style="color:#888780;font-weight:600;flex-shrink:0;min-width:14px">${i+1}</span>
-      <span style="font-size:14px;line-height:1.55;color:#2C2C2A">${escapeHtmlPlan(txt)}</span>
-    </li>
-  `).join('');
+  // ── Render: bullets con causales a la derecha, fuente del doc arriba ──
+  // Mapa de etiquetas legibles para cada fuente
+  const FUENTE_LABEL = {
+    'PEI':       'PEI · ' + DB.colegio.nombre,
+    'PME_2025':  'Análisis PME 2025 · ' + DB.colegio.nombre,
+    'FASE_2026': 'Fase Estratégica PME 2026 · ' + DB.colegio.nombre
+  };
+  const FUENTE_COLORES = {
+    'PEI':       { bg:'#E8F5EE', color:'#1E3A2F' },
+    'PME_2025':  { bg:'#E6F1FB', color:'#0C447C' },
+    'FASE_2026': { bg:'#FAEEDA', color:'#854F0B' }
+  };
+  // Etiqueta legible de causal a partir del código
+  const causalEtiqueta = (cod) => {
+    const c = (CAUSAS_TAXONOMIA.estructurales || []).find(x => x.codigo === cod) ||
+              (CAUSAS_TAXONOMIA.relacionales  || []).find(x => x.codigo === cod);
+    return c ? c.etiqueta : cod;
+  };
+
+  const bulletsHtml = bullets.map((b, i) => {
+    const fuente = FUENTE_LABEL[b.fuente_doc];
+    const colorFuente = FUENTE_COLORES[b.fuente_doc] || { bg:'#F3F1ED', color:'#5F5E5A' };
+    const fuentePill = fuente
+      ? `<div style="font-size:11px;font-weight:500;padding:2px 10px;border-radius:20px;background:${colorFuente.bg};color:${colorFuente.color};display:inline-block;margin-bottom:8px;letter-spacing:.02em">${escapeHtmlPlan(fuente)}</div>`
+      : '';
+    // Pills de causales (sin número ni color, neutras tipo etiqueta)
+    const causalesPills = (b.causales_sugeridas || []).map(c => {
+      const cod = (c.codigo || '').toString().trim().toUpperCase();
+      if(!cod || !cod.match(/^C\d{1,2}$/)) return '';
+      const etiq = causalEtiqueta(cod);
+      const justif = (c.justificacion || '').toString().trim();
+      const tip = justif ? ` title="${escapeHtmlPlan(justif)}"` : '';
+      return `<span${tip} style="display:inline-block;font-size:13px;padding:5px 11px;border-radius:14px;background:#EFEEEA;color:#444441;border:1px solid #DDD9CF;margin:0 0 6px 6px">${escapeHtmlPlan(etiq)}</span>`;
+    }).join('');
+    const causalesBloque = causalesPills
+      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Causales asociadas</div>${causalesPills}</div>`
+      : '<div></div>';
+    const sep = i < bullets.length - 1 ? 'border-bottom:1px solid rgba(0,0,0,0.06);' : '';
+    return `
+      <li style="${sep}padding:14px 0;display:grid;grid-template-columns:1fr 220px;gap:18px;align-items:flex-start">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span style="color:#888780;font-weight:600;flex-shrink:0;min-width:14px">${i+1}</span>
+          <div style="flex:1">
+            ${fuentePill}
+            <div style="font-size:14px;line-height:1.55;color:#2C2C2A">${escapeHtmlPlan(b.diagnostico)}</div>
+          </div>
+        </div>
+        ${causalesBloque}
+      </li>`;
+  }).join('');
+
+  // Resumen-encabezado: solo si hay 2+ brechas y la IA generó resumen
+  const resumenHtml = (bullets.length >= 2 && resumenIA)
+    ? `<div style="background:#F9F7F2;border-left:3px solid #C4962A;padding:12px 16px;border-radius:6px;margin-bottom:18px;font-size:14px;line-height:1.6;color:#3F3E3B">${escapeHtmlPlan(resumenIA)}</div>`
+    : '';
 
   const fuenteTag = modoBullets === 'PERSONALIZADO'
-    ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Análisis personalizado para tu colegio${brechasResp?.estandar_numero?' · Estándar '+escapeHtmlPlan(brechasResp.estandar_numero)+' EID':''}</div>`
+    ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Análisis personalizado según documentos institucionales del colegio</div>`
     : modoBullets === 'GENERICO_BACKEND'
       ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Orientaciones generales · ${escapeHtmlPlan(brechasResp?.mensaje || 'Carga el PEI de tu colegio para recibir un análisis personalizado.')}</div>`
       : `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Orientaciones generales según el nivel de logro</div>`;
@@ -8096,8 +8156,9 @@ async function renderPaso1Contexto(){
         </div>
         <div>
           <div style="font-size:15px;line-height:1.65;color:#2C2C2A;margin-bottom:14px">
-            En función a lo que hemos visto en las recomendaciones de cada institución y la normativa, deberías trabajar en:
+            En función a lo que hemos visto en el PEI, Análisis PME 2025 y Fase Estratégica 2026 de tu colegio, deberías trabajar en:
           </div>
+          ${resumenHtml}
           <ul style="list-style:none;padding:0;margin:0">${bulletsHtml}</ul>
           <div style="font-size:13px;line-height:1.65;color:#5F5E5A;font-style:italic;border-top:1px solid rgba(0,0,0,0.08);padding-top:14px;margin-top:16px">
             Para esto te invitamos al siguiente paso, donde podrás identificar las causales de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
@@ -8558,11 +8619,13 @@ async function planGenerarPropuestas(){
         } catch(e){ console.warn('lookup ámbitos del nivel:', e.message); }
       }
 
-      // ── LÍNEA DE ACCIONES DE BRECHAS CONFIRMADAS ──
-      // Si las brechas IA traen "para_superar" Y el director mantuvo marcada
-      // la causal sugerida de esa brecha, sus 3 acciones se ofrecen como pasos
-      // adicionales en una línea propia. Si el director desmarcó todas las
-      // causales sugeridas, esta línea no aparece.
+      // ── LÍNEA DE ACCIONES DE BRECHAS CONFIRMADAS (retrocompat) ──
+      // En v6.x cada brecha traía "para_superar" con acciones por rol. v7.0 eliminó
+      // ese campo (las brechas ahora son solo análisis). Mantenemos retrocompat:
+      // si las brechas guardadas tienen "para_superar" (datos antiguos), se usan;
+      // si no, esta línea simplemente no aparece (se hace null y se descarta).
+      // También adaptamos el match de causal: en v7 cada brecha tiene causales_sugeridas[]
+      // (array), en v6 tenía causal_sugerida (singular). Soportamos ambos.
       const lineaBrechas = (() => {
         const brData = s.brechasData;
         if(!brData || !Array.isArray(brData.brechas) || brData.brechas.length === 0) return null;
@@ -8570,8 +8633,14 @@ async function planGenerarPropuestas(){
         const causalesConfirmadas = new Set(s.causas.map(c => (c.codigo||'').toUpperCase()));
         const pasosBrechas = [];
         brData.brechas.forEach((b, bi) => {
-          const causalSug = (b.causal_sugerida || '').toString().trim().toUpperCase();
-          if(!causalesConfirmadas.has(causalSug)) return; // brecha descartada
+          // Determinar las causales de esta brecha (v7 array o v6 singular)
+          const causalesBrecha = Array.isArray(b.causales_sugeridas)
+            ? b.causales_sugeridas.map(c => (c.codigo || '').toString().trim().toUpperCase()).filter(Boolean)
+            : (b.causal_sugerida ? [(b.causal_sugerida || '').toString().trim().toUpperCase()] : []);
+          // Brecha "confirmada" = al menos una de sus causales sigue marcada por el director
+          const alguienConfirmada = causalesBrecha.some(cod => causalesConfirmadas.has(cod));
+          if(!alguienConfirmada) return;
+          // Para v6, "para_superar" existe; para v7 no. Si no existe, no se aporta a esta línea.
           const acciones = Array.isArray(b.para_superar) ? b.para_superar : [];
           acciones.forEach((acc, ai) => {
             const desc = (acc?.accion || '').toString().trim();
@@ -8583,8 +8652,8 @@ async function planGenerarPropuestas(){
               responsable_sugerido: rol || '',
               plazo_dias: 7,
               esfuerzo: 'MEDIO',
-              _fuenteBrecha: b.fuente_label || b.fuente_tipo || '',
-              _causalBrecha: causalSug
+              _fuenteBrecha: b.fuente_doc || b.fuente_label || b.fuente_tipo || '',
+              _causalBrecha: causalesBrecha[0] || ''
             });
           });
         });
