@@ -7618,7 +7618,12 @@ async function _abrirPlanInternal(accionId, mes){
     PLAN_STATE.existente = ma;
     PLAN_STATE.microaccionId = ma.id;
     PLAN_STATE.fechaActivacion = ma.updated_at;
-    PLAN_STATE.paso = 5;
+    // paso=99 → vista pedagógica de plan ACTIVA/COMPLETADA con sliders de avance
+    // y botones "Marcar completado". Si fuera paso=5 caería en el constructor
+    // del wizard, donde NO hay seguimiento de pasos (esos sliders/botones
+    // solo se pintan en renderPlanResumenPedagogico, que es la rama paso=99).
+    PLAN_STATE.paso = 99;
+    PLAN_STATE.vistaActiva = 'resumen';
     asegurarDrawer();
     document.getElementById('planOverlay').classList.add('show');
     document.getElementById('planDrawer').classList.add('show');
