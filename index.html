@@ -6973,7 +6973,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
 
-  // 2. Buscar brechas guardadas en Supabase (borrador previo)
+  // 2. Buscar brechas guardadas en Supabase para ESTE plan exacto (mismo mes)
   try {
     const { data: ma } = await sb.from('microacciones')
       .select('brechas_data')
@@ -6991,11 +6991,44 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
-      // Banda cambió — no usar brechas antiguas
+      // Banda cambió — no usar brechas antiguas de este mismo plan
     }
-  } catch(e) { console.warn('planCargarBrechas lookup:', e.message); }
+  } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
 
-  // 3. Generar con IA por primera vez y persistir
+  // 3. CACHE COMPARTIDO: buscar brechas equivalentes en cualquier OTRO mes del mismo
+  //    (colegio + acción + banda). Esto evita que la IA regenere brechas idénticas
+  //    para un colegio que ya tiene esa acción en el mismo nivel de logro en otro mes.
+  //    Solo se reusa si la banda coincide exactamente. Si la banda es vacía, no se reusa.
+  if(banda){
+    try {
+      const { data: equivalentes } = await sb.from('microacciones')
+        .select('mes, brechas_data, updated_at')
+        .eq('colegio_id', colegioId)
+        .eq('accion_id', accionId)
+        .not('brechas_data', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(10);
+      if(Array.isArray(equivalentes)){
+        // Buscamos el más reciente con la misma banda
+        const match = equivalentes.find(r => {
+          const b = r.brechas_data?._banda;
+          return b && b === banda;
+        });
+        if(match && match.brechas_data){
+          // Reusamos las brechas pero las marcamos como reusadas para trazabilidad
+          const brechasReusadas = { ...match.brechas_data, _reusedFrom: match.mes };
+          PLAN_BRECHAS_CACHE[cacheKey] = brechasReusadas;
+          if (PLAN_STATE) {
+            PLAN_STATE.brechasData = brechasReusadas;
+            if (typeof planSyncSupabase === 'function') planSyncSupabase();
+          }
+          return brechasReusadas;
+        }
+      }
+    } catch(e) { console.warn('planCargarBrechas lookup banda-compartida:', e.message); }
+  }
+
+  // 4. Generar con IA por primera vez y persistir
   PLAN_BRECHAS_LOADING = true;
   try {
     // Obtener nombre y descripción de la acción para enriquecer el contexto
