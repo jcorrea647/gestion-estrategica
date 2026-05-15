@@ -1637,17 +1637,129 @@ async function savePeriodo(accionId) {
 }
 
 // INFORMES
+// Estado de los filtros de Informes (independientes del sidebar global).
+// Si están en '' se considera "Todos/Acumulado".
+let INFORMES_FILTROS = { dimension: '', accion: '', mes: '', responsable: '' };
+
+function _informesAplicaArea(area){
+  return !INFORMES_FILTROS.dimension || INFORMES_FILTROS.dimension === area.id;
+}
+function _informesAplicaAccion(ac){
+  if(INFORMES_FILTROS.accion && INFORMES_FILTROS.accion !== ac.id) return false;
+  if(INFORMES_FILTROS.responsable){
+    const resps = getResps(ac.id);
+    if(!resps.some(r => r.id === INFORMES_FILTROS.responsable)) return false;
+  }
+  return true;
+}
+function _informesMesActivo(){
+  // El filtro de mes dentro de Informes tiene prioridad sobre el global del sidebar.
+  return INFORMES_FILTROS.mes || filterMes || null;
+}
+
+function setInformeFiltro(campo, valor){
+  INFORMES_FILTROS[campo] = valor || '';
+  // Si cambia la dimensión, la acción se resetea (acción depende de dimensión).
+  if(campo === 'dimension') INFORMES_FILTROS.accion = '';
+  renderCurrentPanel();
+}
+
+function limpiarInformeFiltros(){
+  INFORMES_FILTROS = { dimension: '', accion: '', mes: '', responsable: '' };
+  renderCurrentPanel();
+}
+
 function renderInformes() {
-  const mes=filterMes||null, mesL=mes?fmtMes(mes):'Acumulado', gen=calcGeneral(mes), estG=getEstado(gen);
-  const vv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
-  const av=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
-  const rv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
-  const mA=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const mes = _informesMesActivo();
+  const mesL = mes ? fmtMes(mes) : 'Acumulado';
+
+  // KPIs filtrados: aplicamos los 4 filtros sobre el set de acciones contadas.
+  const accionesFiltradas = DB.acciones.filter(a => {
+    const area = DB.areas.find(ar => ar.id === DB.objetivos.find(o => o.id === a.objetivo_id)?.area_id);
+    if(area && !_informesAplicaArea(area)) return false;
+    return _informesAplicaAccion(a);
+  });
+  const vv = accionesFiltradas.filter(a => getEstado(calcAccion(a.id, mes)) === 'verde').length;
+  const av = accionesFiltradas.filter(a => getEstado(calcAccion(a.id, mes)) === 'amarillo').length;
+  const rv = accionesFiltradas.filter(a => getEstado(calcAccion(a.id, mes)) === 'rojo').length;
+
+  // Avance general: si hay filtro de dimensión, mostramos el avance de esa dimensión.
+  // Si no, el general del colegio.
+  let gen, estG;
+  if(INFORMES_FILTROS.dimension){
+    gen = calcArea(INFORMES_FILTROS.dimension, mes);
+    estG = getEstado(gen);
+  } else {
+    gen = calcGeneral(mes);
+    estG = getEstado(gen);
+  }
+
+  const mA = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html+='<div><div class="page-title">Informes</div><div class="page-sub">'+DB.colegio.nombre+' - '+mesL+'</div></div>';
   const alertaVer = hayReunionAbierta();
   html+='<div class="export-group"><button class="btn btn-primary btn-sm" style="background:#1F4E79;border-color:#1F4E79" onclick="showPanel(\'resumen-ejecutivo\')" title="Resumen ejecutivo del establecimiento">📊 Resumen Ejecutivo</button><button class="btn btn-outline btn-sm'+(alertaVer?' btn-alerta-verde':'')+'" onclick="showPanel(\'ver-reuniones\')" title="'+(alertaVer?'Hay una reunión abierta. Puedes verla en el historial.':'Ver historial de reuniones')+'">'+(alertaVer?'✓ Reunión Activa':'📋 Ver Reuniones')+'</button><button class="btn btn-export btn-sm" onclick="exportPDF()">PDF</button><button class="btn btn-export btn-sm" style="background:#1E6B3C" onclick="exportExcel()">Excel</button></div>';
   html+='</div></div>';
+
+  // ============= FILTROS DE INFORMES =============
+  // 4 dropdowns + botón Limpiar. Acción depende de Dimensión.
+  const dimensionSelected = INFORMES_FILTROS.dimension;
+  const accionesDelArea = dimensionSelected
+    ? DB.acciones.filter(a => DB.objetivos.find(o => o.id === a.objetivo_id)?.area_id === dimensionSelected)
+    : DB.acciones;
+  const hayFiltros = !!(INFORMES_FILTROS.dimension || INFORMES_FILTROS.accion || INFORMES_FILTROS.mes || INFORMES_FILTROS.responsable);
+
+  html += '<div class="card" style="margin-bottom:16px;padding:14px 16px">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
+  html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">Filtros del informe</div>';
+  if(hayFiltros) html += '<button class="btn btn-outline btn-sm" onclick="limpiarInformeFiltros()" style="font-size:11px;padding:4px 10px">Limpiar filtros</button>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">';
+
+  // Dimensión
+  html += '<div><label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Dimensión</label>';
+  html += '<select class="form-input" onchange="setInformeFiltro(\'dimension\', this.value)" style="font-size:13px">';
+  html += '<option value="">Todas las dimensiones</option>';
+  DB.areas.forEach(area => {
+    const sel = INFORMES_FILTROS.dimension === area.id ? ' selected' : '';
+    html += '<option value="'+area.id+'"'+sel+'>'+escapeHtmlPlan(area.nombre)+'</option>';
+  });
+  html += '</select></div>';
+
+  // Acción (depende de dimensión)
+  html += '<div><label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Acción</label>';
+  html += '<select class="form-input" onchange="setInformeFiltro(\'accion\', this.value)" style="font-size:13px"'+(accionesDelArea.length === 0 ? ' disabled' : '')+'>';
+  html += '<option value="">Todas las acciones</option>';
+  accionesDelArea.forEach(ac => {
+    const sel = INFORMES_FILTROS.accion === ac.id ? ' selected' : '';
+    html += '<option value="'+ac.id+'"'+sel+'>'+escapeHtmlPlan(ac.nombre)+'</option>';
+  });
+  html += '</select></div>';
+
+  // Mes
+  html += '<div><label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Mes</label>';
+  html += '<select class="form-input" onchange="setInformeFiltro(\'mes\', this.value)" style="font-size:13px">';
+  html += '<option value="">Acumulado</option>';
+  mA.forEach(m => {
+    const sel = INFORMES_FILTROS.mes === m ? ' selected' : '';
+    html += '<option value="'+m+'"'+sel+'>'+fmtMes(m)+'</option>';
+  });
+  html += '</select></div>';
+
+  // Responsable
+  html += '<div><label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Responsable</label>';
+  html += '<select class="form-input" onchange="setInformeFiltro(\'responsable\', this.value)" style="font-size:13px">';
+  html += '<option value="">Todos los responsables</option>';
+  (DB.responsables || []).slice().sort((x,y) => (x.nombre||'').localeCompare(y.nombre||'')).forEach(r => {
+    const sel = INFORMES_FILTROS.responsable === r.id ? ' selected' : '';
+    html += '<option value="'+r.id+'"'+sel+'>'+escapeHtmlPlan(r.nombre)+'</option>';
+  });
+  html += '</select></div>';
+
+  html += '</div></div>';
+  // =================================================
+
   // BUSCADOR IA
   html+='<div class="card" style="margin-bottom:20px">';
   html+='<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px">🤖 Consulta inteligente sobre tus reuniones</div>';
@@ -1657,29 +1769,45 @@ function renderInformes() {
   html+='</div>';
   html+='<div id="iaRespuestaInformes" style="margin-top:12px;display:none"></div>';
   html+='</div>';
+
+  // INFORME GENERAL
+  // Si hay filtro de dimensión, el título del informe lo refleja.
+  const tituloInforme = INFORMES_FILTROS.dimension
+    ? 'Informe — ' + (DB.areas.find(a => a.id === INFORMES_FILTROS.dimension)?.nombre || 'Dimensión')
+    : 'Informe General';
+
   html+='<div class="informe-card">';
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
-  html+='<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px">Informe General</div><div style="font-size:12px;color:var(--muted)">'+DB.colegio.nombre+' - RBD '+DB.colegio.rbd+' - '+mesL+'</div></div>';
+  html+='<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px">'+escapeHtmlPlan(tituloInforme)+'</div><div style="font-size:12px;color:var(--muted)">'+DB.colegio.nombre+' - RBD '+DB.colegio.rbd+' - '+mesL+'</div></div>';
   html+=semHtml(estG)+'</div>';
   html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">';
-  html+='<div style="text-align:center;padding:14px;background:var(--surface2);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px">'+(gen!==null?gen+'%':'-')+'</div><div style="font-size:11px;color:var(--muted)">Avance general</div></div>';
+  html+='<div style="text-align:center;padding:14px;background:var(--surface2);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px">'+(gen!==null?gen+'%':'-')+'</div><div style="font-size:11px;color:var(--muted)">Avance '+(INFORMES_FILTROS.dimension?'dimensión':'general')+'</div></div>';
   html+='<div style="text-align:center;padding:14px;background:var(--green-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--green)">'+vv+'</div><div style="font-size:11px;color:var(--green)">Verdes</div></div>';
   html+='<div style="text-align:center;padding:14px;background:var(--yellow-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--yellow)">'+av+'</div><div style="font-size:11px;color:var(--yellow)">Amarillas</div></div>';
   html+='<div style="text-align:center;padding:14px;background:var(--red-bg);border-radius:6px"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--red)">'+rv+'</div><div style="font-size:11px;color:var(--red)">Rojas</div></div>';
   html+='</div><div class="chart-wrap" style="height:200px"><canvas id="chartInformeAreas"></canvas></div></div>';
-  DB.areas.forEach(area=>{
+
+  // TARJETAS POR ÁREA — filtradas por dimensión si corresponde.
+  DB.areas.filter(_informesAplicaArea).forEach(area => {
     const aR=calcArea(area.id,mes), aE=getEstado(aR), col=aE==='verde'?'var(--green)':aE==='amarillo'?'var(--gold)':'var(--red)';
     html+='<div class="informe-card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
     html+='<div style="width:4px;height:48px;background:'+col+';border-radius:4px;flex-shrink:0"></div>';
     html+='<div style="flex:1"><div style="font-family:\'DM Serif Display\',serif;font-size:20px">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
     html+='<div style="text-align:right"><div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+col+'">'+(aR!==null?aR+'%':'-')+'</div>'+semHtml(aE)+'</div></div>';
-    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
+
+    let huboObjetivosVisibles = false;
+    DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
+      // Filtramos acciones del objetivo por filtros activos. Si no queda ninguna, escondemos el objetivo.
+      const acsVisibles = DB.acciones.filter(a => a.objetivo_id === obj.id && _informesAplicaAccion(a));
+      if(acsVisibles.length === 0) return;
+      huboObjetivosVisibles = true;
+
       const oR=calcObjetivo(obj.id,mes), oE=getEstado(oR);
       html+='<div style="margin-bottom:12px;padding:12px;background:var(--surface2);border-radius:6px">';
       html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-weight:500;font-size:13px">'+obj.nombre+'</div>';
       html+='<div style="display:flex;align-items:center;gap:8px">'+semHtml(oE)+'<span style="font-weight:600">'+(oR!==null?oR+'%':'-')+'</span></div></div>';
       html+='<table class="accion-table"><thead><tr><th>Accion</th><th>Responsable</th><th>Formula</th><th>Meses</th><th style="text-align:center">Avance</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
-      DB.acciones.filter(a=>a.objetivo_id===obj.id).forEach(ac=>{
+      acsVisibles.forEach(ac => {
         const acR=calcAccion(ac.id,mes), acE=getEstado(acR), resps=getResps(ac.id);
         const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&(!mes||s.mes===mes));
         const pend=seg?.pendiente===true;
@@ -1692,11 +1820,19 @@ function renderInformes() {
       });
       html+='</tbody></table></div>';
     });
+
+    // Si la dimensión queda sin objetivos visibles por los filtros, mostramos mensaje.
+    if(!huboObjetivosVisibles){
+      html += '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;background:var(--surface2);border-radius:6px">Sin acciones que coincidan con los filtros activos.</div>';
+    }
+
     html+='<div style="margin-top:12px"><div class="card-title">Evolucion mensual</div><div class="chart-wrap-sm"><canvas id="chartArea_'+area.id+'"></canvas></div></div></div>';
   });
+
+  // EVOLUCIÓN MENSUAL POR ÁREA — respeta filtro de dimensión.
   html+='<div class="informe-card"><div style="font-family:\'DM Serif Display\',serif;font-size:20px;margin-bottom:16px">Evolucion mensual por area</div><div style="overflow-x:auto">';
   html+='<table class="evolution-table"><thead><tr><th style="text-align:left">Area</th>'+mA.map(m=>'<th>'+fmtMes(m,true)+'</th>').join('')+'</tr></thead><tbody>';
-  DB.areas.forEach(area=>{
+  DB.areas.filter(_informesAplicaArea).forEach(area => {
     html+='<tr><td>'+area.nombre+'</td>';
     mA.forEach(m=>{const v=calcArea(area.id,m),e=getEstado(v);html+='<td><span class="'+(v!==null?'cell-'+e:'')+'">'+(v!==null?v+'%':'-')+'</span></td>';});
     html+='</tr>';
@@ -1706,11 +1842,14 @@ function renderInformes() {
 }
 
 function initInformeCharts() {
-  const mes=filterMes||null, mA=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
-  const aV=DB.areas.map(a=>calcArea(a.id,mes)||0), aC=aV.map(v=>v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335');
+  const mes = _informesMesActivo();
+  const mA=['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  // Solo dimensiones visibles según filtro
+  const areasVisibles = DB.areas.filter(_informesAplicaArea);
+  const aV=areasVisibles.map(a=>calcArea(a.id,mes)||0), aC=aV.map(v=>v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335');
   const ctxI=document.getElementById('chartInformeAreas');
-  if(ctxI) charts.informeAreas=new Chart(ctxI,{type:'bar',data:{labels:DB.areas.map(a=>a.nombre),datasets:[{label:'Avance (%)',data:aV,backgroundColor:aC,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}},x:{grid:{display:false}}}}});
-  DB.areas.forEach(area=>{
+  if(ctxI) charts.informeAreas=new Chart(ctxI,{type:'bar',data:{labels:areasVisibles.map(a=>a.nombre),datasets:[{label:'Avance (%)',data:aV,backgroundColor:aC,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}},x:{grid:{display:false}}}}});
+  areasVisibles.forEach(area=>{
     const ctx=document.getElementById('chartArea_'+area.id); if(!ctx) return;
     const vals=mA.map(m=>calcArea(area.id,m));
     charts['area_'+area.id]=new Chart(ctx,{type:'line',data:{labels:mA.map(m=>fmtMes(m,true)),datasets:[{data:vals,tension:0.3,fill:true,backgroundColor:'rgba(46,125,82,.08)',borderColor:'#2E7D52',borderWidth:2,pointBackgroundColor:vals.map(v=>v===null?'transparent':v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335'),pointRadius:vals.map(v=>v===null?0:5),spanGaps:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,min:0,ticks:{callback:v=>v+'%',font:{size:10}}},x:{grid:{display:false},ticks:{font:{size:10}}}}}});
