@@ -7800,9 +7800,21 @@ async function abrirPlan(accionId, mes){
 async function _abrirPlanInternal(accionId, mes){
   const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
 
-  // 1. Buscar plan ACTIVO/COMPLETADO primero
-  const ma = (DB.microacciones||[]).find(m=>m.accion_id===accionId&&m.mes===mes
-    && (m.estado==='ACTIVA'||m.estado==='COMPLETADA'));
+  // 1. Buscar plan ACTIVO/COMPLETADO primero.
+  // Con versionado: prioriza ACTIVA (siempre es la versión actual de trabajo).
+  // Si no hay ACTIVA pero hay COMPLETADAS de versiones anteriores, abre la
+  // versión COMPLETADA más reciente (mayor `version`).
+  const planesDeAccionMes = (DB.microacciones||[]).filter(m =>
+    m.accion_id===accionId && m.mes===mes &&
+    (m.estado==='ACTIVA' || m.estado==='COMPLETADA')
+  );
+  // Ordenar: ACTIVA primero, después por version DESC
+  planesDeAccionMes.sort((a,b) => {
+    if(a.estado==='ACTIVA' && b.estado!=='ACTIVA') return -1;
+    if(b.estado==='ACTIVA' && a.estado!=='ACTIVA') return 1;
+    return (b.version||1) - (a.version||1);
+  });
+  const ma = planesDeAccionMes[0];
 
   // Detectar también si hay un borrador en memoria (para no bloquear el
   // acceso cuando el seguimiento fue reiniciado con 999 pero el plan
@@ -9679,6 +9691,103 @@ function obtenerTodosLosPasos(){
   return arr;
 }
 
+/* ====================== VERSIONADO DE PLANES ====================== */
+/* Detecta si los pasos nuevos representan un cambio significativo respecto
+ * a los pasos viejos. Devuelve true si hay que crear una versión nueva.
+ * Cambios significativos:
+ *   - Paso agregado (descripción nueva que no estaba antes).
+ *   - Paso eliminado (descripción que existía y ya no está).
+ *   - Cambio de descripción de un paso (identidad cambió).
+ * NO son significativos:
+ *   - Cambio de responsable, plazo, esfuerzo.
+ *   - Avance/estado de los pasos (eso vive en otra tabla).
+ */
+function _planDetectarCambiosSignificativos(descripcionesViejas, descripcionesNuevas){
+  const setViejo = new Set(descripcionesViejas.map(d => (d||'').trim()).filter(Boolean));
+  const setNuevo = new Set(descripcionesNuevas.map(d => (d||'').trim()).filter(Boolean));
+  // ¿Hay alguna descripción nueva que no estaba en el set viejo?
+  for(const d of setNuevo){ if(!setViejo.has(d)) return true; }
+  // ¿Hay alguna descripción vieja que ya no está?
+  for(const d of setViejo){ if(!setNuevo.has(d)) return true; }
+  return false;
+}
+
+/* Cierra la versión actual (v1) y crea una nueva versión (v2) heredando
+ * los pasos completados de v1 con su avance preservado, más los nuevos pasos.
+ *
+ * @param maViejo: la microaccion ACTIVA actual que se va a cerrar
+ * @param updatePayload: campos base para la nueva microaccion (titulo, fecha_objetivo, etc)
+ * @param pasosPayload: array de pasos con descripcion, responsable, etc (sin microaccion_id)
+ * @returns {nuevaMa, pasosInsertados}
+ */
+async function _planCrearNuevaVersion(maViejo, updatePayload, pasosPayloadBase, pasosViejos){
+  // 1. Calcular % de cierre de v1 (cumplimiento de pasos)
+  const pasosViejosAvance = pasosViejos || [];
+  const total = pasosViejosAvance.length;
+  const completos = pasosViejosAvance.filter(p => p.estado === 'COMPLETADO' || p.porcentaje_avance === 100).length;
+  const cerrada_porcentaje = total > 0 ? Math.round((completos / total) * 100) : 0;
+  const cerrada_fecha = new Date().toISOString();
+
+  // 2. Cerrar v1: estado COMPLETADA + metadata de cierre
+  const {error: eClose} = await sb.from('microacciones')
+    .update({ estado: 'COMPLETADA', cerrada_porcentaje, cerrada_fecha })
+    .eq('id', maViejo.id);
+  if(eClose) throw eClose;
+  // Actualizar caché local
+  const idxLocal = DB.microacciones.findIndex(m => m.id === maViejo.id);
+  if(idxLocal >= 0){
+    DB.microacciones[idxLocal].estado = 'COMPLETADA';
+    DB.microacciones[idxLocal].cerrada_porcentaje = cerrada_porcentaje;
+    DB.microacciones[idxLocal].cerrada_fecha = cerrada_fecha;
+  }
+
+  // 3. Crear v2: nueva fila con version+1, version_parent_id = v1.id
+  const insertPayloadV2 = {
+    ...updatePayload,
+    colegio_id: maViejo.colegio_id,
+    accion_id: maViejo.accion_id,
+    mes: maViejo.mes,
+    modo: maViejo.modo,
+    consolidacion_modos: maViejo.consolidacion_modos,
+    causas: maViejo.causas,
+    causas_otros: maViejo.causas_otros,
+    comentario: maViejo.comentario,
+    propuestas_llm: maViejo.propuestas_llm,
+    version: (maViejo.version || 1) + 1,
+    version_parent_id: maViejo.id
+  };
+  const {data: maNueva, error: eIns} = await sb.from('microacciones')
+    .insert(insertPayloadV2).select().single();
+  if(eIns){
+    // Revertir el cierre de v1 si falla la creación de v2
+    await sb.from('microacciones')
+      .update({ estado: 'ACTIVA', cerrada_porcentaje: null, cerrada_fecha: null })
+      .eq('id', maViejo.id);
+    if(idxLocal >= 0){
+      DB.microacciones[idxLocal].estado = 'ACTIVA';
+      DB.microacciones[idxLocal].cerrada_porcentaje = null;
+      DB.microacciones[idxLocal].cerrada_fecha = null;
+    }
+    throw eIns;
+  }
+  // Agregar al caché local
+  DB.microacciones.push(maNueva);
+
+  // 4. Insertar pasos de v2 apuntando a maNueva.id
+  const pasosPayloadV2 = pasosPayloadBase.map(p => ({ ...p, microaccion_id: maNueva.id }));
+  const {data: pasosInsertados, error: ePasos} = await sb.from('microacciones_pasos')
+    .insert(pasosPayloadV2).select();
+  if(ePasos){
+    // Si falla insertar pasos, dejamos la transición como está (v2 sin pasos)
+    // y lo reportamos al usuario. No revertimos porque v1 ya cerró.
+    throw ePasos;
+  }
+  // Agregar al caché local
+  (pasosInsertados || []).forEach(p => DB.pasos.push(p));
+
+  return { nuevaMa: maNueva, pasosInsertados };
+}
+
 /* ====================== PASO 6: ACUERDOS ====================== */
 /* ====================== PASO 7: CONFIRMACIÓN + GUARDADO ====================== */
 async function planConfirmar(){
@@ -9711,6 +9820,96 @@ async function planConfirmar(){
       titulo: 'Plan: '+s.accion.nombre+' · '+(typeof fmtMes==='function'?fmtMes(s.mes):s.mes)
     };
 
+    // ===== VERSIONADO: ¿se está editando un plan ACTIVA con cambios significativos? =====
+    // Si el plan que estamos guardando ya existía como ACTIVA (no BORRADOR) y los
+    // pasos cambiaron significativamente (agregados/eliminados/descripciones), preguntamos
+    // al director si quiere crear una nueva versión (v2) en lugar de reescribir v1.
+    let crearNuevaVersion = false;
+    let maExistente = null;
+    if(s.microaccionId){
+      maExistente = (DB.microacciones || []).find(m => m.id === s.microaccionId);
+      if(maExistente && maExistente.estado === 'ACTIVA'){
+        // Plan ACTIVA: comparar pasos
+        const {data: pasosBDpara_diff} = await sb.from('microacciones_pasos')
+          .select('descripcion')
+          .eq('microaccion_id', s.microaccionId);
+        const descripcionesViejas = (pasosBDpara_diff || []).map(p => p.descripcion);
+        const descripcionesNuevas = pasos.map(p => p.descripcion);
+        const hayCambiosSignificativos = _planDetectarCambiosSignificativos(descripcionesViejas, descripcionesNuevas);
+        if(hayCambiosSignificativos){
+          // Pedirle confirmación al director (volvemos a renderizar la pantalla anterior si dice No)
+          const confirmado = confirm(
+            'Detectamos cambios importantes en los pasos del plan.\n\n' +
+            '¿Quieres crear una nueva versión (v' + ((maExistente.version||1)+1) + ')?\n\n' +
+            '• La versión actual se cerrará con su % de avance.\n' +
+            '• La nueva versión heredará los pasos completados.\n' +
+            '• Podrás ver la evolución entre versiones.\n\n' +
+            'Si dices "Cancelar", el plan se guardará SIN crear nueva versión\n' +
+            '(los pasos modificados quedan en la versión actual, los pasos\n' +
+            'eliminados se pierden y los nuevos parten desde 0%).'
+          );
+          crearNuevaVersion = confirmado;
+        }
+      }
+    }
+
+    // Construir el payload base de pasos (sin microaccion_id; se asigna después)
+    // Necesario tanto para la rama de nueva versión como para la rama tradicional.
+    const _construirPasosPayloadBase = (avancePorDescripcionMap) => pasos.map((p,i)=>{
+      const a = s.asignaciones[p._asignKey] || {};
+      const fecha = new Date(); fecha.setDate(fecha.getDate()+(a.plazo_dias||p.plazo_dias));
+      const descripcion = p.descripcion;
+      const previo = avancePorDescripcionMap ? (avancePorDescripcionMap.get((descripcion||'').trim()) || null) : null;
+      return {
+        descripcion,
+        origen: p.origen||'LINEA',
+        linea_titulo: p.lineaTitulo||null,
+        linea_foco: p.lineaFoco||null,
+        responsable: a.responsable||p.responsable||null,
+        plazo_dias: a.plazo_dias||p.plazo_dias,
+        fecha_objetivo: fecha.toISOString().split('T')[0],
+        esfuerzo: a.esfuerzo||p.esfuerzo||'MEDIO',
+        estado: previo?.estado || 'PENDIENTE',
+        porcentaje_avance: previo?.porcentaje_avance ?? 0,
+        fecha_completado: previo?.fecha_completado || null,
+        orden: i
+      };
+    });
+
+    // ===== RAMA A: Crear nueva versión =====
+    if(crearNuevaVersion && maExistente){
+      // Leer pasos viejos completos (con avance) para heredar a v2
+      const {data: pasosViejosCompletos} = await sb.from('microacciones_pasos')
+        .select('descripcion, estado, porcentaje_avance, fecha_completado')
+        .eq('microaccion_id', maExistente.id);
+      const avancePorDescripcion = new Map();
+      (pasosViejosCompletos || []).forEach(p => {
+        const k = (p.descripcion || '').trim();
+        if(k) avancePorDescripcion.set(k, {
+          estado: p.estado,
+          porcentaje_avance: p.porcentaje_avance,
+          fecha_completado: p.fecha_completado
+        });
+      });
+      const pasosPayloadBase = _construirPasosPayloadBase(avancePorDescripcion);
+
+      // Cerrar v1 y crear v2 (con todos los pasos, heredando avance)
+      const {nuevaMa} = await _planCrearNuevaVersion(maExistente, updatePayload, pasosPayloadBase, pasosViejosCompletos);
+
+      // Actualizar PLAN_STATE para apuntar a la nueva versión
+      s.microaccionId = nuevaMa.id;
+      s.existente = nuevaMa;
+
+      // Limpiar localStorage del borrador
+      planLimpiarLocal();
+
+      s.paso = 5;
+      renderPlanPaso();
+      showToast('Nueva versión creada: v' + nuevaMa.version);
+      return;
+    }
+
+    // ===== RAMA B: Guardar normalmente (BORRADOR → ACTIVA, o ACTIVA sin cambios significativos) =====
     let ma;
     if(s.microaccionId){
       // Path normal: ya existe el BORRADOR, lo promovemos a ACTIVA
@@ -9761,29 +9960,7 @@ async function planConfirmar(){
     const {error: eDel} = await sb.from('microacciones_pasos').delete().eq('microaccion_id', ma.id);
     if(eDel) throw eDel;
 
-    const pasosPayload = pasos.map((p,i)=>{
-      const a = s.asignaciones[p._asignKey] || {};
-      const fecha = new Date(); fecha.setDate(fecha.getDate()+(a.plazo_dias||p.plazo_dias));
-      // Recuperar avance previo si la descripción coincide con un paso anterior.
-      // Si es un paso nuevo (no había antes), queda PENDIENTE en 0% (default).
-      const descripcion = p.descripcion;
-      const previo = avancePorDescripcion.get((descripcion||'').trim()) || null;
-      return {
-        microaccion_id: ma.id,
-        descripcion,
-        origen: p.origen||'LINEA',
-        linea_titulo: p.lineaTitulo||null,
-        linea_foco: p.lineaFoco||null,
-        responsable: a.responsable||p.responsable||null,
-        plazo_dias: a.plazo_dias||p.plazo_dias,
-        fecha_objetivo: fecha.toISOString().split('T')[0],
-        esfuerzo: a.esfuerzo||p.esfuerzo||'MEDIO',
-        estado: previo?.estado || 'PENDIENTE',
-        porcentaje_avance: previo?.porcentaje_avance ?? 0,
-        fecha_completado: previo?.fecha_completado || null,
-        orden: i
-      };
-    });
+    const pasosPayload = _construirPasosPayloadBase(avancePorDescripcion).map(p => ({...p, microaccion_id: ma.id}));
     const {data: pasosInsertados, error:e2} = await sb.from('microacciones_pasos').insert(pasosPayload).select();
     if(e2) throw e2;
 
