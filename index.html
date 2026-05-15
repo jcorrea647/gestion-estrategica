@@ -4046,11 +4046,29 @@ function renderVerReuniones() {
 
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html += '<div><div class="page-title">Reuniones</div><div class="page-sub">'+DB.colegio.nombre+' — '+reuniones.length+' reunión'+(reuniones.length!==1?'es':(reuniones.length===1?'':' registradas'))+'</div></div>';
+  // Botones de acción: el de "Nueva reunión" solo se muestra para superadmin
+  // y si no hay una reunión abierta (mismo gate que usa abrirCrearReunion).
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  if(canEditSeguimiento(SESSION.user?.rol) && !hayReunionAbierta()){
+    html += '<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()">+ Nueva reunión</button>';
+  } else if(canEditSeguimiento(SESSION.user?.rol) && hayReunionAbierta()){
+    // Si hay una reunión abierta, mostramos un botón inhabilitado con tooltip explicativo
+    html += '<button class="btn btn-outline btn-sm" disabled title="Cierra la reunión activa antes de crear una nueva" style="opacity:.5;cursor:not-allowed">+ Nueva reunión</button>';
+  }
   html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver</button>';
+  html += '</div>';
   html += '</div></div>';
 
   if(!reuniones.length) {
-    return html+'<div class="card"><div class="empty-state"><div class="icon">📋</div><div style="font-weight:500;margin-bottom:8px">Sin reuniones registradas</div><div style="font-size:12px">Crea reuniones desde Ingresar seguimiento.</div></div></div>';
+    let emptyHtml = html + '<div class="card"><div class="empty-state"><div class="icon">📋</div><div style="font-weight:500;margin-bottom:8px">Sin reuniones registradas</div>';
+    if(canEditSeguimiento(SESSION.user?.rol)){
+      emptyHtml += '<div style="font-size:12px;margin-bottom:16px">Crea la primera reunión para empezar a registrar el avance del colegio.</div>';
+      emptyHtml += '<button class="btn btn-primary btn-sm" onclick="abrirCrearReunion()">+ Crear primera reunión</button>';
+    } else {
+      emptyHtml += '<div style="font-size:12px">Las reuniones las crea el consultor (superadmin).</div>';
+    }
+    emptyHtml += '</div></div>';
+    return emptyHtml;
   }
 
   // BUSCADOR IA
@@ -8001,41 +8019,54 @@ async function renderPaso1Contexto(){
   }
 
   // ── PRE-MARCADO DE CAUSALES SUGERIDAS POR LAS BRECHAS ──
-  // Cada brecha de la IA viene con un campo "causal_sugerida" (ej. "C8").
+  // Cada brecha de la IA viene con un campo "causal_sugerida" (ej. "C8") y
+  // desde v6.7 también "causal_justificacion" (frase corta de por qué).
   // Si el director todavía no ha marcado ninguna causal (s.causas vacío),
   // pre-marcamos las 3 causales sugeridas. Si ya marcó algo, respetamos su
   // elección (no sobreescribimos lo que el director ya decidió).
   if(modoBullets === 'PERSONALIZADO' && Array.isArray(brechasResp?.brechas) && (s.causas || []).length === 0){
-    const sugeridasUnicas = []; // [{codigo, etiqueta, grupo, _sugeridaPorIA: true}]
+    const sugeridas = []; // [{codigo, etiqueta, grupo, _sugeridaPorIA: true, _justificacion}]
     brechasResp.brechas.forEach(b => {
       const cod = (b.causal_sugerida || '').toString().trim().toUpperCase();
       if(!cod || !cod.match(/^C\d{1,2}$/)) return;
-      if(sugeridasUnicas.find(c => c.codigo === cod)) return; // evitar duplicados
+      const justif = (b.causal_justificacion || '').toString().trim();
+      // Si la causal ya estaba sugerida por una brecha anterior, agregamos
+      // la nueva justificación al final separada por "; " (la IA ahora puede
+      // repetir causales si dos brechas convergen).
+      const existente = sugeridas.find(c => c.codigo === cod);
+      if(existente){
+        if(justif && !existente._justificacion.includes(justif)){
+          existente._justificacion += ' · ' + justif;
+        }
+        return;
+      }
       // Buscar la causal en el catálogo cargado en CAUSAS_TAXONOMIA
-      const buscarEn = (grupo, lista) => lista.find(c => c.codigo === cod);
+      const buscarEn = (lista) => lista.find(c => c.codigo === cod);
       let encontrada = null;
       let grupoCode = '';
       if(CAUSAS_TAXONOMIA.estructurales){
-        encontrada = buscarEn('estructurales', CAUSAS_TAXONOMIA.estructurales);
+        encontrada = buscarEn(CAUSAS_TAXONOMIA.estructurales);
         if(encontrada) grupoCode = 'ESTRUCTURAL';
       }
       if(!encontrada && CAUSAS_TAXONOMIA.relacionales){
-        encontrada = buscarEn('relacionales', CAUSAS_TAXONOMIA.relacionales);
+        encontrada = buscarEn(CAUSAS_TAXONOMIA.relacionales);
         if(encontrada) grupoCode = 'RELACIONAL';
       }
       if(encontrada){
-        sugeridasUnicas.push({
+        sugeridas.push({
           codigo: encontrada.codigo,
           etiqueta: encontrada.etiqueta,
           grupo: grupoCode,
-          _sugeridaPorIA: true
+          _sugeridaPorIA: true,
+          _justificacion: justif
         });
       }
     });
-    if(sugeridasUnicas.length > 0){
-      s.causas = sugeridasUnicas.slice(0, 3);
+    if(sugeridas.length > 0){
+      // Si la IA repitió causales, podríamos terminar con menos de 3.
+      // El director puede agregar manualmente las que falten desde el paso 3.
+      s.causas = sugeridas.slice(0, 3);
       planMarcarCambio();
-      // Persistir el pre-marcado, no esperar a que el director llegue al paso 3
       if(typeof planSyncSupabase === 'function') planSyncSupabase();
     }
   }
@@ -8105,8 +8136,14 @@ function renderPaso2Diagnostico(){
       const idx = s.causas.findIndex(x=>x.codigo===c.codigo);
       const sel = idx>=0;
       const num = sel ? (idx+1) : '';
-      const tip = c.desc ? ` title="${escapeHtmlPlan(c.desc)}"` : '';
       const sugIA = sel && s.causas[idx]._sugeridaPorIA === true;
+      const justif = sugIA ? (s.causas[idx]._justificacion || '') : '';
+      // Tooltip: si está sugerida por IA, muestra la justificación; si no,
+      // muestra la descripción de la causal del catálogo.
+      const tipText = sugIA && justif
+        ? 'Sugerida por IA: ' + justif
+        : (c.desc || '');
+      const tip = tipText ? ` title="${escapeHtmlPlan(tipText)}"` : '';
       const badge = sugIA ? '<span style="position:absolute;top:-7px;right:-7px;background:#1E3A2F;color:#fff;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;line-height:1">IA</span>' : '';
       const styleExtra = sugIA ? 'position:relative;' : '';
       return `<button class="plan-causa${sel?' selected':''}"${tip} style="${styleExtra}" onclick="planToggleCausa('${c.codigo}','${c.etiqueta}','${grupoCode}')">
@@ -8125,7 +8162,7 @@ function renderPaso2Diagnostico(){
   const bannerIA = hayCausalesIA
     ? `<div style="background:#E8F5EE;border-left:3px solid #2E7D52;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px">
          <strong>Causas sugeridas por el análisis IA</strong> <span style="background:#1E3A2F;color:#fff;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;margin-left:4px">IA</span><br>
-         <span style="color:var(--muted)">Basadas en las brechas detectadas para tu colegio. Puedes confirmarlas, desmarcarlas o agregar otras según tu criterio.</span>
+         <span style="color:var(--muted)">Basadas en las brechas detectadas para tu colegio. Pasa el cursor por cada causal para ver el razonamiento. Puedes confirmarlas, desmarcarlas o agregar otras según tu criterio.</span>
        </div>`
     : '';
 
