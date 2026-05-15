@@ -7323,6 +7323,17 @@ async function planSyncSupabase(){
     }
   }
 
+  // LOCK ANTI-DUPLICADOS: si ya hay un insert/update en vuelo para este plan,
+  // no disparar otro en paralelo. Esto evita race conditions donde dos autosaves
+  // simultáneos creaban dos filas (problema histórico). Si está ocupado, lo
+  // re-encolamos con un pequeño delay para que se procese cuando el anterior
+  // termine; así no se pierde el último cambio del director.
+  if(s._isInserting){
+    if(PLAN_AUTOSAVE_TIMER) clearTimeout(PLAN_AUTOSAVE_TIMER);
+    PLAN_AUTOSAVE_TIMER = setTimeout(planSyncSupabase, 250);
+    return;
+  }
+
   const hash = planSnapshotHash();
   if(hash === PLAN_LAST_SAVED_HASH){ planSetSaveStatus('saved'); return; }
 
@@ -7351,20 +7362,51 @@ async function planSyncSupabase(){
     ultimo_autosave: new Date().toISOString()
   };
 
+  s._isInserting = true;
   try {
     if(s.microaccionId){
       const { error } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
       if(error) throw error;
     } else {
       const { data, error } = await sb.from('microacciones').insert(payload).select().single();
-      if(error) throw error;
-      s.microaccionId = data.id;
+      if(error){
+        // RECOVERY POR CONSTRAINT UNIQUE: si la BD rechaza el insert porque
+        // ya existe un borrador con la misma (colegio_id, accion_id, mes),
+        // ese borrador es el que debemos usar. Lo buscamos y guardamos su id
+        // para que los siguientes autosaves hagan UPDATE en lugar de INSERT.
+        // Código 23505 = unique_violation en PostgreSQL.
+        const esDuplicado = error.code === '23505'
+          || /duplicate key|already exists|uniq_microaccion_borrador/i.test(error.message || '');
+        if(esDuplicado){
+          console.warn('[planSync] Conflicto UNIQUE detectado, recuperando borrador existente...');
+          const { data: existente, error: errSel } = await sb.from('microacciones')
+            .select('id')
+            .eq('colegio_id', DB.colegio.id)
+            .eq('accion_id', s.accionId)
+            .eq('mes', s.mes)
+            .eq('estado', 'BORRADOR')
+            .order('updated_at', { ascending: false })
+            .limit(1);
+          if(errSel || !existente || !existente.length) throw error; // re-tirar el original
+          s.microaccionId = existente[0].id;
+          // Reintentar como UPDATE
+          const { error: errUpd } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
+          if(errUpd) throw errUpd;
+          console.log('[planSync] Borrador recuperado:', s.microaccionId);
+        } else {
+          throw error;
+        }
+      } else {
+        s.microaccionId = data.id;
+      }
     }
     PLAN_LAST_SAVED_HASH = hash;
     planSetSaveStatus('saved');
   } catch(e){
     console.warn('planSyncSupabase:', e.message);
     planSetSaveStatus('error');
+  } finally {
+    s._isInserting = false;
   }
 }
 
@@ -7386,14 +7428,19 @@ async function planBuscarBorrador(accionId, mes){
   const local = planLeerLocal(DB.colegio.id, accionId, mes);
   let remoto = null;
   try {
-    const { data } = await sb.from('microacciones')
+    // Usamos order+limit en lugar de maybeSingle() porque maybeSingle() FALLA
+    // si por alguna razón hay duplicados pre-existentes en BD (data viejas o
+    // bug pasado). El constraint UNIQUE que se aplica desde ahora previene
+    // duplicados nuevos, pero esta defensa permite recuperarse de datos legacy.
+    const { data, error } = await sb.from('microacciones')
       .select('*')
       .eq('colegio_id', DB.colegio.id)
       .eq('accion_id', accionId)
       .eq('mes', mes)
       .eq('estado', 'BORRADOR')
-      .maybeSingle();
-    if(data) remoto = data;
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    if(!error && data && data.length) remoto = data[0];
   } catch(e){ console.warn('planBuscarBorrador:', e.message); }
 
   if(local && remoto){
