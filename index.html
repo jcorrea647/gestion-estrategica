@@ -7963,7 +7963,18 @@ function renderPlanPaso(){
     const maxAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado||1);
     const isFuture = s.paso !== 99 && i > maxAlcanzado + 1;
     if(isFuture) d.classList.add('future');
-    d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
+    // Cuando el plan ya está en vista pedagógica (paso=99), los círculos son
+    // informativos (muestran que todo está hecho) pero no clickables. Si fueran
+    // clickables, el director saldría accidentalmente de la vista de seguimiento.
+    // Para volver al wizard de edición, existe otra vía explícita (botón de
+    // editar plan en la propia vista pedagógica).
+    if(s.paso !== 99){
+      d.style.cursor = 'pointer';
+      d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
+    } else {
+      d.style.cursor = 'default';
+      d.style.opacity = '0.8';
+    }
     d.innerHTML=`<div class="plan-progress-bar"></div><span class="plan-progress-label">${PASO_LABELS[i]}</span>`;
     prog.appendChild(d);
   }
@@ -9470,7 +9481,7 @@ async function planConfirmar(){
         orden: i
       };
     });
-    const {error:e2} = await sb.from('microacciones_pasos').insert(pasosPayload);
+    const {data: pasosInsertados, error:e2} = await sb.from('microacciones_pasos').insert(pasosPayload).select();
     if(e2) throw e2;
 
     // Refrescar caché local: primero filtrar pasos viejos de esta microacción
@@ -9483,12 +9494,24 @@ async function planConfirmar(){
     if(idxExist>=0) DB.microacciones[idxExist] = ma;
     else DB.microacciones.push(ma);
 
-    pasosPayload.forEach(p=>DB.pasos.push({...p, microaccion_id:ma.id}));
+    // CRÍTICO: insertar los pasos CON el id real que generó Postgres.
+    // Si usamos pasosPayload (sin .select()) los objetos quedan sin id y
+    // el botón "Marcar como completado" llamaría planMarcarPasoCompleto(undefined).
+    // El .select() arriba garantiza que pasosInsertados tiene todas las columnas
+    // incluyendo el id autogenerado.
+    (pasosInsertados || []).forEach(p => DB.pasos.push(p));
 
     // Limpiar localStorage del borrador
     planLimpiarLocal();
 
-    s.paso = 5;
+    // Después de activar el plan, ir directo a la vista pedagógica de seguimiento
+    // (paso=99). Antes el código se quedaba en paso=5 (constructor del wizard),
+    // donde NO se muestran los sliders de avance ni los botones "Marcar completado".
+    // Esa rama solo se pinta en renderPlanResumenPedagogico, que se activa con
+    // paso=99 + vistaActiva='resumen'.
+    s.paso = 99;
+    s.vistaActiva = 'resumen';
+    s.existente = ma; // necesario para que renderPlanResumenPedagogico detecte que el plan está ACTIVA
     renderPlanPaso();
   } catch(e) {
     console.error(e);
@@ -10039,6 +10062,19 @@ function renderPaso7Confirmacion(){
 function renderPlanResumenPedagogico(){
   const s = PLAN_STATE;
   const ma = s.existente;
+  // Defensa: si por alguna razón llegamos acá sin un plan ACTIVA cargado en
+  // s.existente, mostramos un mensaje claro en vez de romper la app con
+  // "Cannot read property 'id' of null". Esto puede pasar si el routing falla
+  // o si el plan se borró desde otra sesión.
+  if(!ma || !ma.id){
+    document.getElementById('planBody').innerHTML = `
+      <div style="padding:40px 20px;text-align:center;color:var(--muted)">
+        <p style="font-size:14px;margin-bottom:14px">No se pudo cargar el plan.</p>
+        <button class="plan-btn-next" onclick="cerrarPlan()">Volver</button>
+      </div>`;
+    if(document.getElementById('planFooter')) document.getElementById('planFooter').innerHTML = '';
+    return;
+  }
   const pasos = (DB.pasos||[]).filter(p=>p.microaccion_id===ma.id);
   const completos = pasos.filter(p=>p.estado==='COMPLETADO').length;
   const pct = pasos.length ? Math.round(completos/pasos.length*100) : 0;
@@ -10208,6 +10244,15 @@ function planVerResumen(){
 function renderPasoExistente(){
   const s = PLAN_STATE;
   const ma = s.existente;
+  if(!ma || !ma.id){
+    document.getElementById('planBody').innerHTML = `
+      <div style="padding:40px 20px;text-align:center;color:var(--muted)">
+        <p style="font-size:14px;margin-bottom:14px">No se pudo cargar el plan.</p>
+        <button class="plan-btn-next" onclick="cerrarPlan()">Volver</button>
+      </div>`;
+    if(document.getElementById('planFooter')) document.getElementById('planFooter').innerHTML = '';
+    return;
+  }
   const pasos = (DB.pasos||[]).filter(p=>p.microaccion_id===ma.id);
   const completos = pasos.filter(p=>p.estado==='COMPLETADO').length;
   const pct = pasos.length ? Math.round(completos/pasos.length*100) : 0;
@@ -10253,6 +10298,15 @@ function renderPasoExistente(){
 }
 
 async function planMarcarPasoCompleto(pasoId){
+  // Defensa: si por alguna razón llegó undefined/null (datos inconsistentes,
+  // pasos sin id, etc), no ejecutar el UPDATE. Sin esta validación un UPDATE
+  // con id=undefined falla con un error críptico de Postgres, o peor, podría
+  // ejecutarse sobre filas inesperadas.
+  if(!pasoId || pasoId === 'undefined' || pasoId === 'null'){
+    console.error('[planMarcarPasoCompleto] pasoId inválido:', pasoId);
+    showToast('Error: paso sin identificador. Recarga la página e intenta nuevamente.');
+    return;
+  }
   const {error} = await sb.from('microacciones_pasos').update({
     estado:'COMPLETADO',
     porcentaje_avance: 100,
