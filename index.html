@@ -1106,9 +1106,22 @@ function calcGeneral(mes) {
 }
 function getResps(id) { return DB.accion_responsable.filter(ar=>ar.accion_id===id).map(ar=>DB.responsables.find(r=>r.id===ar.responsable_id)).filter(Boolean); }
 
+/* Devuelve los cargos del colegio activo ordenados alfabéticamente.
+ * Usar siempre esta función en lugar de DB.cargos directamente para
+ * cualquier render que el usuario vea. La query inicial trae ordenado,
+ * pero las mutaciones (saveCargo, updateCargo) pueden romper el orden,
+ * y este helper garantiza que la lista siempre salga bien.
+ * Usa localeCompare con sensitivity:'base' para que 'Á' ordene como 'A'
+ * y los acentos no muevan items a posiciones raras. */
+function _cargosOrdenados(){
+  return [...(DB.cargos||[])].sort((a,b) =>
+    String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', {sensitivity:'base'})
+  );
+}
+
 // FILTERS
 function applyFilters() { filterCargo=document.getElementById('filterCargo')?.value||''; filterMes=document.getElementById('filterMes')?.value||''; renderCurrentPanel(); }
-function initFilters() { const s=document.getElementById('filterCargo'); if(!s) return; s.innerHTML='<option value="">Todos los cargos</option>'+DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join(''); misPlanesActualizarBadge(); }
+function initFilters() { const s=document.getElementById('filterCargo'); if(!s) return; s.innerHTML='<option value="">Todos los cargos</option>'+_cargosOrdenados().map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join(''); misPlanesActualizarBadge(); }
 
 /* Actualiza el contador del nav "Mis planes" — vencidos + próximos a vencer */
 function misPlanesActualizarBadge(){
@@ -1876,7 +1889,7 @@ function renderAdminEstructura() {
   const fCargo = window._estructuraFiltroCargo || '';
   const mesesOpts = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11']
     .map(m=>'<option value="'+m+'"'+(fMes===m?' selected':'')+'>'+fmtMes(m)+'</option>').join('');
-  const cargosOpts = DB.cargos.map(c=>'<option value="'+c.id+'"'+(fCargo===c.id?' selected':'')+'>'+c.nombre+'</option>').join('');
+  const cargosOpts = _cargosOrdenados().map(c=>'<option value="'+c.id+'"'+(fCargo===c.id?' selected':'')+'>'+c.nombre+'</option>').join('');
 
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html += '<div><div class="page-title">Estructura del plan</div><div class="page-sub">Areas, objetivos y acciones</div></div>';
@@ -2644,14 +2657,15 @@ function renderAdminResponsables(){
   return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Responsables</div><div class="page-sub">Personas asignadas a acciones</div></div><button class="btn btn-primary" onclick="addResponsable()">+ Nuevo</button></div></div>'+
     '<div class="card">'+(DB.responsables.length?DB.responsables.map(r=>'<div class="list-item"><div><div style="font-weight:500">'+r.nombre+'</div><div style="font-size:11px;color:var(--muted)">'+r.cargo+'</div></div><div style="display:flex;gap:4px;align-items:center"><span class="tag">'+r.cargo+'</span><button class="icon-btn" style="color:var(--red)" onclick="deleteResponsable(\''+r.id+'\')">X</button></div></div>').join(''):'<div class="empty-state"><div class="icon">?</div>Sin responsables.</div>')+'</div>';
 }
-function addResponsable(){const cO=DB.cargos.map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');openModal('Nuevo responsable','<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveResponsable()'}]);}
+function addResponsable(){const cO=_cargosOrdenados().map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');openModal('Nuevo responsable','<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveResponsable()'}]);}
 async function saveResponsable(){const nombre=document.getElementById('f-nombre')?.value.trim(),cargoId=document.getElementById('f-cargo')?.value;if(!nombre||!cargoId){showToast('Completa los campos');return;}const cargo=DB.cargos.find(c=>c.id===cargoId);const{data,error}=await sb.from('responsables').insert({colegio_id:SESSION.colegioActivo,nombre,cargo_id:cargoId}).select().single();if(error){showToast('Error: '+error.message);return;}DB.responsables.push({...data,cargo:cargo?.nombre||''});closeModal();renderCurrentPanel();showToast('Responsable creado');initFilters();}
 async function deleteResponsable(id){if(!confirm('Eliminar?'))return;const{error}=await sb.from('responsables').delete().eq('id',id);if(error){showToast('Error: '+error.message);return;}DB.responsables=DB.responsables.filter(r=>r.id!==id);renderCurrentPanel();}
 
 // ADMIN CARGOS
 function renderAdminCargos(){
+  const cargos = _cargosOrdenados();
   return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Cargos</div><div class="page-sub">Tipos de rol</div></div><button class="btn btn-primary" onclick="addCargo()">+ Nuevo</button></div></div>'+
-    '<div class="card" style="max-width:480px">'+(DB.cargos.length?DB.cargos.map((c,i)=>'<div class="list-item"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px">'+(i+1)+'.</span><span style="font-weight:500">'+c.nombre+'</span></div><div style="display:flex;gap:4px"><button class="icon-btn" onclick="editCargo(\''+c.id+'\')">Ed</button><button class="icon-btn" style="color:var(--red)" onclick="deleteCargo(\''+c.id+'\')">X</button></div></div>').join(''):'<div class="empty-state">Sin cargos.</div>')+'</div>';
+    '<div class="card" style="max-width:480px">'+(cargos.length?cargos.map((c,i)=>'<div class="list-item"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px">'+(i+1)+'.</span><span style="font-weight:500">'+c.nombre+'</span></div><div style="display:flex;gap:4px"><button class="icon-btn" onclick="editCargo(\''+c.id+'\')">Ed</button><button class="icon-btn" style="color:var(--red)" onclick="deleteCargo(\''+c.id+'\')">X</button></div></div>').join(''):'<div class="empty-state">Sin cargos.</div>')+'</div>';
 }
 function addCargo(){openModal('Nuevo cargo','<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-nombre" placeholder="Ej: Director, UTP..."></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveCargo()'}]);}
 async function saveCargo(){const nombre=document.getElementById('f-nombre')?.value.trim();if(!nombre){showToast('Escribe el nombre');return;}const{data,error}=await sb.from('cargos').insert({colegio_id:SESSION.colegioActivo,nombre}).select().single();if(error){showToast('Error: '+error.message);return;}DB.cargos.push(data);closeModal();renderCurrentPanel();showToast('Cargo creado');initFilters();}
@@ -4101,6 +4115,29 @@ function renderVerReuniones() {
     const partes = selR.reunion_participantes||[];
     const meses  = (selR.meses_evaluacion||[]).map(m=>fmtMes(m,true)).join(', ')||'—';
     html += '<div class="card">';
+    // Calcular % global ponderado de la reunión usando la lógica de 3 niveles
+    // (acción → objetivo → área → general) que ya está implementada en
+    // calcGeneral(mes). Si la reunión evalúa varios meses, promedio simple
+    // entre los % generales de cada mes.
+    let _pctGlobalReunion = null;
+    const _mesesEval = selR.meses_evaluacion || [];
+    if(_mesesEval.length){
+      const _pcts = _mesesEval.map(m => calcGeneral(m)).filter(p => p !== null);
+      if(_pcts.length){
+        _pctGlobalReunion = Math.round(_pcts.reduce((s,x)=>s+x,0)/_pcts.length*100)/100;
+      }
+    }
+    // Etiqueta y color según niveles oficiales del sistema
+    // (1-25 Inicial · 25-50 Básico · 50-70 En Desarrollo · 70-90 Satisfactorio · >=90 Consolidado)
+    let _nivelLabel = '—', _nivelBg = '#F4F2EE', _nivelFg = '#7A7670', _nivelBorder = '#E4E0D8';
+    if(_pctGlobalReunion !== null){
+      const p = _pctGlobalReunion;
+      if(p >= 90)      { _nivelLabel='Consolidado';   _nivelBg='#E8F5EE'; _nivelFg='#2E7D52'; _nivelBorder='#B6DDC6'; }
+      else if(p >= 70) { _nivelLabel='Satisfactorio'; _nivelBg='#E3EEF7'; _nivelFg='#1F5278'; _nivelBorder='#B6D2E8'; }
+      else if(p >= 50) { _nivelLabel='En Desarrollo'; _nivelBg='#FDF6E3'; _nivelFg='#9C7918'; _nivelBorder='#E8D9A8'; }
+      else if(p >= 25) { _nivelLabel='Básico';        _nivelBg='#FCEDDD'; _nivelFg='#A85416'; _nivelBorder='#EFC9A6'; }
+      else             { _nivelLabel='Inicial';       _nivelBg='#FCEEED'; _nivelFg='#9B2335'; _nivelBorder='#E8B6B6'; }
+    }
     // Header
     html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">';
     html += '<div><div style="font-family:\'DM Serif Display\',serif;font-size:22px;margin-bottom:6px">'+selR.titulo;
@@ -4111,6 +4148,16 @@ function renderVerReuniones() {
       html += ' <span style="font-size:11px;background:var(--green-bg);color:var(--green);padding:3px 10px;border-radius:10px;margin-left:6px;vertical-align:middle;border:1px solid var(--green)">🟢 ABIERTA</span>';
     }
     html += '</div>';
+    // Línea de % global ponderado de la reunión
+    if(_pctGlobalReunion !== null){
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;margin-bottom:4px;flex-wrap:wrap">';
+      html += '<span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">% Logro ponderado</span>';
+      html += '<span style="font-family:\'DM Serif Display\',serif;font-size:22px;color:'+_nivelFg+';font-weight:400">'+_pctGlobalReunion+'%</span>';
+      html += '<span style="font-size:11px;background:'+_nivelBg+';color:'+_nivelFg+';padding:3px 10px;border-radius:10px;border:1px solid '+_nivelBorder+';font-weight:600">'+_nivelLabel+'</span>';
+      html += '</div>';
+    } else {
+      html += '<div style="font-size:11px;color:var(--muted);margin-top:8px;margin-bottom:4px;font-style:italic">Sin seguimiento registrado en los meses evaluados</div>';
+    }
     html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)">';
     html += '<span>📅 '+selR.fecha+'</span><span>📆 '+meses+'</span>';
     if(selR.consultor_nombre) html += '<span>👤 '+selR.consultor_nombre+(selR.consultor_correo?' · '+selR.consultor_correo:'')+'</span>';
@@ -4871,8 +4918,32 @@ function generarPDFReunion() {
 
   // PORTADA
   var mesesLabel = mesesReunion.map(function(m){return fmtMes(m);}).join(', ');
+  // Calcular % global ponderado de la reunión (misma lógica que en pantalla)
+  var _pctGlobalPDF = null;
+  if(mesesReunion.length){
+    var _pctsPDF = mesesReunion.map(function(m){return calcGeneral(m);}).filter(function(p){return p !== null;});
+    if(_pctsPDF.length){
+      _pctGlobalPDF = Math.round(_pctsPDF.reduce(function(s,x){return s+x;},0)/_pctsPDF.length*100)/100;
+    }
+  }
+  var _nivelLabelPDF = '—', _nivelColorPDF = '#7A7670';
+  if(_pctGlobalPDF !== null){
+    if(_pctGlobalPDF >= 90)      { _nivelLabelPDF='Consolidado';   _nivelColorPDF='#2E7D52'; }
+    else if(_pctGlobalPDF >= 70) { _nivelLabelPDF='Satisfactorio'; _nivelColorPDF='#1F5278'; }
+    else if(_pctGlobalPDF >= 50) { _nivelLabelPDF='En Desarrollo'; _nivelColorPDF='#9C7918'; }
+    else if(_pctGlobalPDF >= 25) { _nivelLabelPDF='Básico';        _nivelColorPDF='#A85416'; }
+    else                          { _nivelLabelPDF='Inicial';       _nivelColorPDF='#9B2335'; }
+  }
   html+='<div class="cover"><div class="logo-r">Gestión Estratégica &mdash; Informe de Reunion</div>';
   html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
+  // Línea de % global ponderado en la portada
+  if(_pctGlobalPDF !== null){
+    html+='<div style="margin:18px auto 24px;text-align:center">';
+    html+='<div style="font-size:9px;letter-spacing:1.5pt;text-transform:uppercase;color:#7A7670;margin-bottom:4px">% Logro ponderado</div>';
+    html+='<div style="font-family:\'DM Serif Display\',serif;font-size:34px;color:'+_nivelColorPDF+';line-height:1">'+_pctGlobalPDF+'%</div>';
+    html+='<div style="font-size:11px;font-weight:600;color:'+_nivelColorPDF+';margin-top:4px;letter-spacing:.5pt">'+_nivelLabelPDF+'</div>';
+    html+='</div>';
+  }
   html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
   if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
   if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
