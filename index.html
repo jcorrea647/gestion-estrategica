@@ -8134,10 +8134,47 @@ async function renderPaso1Contexto(){
       </li>`;
   }).join('');
 
-  // Resumen-encabezado: solo si hay 2+ brechas y la IA generó resumen
-  const resumenHtml = (bullets.length >= 2 && resumenIA)
-    ? `<div style="background:#F9F7F2;border-left:3px solid #C4962A;padding:12px 16px;border-radius:6px;margin-bottom:18px;font-size:14px;line-height:1.6;color:#3F3E3B">${escapeHtmlPlan(resumenIA)}</div>`
-    : '';
+  // Resumen-encabezado: recuadro destacado similar al del nivel de logro.
+  // Se renderiza solo si hay 2+ brechas y la IA generó un resumen.
+  // La frase final ("Las 3 causales más recurrentes...") se separa con \n\n del
+  // párrafo narrativo y se muestra como bloque destacado en negrita al final.
+  let resumenHtml = '';
+  if(bullets.length >= 2 && resumenIA){
+    // Separar la narrativa del cierre de causales (vienen separados por doble salto de línea)
+    const partes = resumenIA.split(/\n\s*\n+/);
+    let narrativa = partes[0] || resumenIA;
+    let cierre = '';
+    // Buscar la frase de cierre por su patrón conocido. Soporta variaciones del prompt.
+    for(let i = 1; i < partes.length; i++){
+      const p = partes[i].trim();
+      if(/(causales m[áa]s recurrentes|causales por tanto)/i.test(p)){
+        cierre = p;
+        break;
+      } else {
+        // Si no es el cierre, lo sumamos a la narrativa
+        narrativa += '\n\n' + p;
+      }
+    }
+    // Si el cierre no quedó separado en su propio párrafo (modelo no respetó),
+    // detectarlo en línea y separar.
+    if(!cierre){
+      const matchInline = narrativa.match(/(.*?)(Las 3 causales m[áa]s recurrentes[\s\S]*)/i);
+      if(matchInline){
+        narrativa = matchInline[1].trim();
+        cierre = matchInline[2].trim();
+      }
+    }
+    const narrativaHtml = `<div style="font-size:14px;line-height:1.65;color:#3F3E3B">${escapeHtmlPlan(narrativa)}</div>`;
+    const cierreHtml = cierre
+      ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(196,150,42,0.25);font-size:14px;line-height:1.55;color:#2C2C2A;font-weight:600">${escapeHtmlPlan(cierre)}</div>`
+      : '';
+    resumenHtml = `
+      <div style="background:#FAF6EB;border:1px solid #E8D9B0;border-radius:10px;padding:18px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#854F0B;font-weight:600;margin-bottom:10px">Síntesis del análisis</div>
+        ${narrativaHtml}
+        ${cierreHtml}
+      </div>`;
+  }
 
   const fuenteTag = modoBullets === 'PERSONALIZADO'
     ? `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Análisis personalizado según documentos institucionales del colegio</div>`
