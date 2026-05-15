@@ -1147,6 +1147,14 @@ function showPanel(id) {
   closeMobileMenu();
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   const el = document.getElementById('nav-'+id); if(el) el.classList.add('active');
+  // El dashboard tiene su propio filtro de mes interno (con cascada de
+  // dimensión/objetivo/acción), así que ocultamos el del sidebar para no
+  // duplicar UI confusa. Los demás paneles usan el filtro del sidebar normal.
+  const filtroMesSidebar = document.getElementById('filterMes');
+  if(filtroMesSidebar){
+    const contenedor = filtroMesSidebar.closest('div');
+    if(contenedor) contenedor.style.display = (id === 'dashboard') ? 'none' : '';
+  }
   renderCurrentPanel();
 }
 function renderCurrentPanel() {
@@ -1199,53 +1207,192 @@ function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='si
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
 
 // DASHBOARD
+/* Estado de los filtros internos del dashboard. Se mantienen entre re-renders.
+ * El de mes está sincronizado con la variable global filterMes para que la
+ * lógica existente (calcGeneral, calcArea, calcAccion) siga funcionando igual. */
+window._dashFiltros = window._dashFiltros || {
+  dimension:   '',   // area_id
+  objetivo:    '',   // objetivo_id
+  accion:      '',   // accion_id
+  chartTipo:   'linea'  // 'linea' o 'barras'
+};
+
+/* Aplica los filtros del dashboard al árbol Dimensión > Objetivo > Acción.
+ * Devuelve {areas, objetivos, acciones} ya filtrados. */
+function _dashFiltrarArbol(){
+  const f = window._dashFiltros;
+  let areas = DB.areas.slice();
+  let objetivos = DB.objetivos.slice();
+  let acciones = DB.acciones.slice();
+  if(f.dimension){
+    areas = areas.filter(a => a.id === f.dimension);
+    objetivos = objetivos.filter(o => o.area_id === f.dimension);
+    acciones = acciones.filter(ac => objetivos.some(o => o.id === ac.objetivo_id));
+  }
+  if(f.objetivo){
+    objetivos = objetivos.filter(o => o.id === f.objetivo);
+    acciones = acciones.filter(ac => ac.objetivo_id === f.objetivo);
+  }
+  if(f.accion){
+    acciones = acciones.filter(ac => ac.id === f.accion);
+  }
+  // También aplicar el filtro de cargo del sidebar (para no romper esa lógica)
+  if(filterCargo){
+    acciones = acciones.filter(ac => getResps(ac.id).some(r => r.cargo_id === filterCargo));
+  }
+  return {areas, objetivos, acciones};
+}
+
+/* Handler de cambio de filtros del dashboard. Si el cambio es Dimensión,
+ * limpia Objetivo y Acción (cascada). Si es Objetivo, limpia Acción. */
+function dashFiltroCambio(campo, valor){
+  const f = window._dashFiltros;
+  if(campo === 'mes'){
+    filterMes = valor || '';
+  } else if(campo === 'dimension'){
+    f.dimension = valor || '';
+    f.objetivo = '';
+    f.accion = '';
+  } else if(campo === 'objetivo'){
+    f.objetivo = valor || '';
+    f.accion = '';
+  } else if(campo === 'accion'){
+    f.accion = valor || '';
+  } else if(campo === 'chartTipo'){
+    f.chartTipo = valor;
+  }
+  renderCurrentPanel();
+}
+
+/* Devuelve el nivel oficial del sistema (Inicial/Básico/En Desarrollo/Satisfactorio/Consolidado)
+ * con su color, dado un porcentaje. */
+function _dashNivelDe(pct){
+  if(pct === null || pct === undefined) return {label:'Sin datos', color:'#7A7670', bg:'#F4F2EE', border:'#E4E0D8'};
+  if(pct >= 90) return {label:'Consolidado',  color:'#2E7D52', bg:'#E8F5EE', border:'#B6DDC6'};
+  if(pct >= 70) return {label:'Satisfactorio',color:'#1F5278', bg:'#E3EEF7', border:'#B6D2E8'};
+  if(pct >= 50) return {label:'En Desarrollo',color:'#9C7918', bg:'#FDF6E3', border:'#E8D9A8'};
+  if(pct >= 25) return {label:'Básico',       color:'#A85416', bg:'#FCEDDD', border:'#EFC9A6'};
+  return                {label:'Inicial',     color:'#9B2335', bg:'#FCEEED', border:'#E8B6B6'};
+}
+
 function renderDashboard() {
-  const mes=filterMes||null, gen=calcGeneral(mes), est=getEstado(gen);
-  const v=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
-  const am=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
-  const r=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
-  const sd=DB.acciones.filter(a=>calcAccion(a.id,mes)===null).length;
   if(!DB.areas.length) return '<div class="page-header"><div class="page-title">Dashboard</div></div><div class="card"><div class="empty-state"><div class="icon">clip</div><div style="font-weight:500;margin-bottom:8px">Sin estructura configurada</div><div style="font-size:12px">Ve a Configuracion &gt; Estructura para comenzar.</div></div></div>';
-  let html = '<div class="page-header"><div class="page-title">Dashboard de Mejora</div><div class="page-sub">'+DB.colegio.nombre+' - '+(filterMes?fmtMes(filterMes):'Acumulado')+'</div></div>';
+
+  const f = window._dashFiltros;
+  const mes = filterMes || null;
+  const arbol = _dashFiltrarArbol();
+
+  // KPIs calculados respetando los filtros internos del dashboard
+  // Si hay filtro de dimensión/objetivo/acción, el "general" se calcula
+  // sobre el subconjunto. Si no hay filtros, usa calcGeneral global.
+  let gen = null;
+  if(!f.dimension && !f.objetivo && !f.accion){
+    gen = calcGeneral(mes);
+  } else if(f.accion){
+    gen = calcAccion(f.accion, mes);
+  } else if(f.objetivo){
+    gen = calcObjetivo(f.objetivo, mes);
+  } else if(f.dimension){
+    gen = calcArea(f.dimension, mes);
+  }
+  const nivel = _dashNivelDe(gen);
+
+  const totAcciones = arbol.acciones.length;
+  const cntSatisfactorio = arbol.acciones.filter(a => { const p = calcAccion(a.id, mes); return p !== null && p >= 70; }).length;
+  const cntInicial       = arbol.acciones.filter(a => { const p = calcAccion(a.id, mes); return p !== null && p < 25; }).length;
+  const cntSinDatos      = arbol.acciones.filter(a => calcAccion(a.id, mes) === null).length;
+
+  // Opciones de los selects (cascada)
+  const mesesOpts = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11']
+    .map(m => '<option value="'+m+'"'+(filterMes===m?' selected':'')+'>'+fmtMes(m)+'</option>').join('');
+  const dimOpts = DB.areas.map(a => '<option value="'+a.id+'"'+(f.dimension===a.id?' selected':'')+'>'+escapeHtmlPlan(a.nombre)+'</option>').join('');
+  const objsDisponibles = f.dimension ? DB.objetivos.filter(o => o.area_id === f.dimension) : DB.objetivos;
+  const objOpts = objsDisponibles.map(o => '<option value="'+o.id+'"'+(f.objetivo===o.id?' selected':'')+'>'+escapeHtmlPlan(o.nombre)+'</option>').join('');
+  const accsDisponibles = f.objetivo
+    ? DB.acciones.filter(ac => ac.objetivo_id === f.objetivo)
+    : (f.dimension ? arbol.acciones : DB.acciones);
+  const accOpts = accsDisponibles.map(ac => '<option value="'+ac.id+'"'+(f.accion===ac.id?' selected':'')+'>'+escapeHtmlPlan(ac.nombre)+'</option>').join('');
+
+  let html = '<div class="page-header"><div class="page-title">Dashboard de Mejora</div><div class="page-sub">'+escapeHtmlPlan(DB.colegio.nombre)+' · '+(filterMes?fmtMes(filterMes):'Acumulado')+'</div></div>';
+
+  // ===== TARJETA DE FILTROS =====
+  html += '<div class="card" style="margin-bottom:16px;padding:16px 20px">';
+  html += '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:14px">FILTROS</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">';
+  html += '<div><label style="display:block;font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Mes</label>';
+  html += '<select class="filter-select" style="width:100%" onchange="dashFiltroCambio(\'mes\', this.value)">';
+  html += '<option value=""'+(!filterMes?' selected':'')+'>Acumulado</option>'+mesesOpts+'</select></div>';
+  html += '<div><label style="display:block;font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Dimensión</label>';
+  html += '<select class="filter-select" style="width:100%" onchange="dashFiltroCambio(\'dimension\', this.value)">';
+  html += '<option value=""'+(!f.dimension?' selected':'')+'>Todas las dimensiones</option>'+dimOpts+'</select></div>';
+  html += '<div><label style="display:block;font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Objetivo</label>';
+  html += '<select class="filter-select" style="width:100%" onchange="dashFiltroCambio(\'objetivo\', this.value)">';
+  html += '<option value=""'+(!f.objetivo?' selected':'')+'>Todos los objetivos</option>'+objOpts+'</select></div>';
+  html += '<div><label style="display:block;font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Acción</label>';
+  html += '<select class="filter-select" style="width:100%" onchange="dashFiltroCambio(\'accion\', this.value)">';
+  html += '<option value=""'+(!f.accion?' selected':'')+'>Todas las acciones</option>'+accOpts+'</select></div>';
+  html += '</div>';
+  if(f.dimension || f.objetivo || f.accion){
+    html += '<div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="window._dashFiltros.dimension=\'\';window._dashFiltros.objetivo=\'\';window._dashFiltros.accion=\'\';renderCurrentPanel()" style="font-size:11px">↺ Limpiar filtros</button></div>';
+  }
+  html += '</div>';
+
+  // ===== KPIs =====
   html += '<div class="kpi-grid">';
-  html += '<div class="kpi-card '+est+'"><div class="kpi-val">'+(gen!==null?gen+'%':'-')+'</div><div class="kpi-label">Avance general</div><div class="kpi-badge '+est+'">'+(est==='verde'?'En ruta':est==='amarillo'?'Atencion':est==='rojo'?'Critico':'Sin datos')+'</div></div>';
-  html += '<div class="kpi-card verde"><div class="kpi-val">'+v+'</div><div class="kpi-label">En verde</div><div class="kpi-badge verde">&ge; 90%</div></div>';
-  html += '<div class="kpi-card amarillo"><div class="kpi-val">'+am+'</div><div class="kpi-label">En amarillo</div><div class="kpi-badge amarillo">70-89%</div></div>';
-  html += '<div class="kpi-card rojo"><div class="kpi-val">'+(r+sd)+'</div><div class="kpi-label">Rojo / sin datos</div><div class="kpi-badge rojo">&lt; 70%</div></div>';
+  // KPI principal: nivel oficial
+  html += '<div class="kpi-card" style="border-top:3px solid '+nivel.color+'"><div class="kpi-val" style="color:'+nivel.color+'">'+(gen!==null?gen+'%':'—')+'</div><div class="kpi-label">Avance ponderado</div><div class="kpi-badge" style="background:'+nivel.bg+';color:'+nivel.color+';border:1px solid '+nivel.border+'">'+nivel.label+'</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-val">'+totAcciones+'</div><div class="kpi-label">Acciones</div><div class="kpi-badge" style="background:#F4F2EE;color:#5F5E5A;border:1px solid #E4E0D8">En este alcance</div></div>';
+  html += '<div class="kpi-card verde"><div class="kpi-val">'+cntSatisfactorio+'</div><div class="kpi-label">Sobre 70%</div><div class="kpi-badge verde">Satisfactorio+</div></div>';
+  html += '<div class="kpi-card rojo"><div class="kpi-val">'+(cntInicial+cntSinDatos)+'</div><div class="kpi-label">Bajo 25% / sin datos</div><div class="kpi-badge rojo">Inicial</div></div>';
   html += '</div>';
+
+  // ===== GRÁFICOS =====
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">';
-  html += '<div class="card"><div class="card-title">Avance por area</div><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>';
-  html += '<div class="card"><div class="card-title">Distribucion semaforos</div><div class="chart-wrap"><canvas id="chartSemaforos"></canvas></div></div>';
+  html += '<div class="card"><div class="card-title">Avance por dimensión</div><div class="chart-wrap"><canvas id="chartAreas"></canvas></div></div>';
+  html += '<div class="card">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+  html += '<div class="card-title" style="margin:0">Evolución mensual</div>';
+  html += '<div style="display:inline-flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">';
+  html += '<button onclick="dashFiltroCambio(\'chartTipo\',\'linea\')" style="padding:4px 10px;border:0;font-size:11px;cursor:pointer;background:'+(f.chartTipo==='linea'?'var(--accent)':'transparent')+';color:'+(f.chartTipo==='linea'?'#fff':'var(--text)')+'">Líneas</button>';
+  html += '<button onclick="dashFiltroCambio(\'chartTipo\',\'barras\')" style="padding:4px 10px;border:0;font-size:11px;cursor:pointer;background:'+(f.chartTipo==='barras'?'var(--accent)':'transparent')+';color:'+(f.chartTipo==='barras'?'#fff':'var(--text)')+'">Barras</button>';
+  html += '</div></div>';
+  html += '<div class="chart-wrap"><canvas id="chartEvolucion"></canvas></div></div>';
   html += '</div>';
-  DB.areas.forEach(area => {
-    const aR=calcArea(area.id,mes), aE=getEstado(aR);
-    const col=aE==='verde'?'var(--green)':aE==='amarillo'?'var(--gold)':'var(--red)';
+
+  // ===== ÁRBOL DE DIMENSIONES / OBJETIVOS / ACCIONES (existente, filtrado) =====
+  arbol.areas.forEach(area => {
+    const aR=calcArea(area.id,mes), aRniv = _dashNivelDe(aR);
+    const col = aRniv.color;
     const isOpen=openAreas.has(area.id);
     html += '<div class="area-block"><div class="area-header" onclick="toggleArea(\''+area.id+'\')">';
     html += '<div style="width:4px;height:36px;border-radius:4px;background:'+col+';flex-shrink:0"></div>';
-    html += '<div style="flex:1"><div class="area-name">'+area.nombre+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
-    html += '<div style="margin-right:12px">'+semHtml(aE)+'</div>';
-    html += '<div class="area-pct" style="color:'+col+'">'+(aR!==null?aR+'%':'-')+'</div>';
+    html += '<div style="flex:1"><div class="area-name">'+escapeHtmlPlan(area.nombre)+'</div><div style="font-size:11px;color:var(--muted)">Ponderador: '+(area.ponderador*100).toFixed(0)+'%</div></div>';
+    html += '<div style="margin-right:12px"><span style="font-size:11px;background:'+aRniv.bg+';color:'+aRniv.color+';padding:2px 8px;border-radius:10px;border:1px solid '+aRniv.border+';font-weight:600">'+aRniv.label+'</span></div>';
+    html += '<div class="area-pct" style="color:'+col+'">'+(aR!==null?aR+'%':'—')+'</div>';
     html += '<div style="color:var(--muted);margin-left:8px">'+(isOpen?'v':'>')+'</div></div>';
     html += '<div class="area-body '+(isOpen?'open':'')+'">';
-    DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj => {
-      const oR=calcObjetivo(obj.id,mes), oE=getEstado(oR);
-      const oC=oE==='verde'?'var(--green)':oE==='amarillo'?'var(--gold)':oE==='rojo'?'var(--red)':'var(--muted)';
+    const objsDeArea = arbol.objetivos.filter(o => o.area_id === area.id);
+    objsDeArea.forEach(obj => {
+      const oR=calcObjetivo(obj.id,mes), oNiv = _dashNivelDe(oR);
+      const oC = oNiv.color;
       const oO=openObjs.has(obj.id);
       html += '<div class="obj-row"><div class="obj-header" onclick="toggleObj(\''+obj.id+'\')">';
-      html += '<div class="obj-name">'+obj.nombre+'</div>'+semHtml(oE)+'<div class="obj-pct" style="color:'+oC+'">'+(oR!==null?oR+'%':'-')+'</div>';
+      html += '<div class="obj-name">'+escapeHtmlPlan(obj.nombre)+'</div>';
+      html += '<span style="font-size:10px;background:'+oNiv.bg+';color:'+oNiv.color+';padding:1px 7px;border-radius:8px;border:1px solid '+oNiv.border+';margin-left:8px;font-weight:600">'+oNiv.label+'</span>';
+      html += '<div class="obj-pct" style="color:'+oC+'">'+(oR!==null?oR+'%':'—')+'</div>';
       html += '<div style="color:var(--muted);font-size:11px;margin-left:6px">'+(oO?'v':'>')+'</div></div>';
       if(oO) {
-        html += '<table class="accion-table"><thead><tr><th>Accion</th><th>Responsable</th><th>Meses</th><th style="text-align:center">Avance</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
-        DB.acciones.filter(a=>a.objetivo_id===obj.id&&acMatchFilter(a)).forEach(ac => {
-          const acR=calcAccion(ac.id,mes), acE=getEstado(acR), resps=getResps(ac.id);
+        const accsDeObj = arbol.acciones.filter(ac => ac.objetivo_id === obj.id);
+        html += '<table class="accion-table"><thead><tr><th>Acción</th><th>Responsable</th><th>Meses</th><th style="text-align:center">Avance</th><th style="text-align:center">Nivel</th></tr></thead><tbody>';
+        accsDeObj.forEach(ac => {
+          const acR=calcAccion(ac.id,mes), acNiv = _dashNivelDe(acR), resps=getResps(ac.id);
           const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&(!mes||s.mes===mes));
           const pend=seg?.pendiente===true;
-          html += '<tr><td><div class="accion-name">'+ac.nombre+'</div>'+acDesc(ac)+'</td>';
-          html += '<td><div class="accion-responsable">'+( resps.map(r=>r.nombre+' <span class="accion-cargo">'+r.cargo+'</span>').join('<br>')||'-')+'</div></td>';
+          html += '<tr><td><div class="accion-name">'+escapeHtmlPlan(ac.nombre)+'</div>'+acDesc(ac)+'</td>';
+          html += '<td><div class="accion-responsable">'+( resps.map(r=>escapeHtmlPlan(r.nombre)+' <span class="accion-cargo">'+escapeHtmlPlan(r.cargo)+'</span>').join('<br>')||'—')+'</div></td>';
           html += '<td style="color:var(--muted);font-size:11px">'+ac.meses_activos.map(m=>fmtMes(m,true)).join(', ')+'</td>';
-          html += '<td style="text-align:center"><div style="display:flex;align-items:center;gap:6px;justify-content:center"><div class="progress-wrap" style="width:60px"><div class="progress-bar '+acE+'" style="width:'+(acR||0)+'%"></div></div><span style="font-weight:600;min-width:36px">'+(acR!==null?acR+'%':'-')+'</span></div></td>';
-          html += '<td style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:4px">'+semHtml(acE)+(pend?'<span title="Pendiente" style="font-size:13px">P</span>':'')+'</div></td></tr>';
+          html += '<td style="text-align:center"><div style="display:flex;align-items:center;gap:6px;justify-content:center"><div class="progress-wrap" style="width:60px"><div class="progress-bar" style="width:'+(acR||0)+'%;background:'+acNiv.color+'"></div></div><span style="font-weight:600;min-width:36px">'+(acR!==null?acR+'%':'—')+'</span></div></td>';
+          html += '<td style="text-align:center"><span style="font-size:10px;background:'+acNiv.bg+';color:'+acNiv.color+';padding:1px 7px;border-radius:8px;border:1px solid '+acNiv.border+';font-weight:600">'+acNiv.label+'</span>'+(pend?'<span title="Pendiente" style="font-size:11px;margin-left:4px;color:#B8860B">P</span>':'')+'</td></tr>';
         });
         html += '</tbody></table>';
       }
@@ -1257,15 +1404,77 @@ function renderDashboard() {
 }
 
 function initDashboardCharts() {
-  const mes=filterMes||null, aV=DB.areas.map(a=>calcArea(a.id,mes)||0), aC=aV.map(v=>v>=90?'#2E7D52':v>=70?'#B8860B':'#9B2335');
-  const ctxA=document.getElementById('chartAreas');
-  if(ctxA) charts.areas=new Chart(ctxA,{type:'bar',data:{labels:DB.areas.map(a=>a.nombre),datasets:[{data:aV,backgroundColor:aC,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}},x:{grid:{display:false}}}}});
-  const vv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='verde').length;
-  const av=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='amarillo').length;
-  const rv=DB.acciones.filter(a=>getEstado(calcAccion(a.id,mes))==='rojo').length;
-  const sv=DB.acciones.filter(a=>calcAccion(a.id,mes)===null).length;
-  const ctxS=document.getElementById('chartSemaforos');
-  if(ctxS) charts.semafs=new Chart(ctxS,{type:'doughnut',data:{labels:['Verde','Amarillo','Rojo','Sin datos'],datasets:[{data:[vv,av,rv,sv],backgroundColor:['#2E7D52','#B8860B','#9B2335','#D3D1C7'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{family:'DM Sans',size:12},padding:12}}},cutout:'65%'}});
+  const f = window._dashFiltros;
+  const mes = filterMes || null;
+  const arbol = _dashFiltrarArbol();
+
+  // === Gráfico 1: Avance por dimensión ===
+  const areasV = arbol.areas.map(a => calcArea(a.id, mes) || 0);
+  const areasC = areasV.map(v => _dashNivelDe(v).color);
+  const ctxA = document.getElementById('chartAreas');
+  if(ctxA) charts.areas = new Chart(ctxA, {
+    type:'bar',
+    data:{ labels: arbol.areas.map(a=>a.nombre), datasets:[{ data: areasV, backgroundColor: areasC, borderRadius:6 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ max:100, ticks:{ callback:v=>v+'%' } }, x:{ grid:{display:false} } } }
+  });
+
+  // === Gráfico 2: Evolución mensual (línea o barras) ===
+  // Calcula el % ponderado para cada mes del año escolar.
+  // Si hay filtros, lo hace sobre el subconjunto (dimensión/objetivo/acción).
+  const mesesEje = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const valoresPorMes = mesesEje.map(m => {
+    let v = null;
+    if(f.accion){ v = calcAccion(f.accion, m); }
+    else if(f.objetivo){ v = calcObjetivo(f.objetivo, m); }
+    else if(f.dimension){ v = calcArea(f.dimension, m); }
+    else { v = calcGeneral(m); }
+    return v;
+  });
+  // Color del último valor disponible para colorear los puntos
+  const ultimoValor = valoresPorMes.filter(v => v !== null).slice(-1)[0];
+  const colorPrincipal = _dashNivelDe(ultimoValor).color;
+
+  const ctxE = document.getElementById('chartEvolucion');
+  if(ctxE){
+    if(f.chartTipo === 'barras'){
+      const colores = valoresPorMes.map(v => _dashNivelDe(v).color);
+      charts.evol = new Chart(ctxE, {
+        type:'bar',
+        data:{
+          labels: mesesEje.map(m => fmtMes(m, true)),
+          datasets:[{ data: valoresPorMes.map(v => v || 0), backgroundColor: colores, borderRadius:4 }]
+        },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => (valoresPorMes[ctx.dataIndex] !== null ? valoresPorMes[ctx.dataIndex]+'%' : 'Sin datos') } } },
+          scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } }, x:{ grid:{display:false} } }
+        }
+      });
+    } else {
+      charts.evol = new Chart(ctxE, {
+        type:'line',
+        data:{
+          labels: mesesEje.map(m => fmtMes(m, true)),
+          datasets:[{
+            label:'% Logro ponderado',
+            data: valoresPorMes,
+            borderColor: colorPrincipal,
+            backgroundColor: colorPrincipal + '15',
+            tension: 0.3,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: colorPrincipal,
+            spanGaps: false
+          }]
+        },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => (valoresPorMes[ctx.dataIndex] !== null ? valoresPorMes[ctx.dataIndex]+'%' : 'Sin datos') } } },
+          scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } }, x:{ grid:{display:false} } }
+        }
+      });
+    }
+  }
 }
 
 // SEGUIMIENTO
