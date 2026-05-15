@@ -9833,6 +9833,50 @@ function planDescargarPDF(){
   win.document.close();
 }
 
+/*
+ * =================================================================
+ * VISTA ACTIVA DEL PLAN — FUNCIÓN CANÓNICA. NO REDIRIGIR.
+ * =================================================================
+ *
+ * Esta función `renderPaso7Confirmacion` es la VISTA OFICIAL del
+ * plan en estado ACTIVA. Pinta:
+ *   • Tarjetas grandes con números serif a la izquierda.
+ *   • Pasos numerados con responsable + cargo, plazo, esfuerzo.
+ *   • Sliders 0-100% con step de 10 para registrar avance.
+ *   • Botones "✓ Marcar completado" por paso.
+ *   • Bloque encabezado con narrativo, contadores reales y fecha.
+ *
+ * SE LLAMA DESDE: case 5 del switch en `renderPlanPaso()` (línea ~7991).
+ *
+ * SE ENTRA AQUÍ AL:
+ *   • Hacer click en un plan ACTIVA desde "Mis planes" (vía `abrirPlan` → paso=5).
+ *   • Recién activar un plan desde el wizard (vía botón "Activar plan" → paso=5).
+ *
+ * ⚠️ ADVERTENCIA PARA IAs Y DESARROLLADORES FUTUROS:
+ *
+ * Si crees que "esta función no muestra los sliders", NO la reemplaces
+ * con otra función. Los sliders están condicionados a `planActivo` (línea
+ * ~9891 dentro de esta misma función). Solo se muestran cuando
+ * `s.existente && s.existente.estado === 'ACTIVA'`. En un wizard nuevo
+ * (BORRADOR) los sliders NO se ven a propósito — es correcto.
+ *
+ * NO REDIRIGIR el routing de planes ACTIVA a:
+ *   • `renderPlanResumenPedagogico` (vista alternativa, sin sliders por paso)
+ *   • `renderPasoExistente` (vista de edición simple)
+ *   • Ninguna otra función.
+ *
+ * Histórico: en mayo 2026 se intentó cambiar paso=5 a paso=99 con la
+ * idea de "una vista más limpia". Se rompió la experiencia que el
+ * usuario quería conservar (tarjetas + sliders 0-100% por paso).
+ * REVERTIDO. Esa decisión NO debe repetirse sin acuerdo explícito del
+ * dueño del producto (José Miguel).
+ *
+ * Para validar que el routing sigue intacto, ejecutar en consola:
+ *   __testVistaActiva()
+ * Debe devolver "OK".
+ *
+ * =================================================================
+ */
 function renderPaso7Confirmacion(){
   const s = PLAN_STATE;
   const todosPasos = obtenerTodosLosPasos();
@@ -10428,6 +10472,77 @@ async function planBack(){
   }
   else cerrarPlan();
 }
+
+/* ====================== TEST DE REGRESIÓN ====================== */
+/*
+ * __testVistaActiva()
+ *
+ * Verificación automática de que la vista del plan ACTIVA sigue
+ * intacta. Ejecutar en la consola del navegador. Devuelve un resumen
+ * por consola con ✅ por cada chequeo OK y ❌ por cada problema.
+ *
+ * Cubre los puntos donde históricamente la vista se rompió:
+ *   1. case 5 del router → renderPaso7Confirmacion
+ *   2. abrirPlan() asigna paso=5 cuando es ACTIVA
+ *   3. La activación del plan termina en paso=5
+ *   4. renderPaso7Confirmacion contiene los sliders
+ *   5. renderPaso7Confirmacion contiene el botón "Marcar completado"
+ *
+ * Si algo falla, NO modificar las protecciones — leer el comentario
+ * guardián en renderPaso7Confirmacion antes de tocar nada.
+ */
+window.__testVistaActiva = function(){
+  const checks = [];
+  const fnSrc = (fn) => typeof fn === 'function' ? fn.toString() : '';
+
+  // 1. ¿El router (renderPlanPaso) llama a renderPaso7Confirmacion en case 5?
+  const routerSrc = fnSrc(window.renderPlanPaso);
+  const case5OK = /case\s*5\s*:\s*renderPaso7Confirmacion\s*\(/.test(routerSrc);
+  checks.push([case5OK, 'case 5 del router → renderPaso7Confirmacion']);
+
+  // 2. ¿abrirPlan setea paso=5 en planes ACTIVA?
+  const abrirPlanSrc = fnSrc(window.abrirPlan);
+  const abrirOK = /PLAN_STATE\.paso\s*=\s*5/.test(abrirPlanSrc);
+  checks.push([abrirOK, 'abrirPlan(ACTIVA) setea paso=5']);
+
+  // 3. ¿No quedó residuo de paso=99 en abrirPlan?
+  const no99OK = !/PLAN_STATE\.paso\s*=\s*99/.test(abrirPlanSrc);
+  checks.push([no99OK, 'abrirPlan no usa paso=99 (residuo eliminado)']);
+
+  // 4. renderPaso7Confirmacion existe y contiene los sliders 0-100%
+  const p7Src = fnSrc(window.renderPaso7Confirmacion);
+  const sliderOK = p7Src.includes('type="range"') &&
+                   p7Src.includes('min="0"') &&
+                   p7Src.includes('max="100"');
+  checks.push([sliderOK, 'renderPaso7Confirmacion tiene sliders 0-100%']);
+
+  // 5. Tiene el botón "Marcar completado"
+  const btnOK = p7Src.includes('Marcar completado');
+  checks.push([btnOK, 'renderPaso7Confirmacion tiene botón "Marcar completado"']);
+
+  // 6. Tiene la detección de planActivo
+  const planActivoOK = /planActivo\s*=\s*s\.existente\s*&&\s*s\.existente\.estado\s*===\s*['"]ACTIVA['"]/.test(p7Src);
+  checks.push([planActivoOK, 'renderPaso7Confirmacion detecta planActivo']);
+
+  // 7. El insert de pasos usa .select() para recuperar IDs (fix de mayo 2026)
+  const guardarPlanSrc = Object.keys(window)
+    .filter(k => k.startsWith('plan') && typeof window[k] === 'function')
+    .map(k => fnSrc(window[k]))
+    .join('\n');
+  const selectOK = /microacciones_pasos['"]\)\.insert\([^)]*\)\.select\(\)/.test(guardarPlanSrc);
+  checks.push([selectOK, 'insert de microacciones_pasos usa .select() para devolver ids']);
+
+  console.group('🔍 __testVistaActiva() — verificación de routing del plan ACTIVA');
+  let allOK = true;
+  checks.forEach(([ok, label]) => {
+    console.log((ok ? '✅' : '❌') + '  ' + label);
+    if(!ok) allOK = false;
+  });
+  console.log('─────────────────────────────────────');
+  console.log(allOK ? '✓ OK — vista del plan ACTIVA intacta' : '✗ FALLÓ — algo se cambió. Leer el comentario guardián en renderPaso7Confirmacion antes de tocar nada.');
+  console.groupEnd();
+  return allOK ? 'OK' : 'FAIL';
+};
 
 /* ====================== UTILS ====================== */
 function escapeHtmlPlan(s){
