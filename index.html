@@ -9740,15 +9740,37 @@ async function planConfirmar(){
     // Insertar pasos en tabla microacciones_pasos
     // CRÍTICO: borrar los pasos previos antes de insertar, así si esta función
     // se ejecuta varias veces (reintentos, re-guardado) no se acumulan duplicados.
+    //
+    // PRESERVAR AVANCE: si el director ya marcó pasos como completados o con
+    // % de avance, y vuelve a guardar el plan (por ejemplo después de agregar
+    // un paso nuevo), debemos preservar ese avance para los pasos que se
+    // mantienen. Match por descripción (texto exacto del paso).
+    const {data: pasosViejos} = await sb.from('microacciones_pasos')
+      .select('descripcion, estado, porcentaje_avance, fecha_completado')
+      .eq('microaccion_id', ma.id);
+    const avancePorDescripcion = new Map();
+    (pasosViejos || []).forEach(p => {
+      const k = (p.descripcion || '').trim();
+      if(k) avancePorDescripcion.set(k, {
+        estado: p.estado,
+        porcentaje_avance: p.porcentaje_avance,
+        fecha_completado: p.fecha_completado
+      });
+    });
+
     const {error: eDel} = await sb.from('microacciones_pasos').delete().eq('microaccion_id', ma.id);
     if(eDel) throw eDel;
 
     const pasosPayload = pasos.map((p,i)=>{
       const a = s.asignaciones[p._asignKey] || {};
       const fecha = new Date(); fecha.setDate(fecha.getDate()+(a.plazo_dias||p.plazo_dias));
+      // Recuperar avance previo si la descripción coincide con un paso anterior.
+      // Si es un paso nuevo (no había antes), queda PENDIENTE en 0% (default).
+      const descripcion = p.descripcion;
+      const previo = avancePorDescripcion.get((descripcion||'').trim()) || null;
       return {
         microaccion_id: ma.id,
-        descripcion: p.descripcion,
+        descripcion,
         origen: p.origen||'LINEA',
         linea_titulo: p.lineaTitulo||null,
         linea_foco: p.lineaFoco||null,
@@ -9756,7 +9778,9 @@ async function planConfirmar(){
         plazo_dias: a.plazo_dias||p.plazo_dias,
         fecha_objetivo: fecha.toISOString().split('T')[0],
         esfuerzo: a.esfuerzo||p.esfuerzo||'MEDIO',
-        estado: 'PENDIENTE',
+        estado: previo?.estado || 'PENDIENTE',
+        porcentaje_avance: previo?.porcentaje_avance ?? 0,
+        fecha_completado: previo?.fecha_completado || null,
         orden: i
       };
     });
