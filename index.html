@@ -961,7 +961,7 @@ function renderSidebar() {
     '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
     '<div class="nav-item" onclick="showPanel(\'mis-planes\')" id="nav-mis-planes"><span class="icon">p</span> Mis planes <span id="nav-mis-planes-count" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
     '<div class="nav-item" onclick="showPanel(\'ver-reuniones\')" id="nav-ver-reuniones"><span class="icon">r</span> Reuniones</div>' +
-    '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' +
+    (cc ? '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' : '') +
     '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
     '</div>' +
     '<div class="nav-divider"></div>' +
@@ -1156,7 +1156,18 @@ function renderCurrentPanel() {
     case 'dashboard':          main.innerHTML = renderDashboard(); break;
     case 'seguimiento':        main.innerHTML = renderSeguimiento(); break;
     case 'mis-planes':         renderMisPlanes(); break;
-    case 'biblioteca':         renderBiblioteca(); break;
+    case 'biblioteca':
+      // Biblioteca solo está disponible para superadmin por ahora.
+      // Si un director llega acá (por hotkey, URL o estado guardado de
+      // sesión anterior), lo enviamos a Mis planes con un toast informativo.
+      if(canConfig(SESSION.user?.rol)){
+        renderBiblioteca();
+      } else {
+        currentPanel = 'mis-planes';
+        renderMisPlanes();
+        if(typeof showToast === 'function') showToast('Biblioteca aún no está disponible para tu rol.');
+      }
+      break;
     case 'informes':           main.innerHTML = renderInformes(); break;
     case 'ver-reuniones':      main.innerHTML = renderVerReuniones(); break;
     case 'resumen-ejecutivo':  main.innerHTML = renderResumenEjecutivo(); break;
