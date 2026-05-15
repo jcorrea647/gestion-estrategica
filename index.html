@@ -8363,68 +8363,105 @@ async function planGenerarPropuestas(){
       // NOTA: el Núcleo se eliminó. Las recs por causal se cruzan con el nivel
       // cuando se complete el pre-cómputo con Gemini (accion × nivel × causal).
 
-      // ── PASOS BASE DEL NIVEL (Aula + Gestión) ──
-      // Las acciones del PME tienen pasos base "obligatorios" por nivel de logro,
-      // separados en dos ámbitos: Aula (lo que pasa entre docente y estudiantes)
-      // y Gestión (lo que organiza el equipo directivo). Se guardan en planes_cache
-      // con cache_key 'nivel|<slug>|<L>|aula' o '...|gestion'. Cada uno trae 3 pasos
-      // pre-curados por el superadmin desde el Mapa de Acciones.
+      // ── PASOS BASE DEL NIVEL (ámbitos curados por el superadmin) ──
+      // Las acciones del PME tienen pasos base por nivel de logro, organizados
+      // en "ámbitos" (lugares donde sucede el trabajo pedagógico). Cada acción
+      // usa 2 ámbitos: típicamente Aula+Gestión, pero también puede ser
+      // Aula+Acompañamiento, Gestión+Comunidad, Práctica+Equipo Directivo, etc.
+      // Se guardan en planes_cache con cache_key 'nivel|<slug>|<L>|<Ámbito>'.
+      // El ámbito viene con mayúscula y acento exacto (ej. 'Aula', 'Gestión',
+      // 'Acompañamiento', 'Comunidad'). Tomamos los que existan para esta
+      // (acción × nivel) y los anteponemos como líneas extra del wizard.
       //
-      // Se anteponen a las líneas por causal porque son contexto base del nivel,
-      // no respuesta a una causal específica. El director los puede marcar/desmarcar
-      // y editar igual que los pasos por causal.
+      // Mapa de íconos por ámbito (lo usamos también en MAPA_AMBITOS_INFO).
+      const AMBITO_ICONOS = {
+        'Aula': '🏫', 'Gestión': '⚙️', 'Acompañamiento': '🤝',
+        'Comunidad': '🌐', 'Práctica': '🛠', 'Departamento': '👥',
+        'Equipo Directivo': '🎯', 'Equipo Docente': '👨‍🏫', 'Comunicación': '📣'
+      };
+      const AMBITO_DESCRIPCIONES = {
+        'Aula': 'Lo que sucede entre docente y estudiantes dentro de la sala. Edita o desmarca los que no apliquen.',
+        'Gestión': 'Lo que el equipo directivo organiza, formaliza y monitorea. Edita o desmarca los que no apliquen.',
+        'Acompañamiento': 'Lo que sucede en la atención directa de cada caso, con foco en el vínculo y el seguimiento. Edita o desmarca los que no apliquen.',
+        'Comunidad': 'Lo que sucede cuando la acción llega a apoderados, estudiantes y comunidad educativa. Edita o desmarca los que no apliquen.',
+        'Práctica': 'Lo que el docente o profesional hace en su trabajo cotidiano. Edita o desmarca los que no apliquen.',
+        'Departamento': 'Lo que sucede en la reunión técnica del departamento. Edita o desmarca los que no apliquen.',
+        'Equipo Directivo': 'Lo que sucede a nivel de conducción estratégica. Edita o desmarca los que no apliquen.',
+        'Equipo Docente': 'Lo que sucede en el colectivo de docentes como cuerpo profesional. Edita o desmarca los que no apliquen.',
+        'Comunicación': 'Lo que sucede cuando la información circula entre actores. Edita o desmarca los que no apliquen.'
+      };
+
       const lineasAmbito = [];
       if(slugAccion){
-        const AMBITOS = [
-          { codigo: 'aula',    etiqueta: 'Aula',    icono: '🏠' },
-          { codigo: 'gestion', etiqueta: 'Gestión', icono: '⚙️' }
-        ];
-        for(const amb of AMBITOS){
-          const claveNivel = 'nivel|' + slugAccion + '|' + nivelActual + '|' + amb.codigo;
-          try {
-            const { data: rowsNivel } = await sb.from('planes_cache')
-              .select('cache_key,plan_data,curado')
-              .eq('cache_key', claveNivel)
-              .limit(1);
-            const row = rowsNivel && rowsNivel[0];
-            const filaCache = row?.plan_data?.[0];
-            if(!filaCache) continue;
-            // Los pasos base pueden venir en distintos formatos según cómo los
-            // grabó el superadmin. Soportamos: arr de strings, arr de {descripcion},
-            // arr de {texto}, o un campo 'pasos' anidado.
-            let pasosRaw = filaCache.pasos || filaCache.alternativas || [];
-            if(typeof pasosRaw === 'object' && !Array.isArray(pasosRaw)){
-              // Formato alternativas {A,B,C}
-              pasosRaw = ['A','B','C'].map(k => pasosRaw[k]).filter(Boolean);
-            }
-            if(!Array.isArray(pasosRaw) || pasosRaw.length === 0) continue;
-            const pasos = pasosRaw.map((p, k) => {
-              const texto = typeof p === 'string' ? p : (p?.descripcion || p?.texto || '');
-              if(!texto.trim()) return null;
-              return {
-                id: 'amb_' + amb.codigo + '_' + (k+1),
-                descripcion: texto.trim(),
-                responsable_sugerido: '',
-                plazo_dias: 14,
-                esfuerzo: 'MEDIO',
-                _ambito: amb.codigo
-              };
-            }).filter(Boolean);
-            if(pasos.length === 0) continue;
-            lineasAmbito.push({
-              id: 'linea_ambito_' + amb.codigo,
-              titulo: amb.icono + ' ' + amb.etiqueta + ' · ' + nivelActual + ' Inicial',
-              foco: 'ÁMBITO · ' + amb.etiqueta.toUpperCase(),
-              descripcion_corta: amb.codigo === 'aula'
-                ? 'Pasos base del nivel ' + nivelActual + ' en el ámbito Aula. Lo que sucede entre docente y estudiantes. Edita o desmarca los que no apliquen.'
-                : 'Pasos base del nivel ' + nivelActual + ' en el ámbito Gestión. Lo que el equipo directivo organiza. Edita o desmarca los que no apliquen.',
-              causa_atacada: 'nivel',
-              _ambito: amb.etiqueta,
-              pasos,
-              _fromPrecomp: true
+        // Una sola query: traer todas las filas 'nivel|<slug>|<L>|*' del nivel
+        // actual. Esto soporta cualquier ámbito sin hardcodear nombres.
+        const prefijoNivel = 'nivel|' + slugAccion + '|' + nivelActual + '|';
+        try {
+          const { data: filasNivel } = await sb.from('planes_cache')
+            .select('cache_key, plan_data, curado')
+            .like('cache_key', prefijoNivel + '%');
+          if(Array.isArray(filasNivel) && filasNivel.length > 0){
+            // Ordenamos por nombre de ámbito para tener un orden estable.
+            // Aula y Gestión van primero si están; el resto después en alfabético.
+            const ordenPreferido = ['Aula', 'Gestión', 'Acompañamiento', 'Comunidad', 'Práctica', 'Departamento', 'Equipo Directivo', 'Equipo Docente', 'Comunicación'];
+            const filasOrdenadas = filasNivel.slice().sort((a, b) => {
+              const ambA = (a.cache_key || '').split('|')[3] || '';
+              const ambB = (b.cache_key || '').split('|')[3] || '';
+              const iA = ordenPreferido.indexOf(ambA);
+              const iB = ordenPreferido.indexOf(ambB);
+              if(iA === -1 && iB === -1) return ambA.localeCompare(ambB);
+              if(iA === -1) return 1;
+              if(iB === -1) return -1;
+              return iA - iB;
             });
-          } catch(e){ console.warn('lookup ámbito ' + amb.codigo + ':', e.message); }
-        }
+
+            for(const fila of filasOrdenadas){
+              const ambito = (fila.cache_key || '').split('|')[3] || '';
+              if(!ambito) continue;
+              const filaCache = fila.plan_data?.[0];
+              if(!filaCache) continue;
+
+              // Los pasos vienen como array de strings dentro de plan_data[0].pasos.
+              // Soportamos también arr de {descripcion} o {texto} por robustez.
+              let pasosRaw = filaCache.pasos || filaCache.alternativas || [];
+              if(typeof pasosRaw === 'object' && !Array.isArray(pasosRaw)){
+                pasosRaw = ['A','B','C'].map(k => pasosRaw[k]).filter(Boolean);
+              }
+              if(!Array.isArray(pasosRaw) || pasosRaw.length === 0) continue;
+
+              const pasos = pasosRaw.map((p, k) => {
+                const texto = typeof p === 'string' ? p : (p?.descripcion || p?.texto || '');
+                if(!texto.trim()) return null;
+                return {
+                  id: 'amb_' + ambito.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + (k+1),
+                  descripcion: texto.trim(),
+                  responsable_sugerido: '',
+                  plazo_dias: 14,
+                  esfuerzo: 'MEDIO',
+                  _ambito: ambito
+                };
+              }).filter(Boolean);
+              if(pasos.length === 0) continue;
+
+              const nivelEtiqueta = nivelActual === 'L1' ? 'Inicial'
+                                  : nivelActual === 'L2' ? 'Básico'
+                                  : nivelActual === 'L3' ? 'En Desarrollo'
+                                  : nivelActual === 'L4' ? 'Satisfactorio'
+                                  : 'Consolidado';
+
+              lineasAmbito.push({
+                id: 'linea_ambito_' + ambito.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                titulo: (AMBITO_ICONOS[ambito] || '📌') + ' ' + ambito + ' · ' + nivelActual + ' ' + nivelEtiqueta,
+                foco: 'ÁMBITO · ' + ambito.toUpperCase(),
+                descripcion_corta: AMBITO_DESCRIPCIONES[ambito] || ('Pasos base del nivel ' + nivelActual + ' en el ámbito ' + ambito + '. Edita o desmarca los que no apliquen.'),
+                causa_atacada: 'nivel',
+                _ambito: ambito,
+                pasos,
+                _fromPrecomp: true
+              });
+            }
+          }
+        } catch(e){ console.warn('lookup ámbitos del nivel:', e.message); }
       }
 
       // Prepend: los ámbitos arriba, las causales después.
