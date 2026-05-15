@@ -7618,12 +7618,11 @@ async function _abrirPlanInternal(accionId, mes){
     PLAN_STATE.existente = ma;
     PLAN_STATE.microaccionId = ma.id;
     PLAN_STATE.fechaActivacion = ma.updated_at;
-    // paso=99 → vista pedagógica de plan ACTIVA/COMPLETADA con sliders de avance
-    // y botones "Marcar completado". Si fuera paso=5 caería en el constructor
-    // del wizard, donde NO hay seguimiento de pasos (esos sliders/botones
-    // solo se pintan en renderPlanResumenPedagogico, que es la rama paso=99).
-    PLAN_STATE.paso = 99;
-    PLAN_STATE.vistaActiva = 'resumen';
+    // paso=5 → renderPaso7Confirmacion: vista de tarjetas con números grandes,
+    // sliders de 0-100% y botón "Marcar completado" por paso. Esta es la
+    // experiencia esperada al abrir un plan ACTIVA. La función internamente
+    // detecta `planActivo` y muestra los sliders solo cuando corresponde.
+    PLAN_STATE.paso = 5;
     asegurarDrawer();
     document.getElementById('planOverlay').classList.add('show');
     document.getElementById('planDrawer').classList.add('show');
@@ -7963,18 +7962,7 @@ function renderPlanPaso(){
     const maxAlcanzado = Math.max(s.paso, s._maxPasoAlcanzado||1);
     const isFuture = s.paso !== 99 && i > maxAlcanzado + 1;
     if(isFuture) d.classList.add('future');
-    // Cuando el plan ya está en vista pedagógica (paso=99), los círculos son
-    // informativos (muestran que todo está hecho) pero no clickables. Si fueran
-    // clickables, el director saldría accidentalmente de la vista de seguimiento.
-    // Para volver al wizard de edición, existe otra vía explícita (botón de
-    // editar plan en la propia vista pedagógica).
-    if(s.paso !== 99){
-      d.style.cursor = 'pointer';
-      d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
-    } else {
-      d.style.cursor = 'default';
-      d.style.opacity = '0.8';
-    }
+    d.onclick = (function(paso){ return function(){ planIrAPaso(paso); }; })(i);
     d.innerHTML=`<div class="plan-progress-bar"></div><span class="plan-progress-label">${PASO_LABELS[i]}</span>`;
     prog.appendChild(d);
   }
@@ -9504,14 +9492,12 @@ async function planConfirmar(){
     // Limpiar localStorage del borrador
     planLimpiarLocal();
 
-    // Después de activar el plan, ir directo a la vista pedagógica de seguimiento
-    // (paso=99). Antes el código se quedaba en paso=5 (constructor del wizard),
-    // donde NO se muestran los sliders de avance ni los botones "Marcar completado".
-    // Esa rama solo se pinta en renderPlanResumenPedagogico, que se activa con
-    // paso=99 + vistaActiva='resumen'.
-    s.paso = 99;
-    s.vistaActiva = 'resumen';
-    s.existente = ma; // necesario para que renderPlanResumenPedagogico detecte que el plan está ACTIVA
+    // Después de activar, mostrar la vista de tarjetas con números grandes
+    // y sliders 0-100% por paso (renderPaso7Confirmacion). Esta función
+    // detecta que el plan está ACTIVA (via s.existente.estado) y activa
+    // los sliders + botones "Marcar completado" automáticamente.
+    s.existente = ma; // necesario para que renderPaso7Confirmacion detecte planActivo
+    s.paso = 5;
     renderPlanPaso();
   } catch(e) {
     console.error(e);
