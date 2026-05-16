@@ -6836,6 +6836,9 @@ const PLAN_CSS = `
   font-size:12px;font-weight:600;background:var(--surface)}
 .plan-causa.selected{background:var(--red-bg);border-color:#E8B8BD;color:var(--red);font-weight:500}
 .plan-causa.selected .plan-causa-num{background:var(--red);color:#fff;border-color:var(--red)}
+/* Causal seleccionada Y sugerida por IA: usa el mismo verde claro del banner IA */
+.plan-causa.selected.ia-sugerida{background:#E8F5EE;border-color:#2E7D52;color:#1E3A2F}
+.plan-causa.selected.ia-sugerida .plan-causa-num{background:#1E3A2F;color:#fff;border-color:#1E3A2F}
 .plan-otros-box{background:var(--surface2);border-radius:8px;padding:14px;margin-top:18px}
 .plan-otros-box h4{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;
   letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
@@ -7035,6 +7038,7 @@ const PLAN_CSS = `
 .plan-accion-evaluada-nombre{font-size:16px;font-weight:700;line-height:1.3;
   margin-bottom:6px;font-family:var(--serif,Georgia,serif)}
 .plan-accion-evaluada-desc{font-size:12px;line-height:1.5;opacity:.85;margin-top:4px}
+.plan-accion-evaluada-area{font-size:10.5px;font-weight:600;letter-spacing:.5px;opacity:.65;margin-top:8px;text-transform:uppercase}
 
 .plan-brecha-explicacion{font-size:12.5px;line-height:1.55;color:var(--muted);
   margin:0 0 14px 0;padding:10px 14px;background:#FAF7F2;border-radius:6px;
@@ -7165,6 +7169,10 @@ const PLAN_CSS = `
   display:flex; align-items:center; gap:6px}
 .marco-eid-criterio-label::before{content:''; width:14px; height:2px; background:#1E3A6E; display:inline-block}
 .marco-eid-criterio{font-size:13.5px; line-height:1.55; color:#2A2622}
+.marco-eid-criterio-sujeto{font-weight:700; color:#1E3A6E; margin-bottom:8px; font-size:13.5px}
+.marco-eid-criterio-lista{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px}
+.marco-eid-criterio-lista li{display:flex; gap:8px; align-items:flex-start; padding-left:0}
+.marco-eid-criterio-lista li::before{content:'→'; color:#1E3A6E; font-weight:700; flex-shrink:0}
 .marco-eid-secundario{background:#F0F4F9; border:2px solid #6B82A8}
 .marco-eid-secundario .marco-tag{background:#6B82A8; color:#fff}
 .marco-eid-secundario .marco-eid-codigo{color:#6B82A8; border-color:#6B82A8}
@@ -8748,7 +8756,8 @@ function renderPaso2Diagnostico(){
       const tip = tipText ? ` title="${escapeHtmlPlan(tipText)}"` : '';
       const badge = sugIA ? '<span style="position:absolute;top:-7px;right:-7px;background:#1E3A2F;color:#fff;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;line-height:1">IA</span>' : '';
       const styleExtra = sugIA ? 'position:relative;' : '';
-      return `<button class="plan-causa${sel?' selected':''}"${tip} style="${styleExtra}" onclick="planToggleCausa('${c.codigo}','${c.etiqueta}','${grupoCode}')">
+      const iaClass = sugIA ? ' ia-sugerida' : '';
+      return `<button class="plan-causa${sel?' selected':''}${iaClass}"${tip} style="${styleExtra}" onclick="planToggleCausa('${c.codigo}','${c.etiqueta}','${grupoCode}')">
         <span class="plan-causa-num">${num}</span><span>${c.etiqueta}</span>${badge}</button>`;
     }).join('');
     return `<div class="plan-causas-grupo">${titulo}</div><div class="plan-causas-grid">${items}</div>`;
@@ -9271,6 +9280,7 @@ function generarPropuestasFallback(s){
 async function renderPaso4MarcoConceptual(){
   const s = PLAN_STATE;
   const accionNombre = s.accion?.nombre || '';
+  const accionDescripcion = s.accion?.descripcion || '';
   const obj = DB.objetivos.find(o=>o.id===s.accion?.objetivo_id);
   const area = obj ? DB.areas.find(a=>a.id===obj.area_id) : null;
   const colegioNombre = DB.colegio?.nombre || '';
@@ -9282,7 +9292,8 @@ async function renderPaso4MarcoConceptual(){
     <div class="plan-accion-evaluada">
       <div class="plan-accion-evaluada-label">ACCIÓN PME · PASO 1 DE 7</div>
       <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(accionNombre)}</div>
-      ${areaLabel ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
+      ${accionDescripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(accionDescripcion)+'</div>' : ''}
+      ${areaLabel ? '<div class="plan-accion-evaluada-area">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
     </div>
     <h3>Marco conceptual</h3>
     <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>marcos normativos chilenos</strong> (MBD, MBE, CPEIP y, cuando aplica, el Sistema de Desarrollo Profesional Docente) y en <strong>dos centros de investigación</strong> (CEPPE-UC y Harvard). Léelas antes de avanzar.</p>
@@ -9342,6 +9353,40 @@ async function renderPaso4MarcoConceptual(){
   };
 
   // NUEVO: Renderer de card EID (principal o secundario)
+  // Helper: si el criterio satisfactorio repite un mismo sujeto en múltiples oraciones
+  // (ej: "El Director y el Equipo Técnico Pedagógico hacen X. El Director y el Equipo Técnico Pedagógico hacen Y...")
+  // lo extrae como encabezado y deja las acciones como bullets.
+  const formatearCriterioEID = (texto) => {
+    if(!texto) return '';
+    const t = texto.trim();
+    // Dividir por punto seguido de espacio + mayúscula (oraciones)
+    const oraciones = t.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑ])/).map(s => s.trim()).filter(Boolean);
+    if(oraciones.length < 2) {
+      return `<div class="marco-eid-criterio">${escapeHtmlPlan(t)}</div>`;
+    }
+    // Buscar el prefijo común más largo entre oraciones (palabra a palabra)
+    const palabras = oraciones.map(o => o.split(/\s+/));
+    let prefijoLen = 0;
+    const minLen = Math.min(...palabras.map(p => p.length));
+    for(let i = 0; i < minLen; i++){
+      const palabra = palabras[0][i];
+      if(palabras.every(p => p[i] === palabra)) prefijoLen++;
+      else break;
+    }
+    // Solo extraer si el prefijo tiene al menos 3 palabras (evita extraer "El", "La", etc.)
+    if(prefijoLen < 3) {
+      return `<div class="marco-eid-criterio">${escapeHtmlPlan(t)}</div>`;
+    }
+    const sujeto = palabras[0].slice(0, prefijoLen).join(' ');
+    const acciones = palabras.map(p => p.slice(prefijoLen).join(' ').replace(/\.$/,'').trim()).filter(Boolean);
+    const bullets = acciones.map(a => `<li>${escapeHtmlPlan(a)}</li>`).join('');
+    return `
+      <div class="marco-eid-criterio">
+        <div class="marco-eid-criterio-sujeto">${escapeHtmlPlan(sujeto)}:</div>
+        <ul class="marco-eid-criterio-lista">${bullets}</ul>
+      </div>`;
+  };
+
   const renderEIDCard = (eid, esSecundario) => {
     if(!eid) return '';
     const cls = esSecundario ? 'marco-eid marco-eid-secundario' : 'marco-eid';
@@ -9350,7 +9395,7 @@ async function renderPaso4MarcoConceptual(){
     const dimSub = [eid.dimension, eid.subdimension].filter(Boolean).join(' · ');
     const criterioHtml = (!esSecundario && eid.nivel_satisfactorio)
       ? `<div class="marco-eid-criterio-label">Criterio satisfactorio esperado</div>
-         <div class="marco-eid-criterio">${escapeHtmlPlan(eid.nivel_satisfactorio)}</div>`
+         ${formatearCriterioEID(eid.nivel_satisfactorio)}`
       : '';
     return `
       <div class="marco-card ${cls}">
