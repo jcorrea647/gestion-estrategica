@@ -7171,14 +7171,41 @@ const PLAN_CSS = `
 .marco-eid-criterio{font-size:13.5px; line-height:1.55; color:#2A2622}
 .marco-eid-criterio-sujeto{font-weight:700; color:#1E3A6E; margin-bottom:8px; font-size:13.5px}
 .marco-eid-criterio-lista{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px}
-.marco-eid-criterio-lista li{display:flex; gap:8px; align-items:flex-start; padding-left:0}
+.marco-eid-criterio-lista li{display:flex; gap:8px; align-items:flex-start; padding-left:0; flex-wrap:wrap}
 .marco-eid-criterio-lista li::before{content:'→'; color:#1E3A6E; font-weight:700; flex-shrink:0}
+.marco-eid-criterio-sublista{list-style:none; padding:0; margin:8px 0 0 22px; display:flex; flex-direction:column; gap:4px; width:100%}
+.marco-eid-criterio-sublista li{font-size:12.5px; color:#3D4F73}
+.marco-eid-criterio-sublista li::before{content:'·'; color:#6B82A8; font-weight:700}
 .marco-eid-secundario{background:#F0F4F9; border:2px solid #6B82A8}
 .marco-eid-secundario .marco-tag{background:#6B82A8; color:#fff}
 .marco-eid-secundario .marco-eid-codigo{color:#6B82A8; border-color:#6B82A8}
 .marco-eid-secundario .marco-eid-enunciado{color:#3D4F73; font-size:15px}
 .marco-eid-secundario .marco-eid-criterio-label{color:#6B82A8}
 .marco-eid-secundario .marco-eid-criterio-label::before{background:#6B82A8}
+/* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
+.marco-sintesis{
+  background:linear-gradient(135deg, #FAF7F1 0%, #F2EBDC 100%);
+  border-radius:12px; padding:20px 24px; margin:0 0 14px;
+  border-left:5px solid var(--gold);
+  box-shadow:0 1px 3px rgba(0,0,0,.06);
+}
+.marco-sintesis-label{
+  font-size:10px; font-weight:700; letter-spacing:1.2px;
+  text-transform:uppercase; color:var(--accent);
+  display:flex; align-items:center; gap:8px;
+  margin-bottom:10px;
+}
+.marco-sintesis-label::before{
+  content:''; width:18px; height:2px; background:var(--gold); display:inline-block;
+}
+.marco-sintesis-texto{
+  font-size:14px; line-height:1.6; color:#2A2622;
+}
+.marco-sintesis-texto strong{color:var(--accent); font-weight:700}
+.marco-sintesis-texto em{color:#7A5A18; font-style:normal; font-weight:600}
+/* Bloques EID full-width (fuera del grid de marcos) */
+.marco-eid-bloque{margin-bottom:14px}
+.marco-eid-bloque-sec{margin-bottom:14px; display:flex; flex-direction:column; gap:10px}
 /* === HARVARD EXPANDIBLE (queda al final, plegado por defecto) === */
 .marco-harvard-toggle{
   display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -9353,37 +9380,129 @@ async function renderPaso4MarcoConceptual(){
   };
 
   // NUEVO: Renderer de card EID (principal o secundario)
-  // Helper: si el criterio satisfactorio repite un mismo sujeto en múltiples oraciones
-  // (ej: "El Director y el Equipo Técnico Pedagógico hacen X. El Director y el Equipo Técnico Pedagógico hacen Y...")
-  // lo extrae como encabezado y deja las acciones como bullets.
+  // Helper que formatea el criterio satisfactorio de un EID:
+  // 1. Detecta el sujeto principal si se repite >=2 veces (ej: "El director y el equipo técnico-pedagógico")
+  //    y lo extrae como encabezado.
+  // 2. Divide el resto en oraciones (bullets principales).
+  // 3. Detecta listas internas después de "fin de:" o "como:" y las muestra como sub-bullets.
   const formatearCriterioEID = (texto) => {
     if(!texto) return '';
-    const t = texto.trim();
-    // Dividir por punto seguido de espacio + mayúscula (oraciones)
-    const oraciones = t.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑ])/).map(s => s.trim()).filter(Boolean);
-    if(oraciones.length < 2) {
-      return `<div class="marco-eid-criterio">${escapeHtmlPlan(t)}</div>`;
+    let t = texto.trim();
+
+    // --- PASO 1: Detectar sujeto repetido ---
+    // Buscar candidatos de sujeto: frase nominal al inicio que termina en verbo en plural/singular
+    // Estrategia: tomar las primeras 5-8 palabras de la primera oración como candidato,
+    // y verificar si esa frase aparece >=2 veces en el texto completo.
+    let sujetoExtraido = '';
+    const primerasPalabras = t.split(/\s+/).slice(0, 8).join(' ');
+    // Probar prefijos cada vez más cortos (de 8 palabras hacia 3)
+    for(let len = 8; len >= 3; len--){
+      const candidato = t.split(/\s+/).slice(0, len).join(' ').replace(/[,;:.]$/,'').trim();
+      if(!candidato) continue;
+      // Contar apariciones literales (case-insensitive)
+      const regex = new RegExp(candidato.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = t.match(regex);
+      if(matches && matches.length >= 2){
+        sujetoExtraido = candidato;
+        // Reemplazar todas las apariciones por marcador vacío
+        t = t.replace(regex, '').replace(/\s+/g, ' ').replace(/^[,;:.\s]+/, '').trim();
+        // Limpieza: si quedan ", " al inicio de oraciones, normalizar
+        t = t.replace(/\.\s*[,;]\s*/g, '. ');
+        break;
+      }
     }
-    // Buscar el prefijo común más largo entre oraciones (palabra a palabra)
-    const palabras = oraciones.map(o => o.split(/\s+/));
-    let prefijoLen = 0;
-    const minLen = Math.min(...palabras.map(p => p.length));
-    for(let i = 0; i < minLen; i++){
-      const palabra = palabras[0][i];
-      if(palabras.every(p => p[i] === palabra)) prefijoLen++;
-      else break;
+
+    // --- PASO 2: Dividir en oraciones ---
+    // Split por punto seguido de espacio + mayúscula, o por punto al final
+    let oraciones = t.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ])/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    // Si quedó solo una oración pero no hay sujeto extraído, devolver párrafo simple
+    if(oraciones.length === 0){
+      return `<div class="marco-eid-criterio">${escapeHtmlPlan(texto)}</div>`;
     }
-    // Solo extraer si el prefijo tiene al menos 3 palabras (evita extraer "El", "La", etc.)
-    if(prefijoLen < 3) {
-      return `<div class="marco-eid-criterio">${escapeHtmlPlan(t)}</div>`;
-    }
-    const sujeto = palabras[0].slice(0, prefijoLen).join(' ');
-    const acciones = palabras.map(p => p.slice(prefijoLen).join(' ').replace(/\.$/,'').trim()).filter(Boolean);
-    const bullets = acciones.map(a => `<li>${escapeHtmlPlan(a)}</li>`).join('');
+
+    // --- PASO 3: Procesar cada oración, detectando sublistas internas ---
+    // Patrones que disparan sublistas: "con el fin de:", "como:", "tales como:"
+    const procesarOracion = (oracion) => {
+      // Detecta UN punto de lista (primer ":" después de un disparador)
+      const subListaRegex = /(.+?(?:con el fin de|tales como|como|para)):\s*(.+)/i;
+      const m = oracion.match(subListaRegex);
+      if(!m) return { texto: oracion, sub: [] };
+      const introduccion = m[1].trim() + ':';
+      let resto = m[2].replace(/\.$/, '').trim();
+
+      // CASO ESPECIAL: el "resto" contiene OTRO disparador interno (ej: "...análisis como: a; b; c")
+      // En ese caso, cortar el "resto" al inicio del segundo disparador y separar todo lo que
+      // viene después como cola que NO entra en la sublista (evita mezclar contextos distintos).
+      const segundoDisparador = resto.match(/(.+?)\b(?:tales como|como|a partir de)\b[^:]*:\s*(.+)/i);
+      let cola = '';
+      if(segundoDisparador){
+        resto = segundoDisparador[1].replace(/[,;]\s*$/, '').trim();
+        cola = segundoDisparador[0].substring(segundoDisparador[1].length).trim();
+        // La "cola" se podría procesar como otra sublista, pero para evitar complejidad
+        // la mostramos como texto plano después de la sublista actual.
+      }
+
+      // Separar por ";" (separador fuerte). Si no hay, usar comas si hay 3+ items.
+      let items;
+      if(resto.includes(';')){
+        items = resto.split(';').map(s => s.trim()).filter(Boolean);
+      } else if((resto.match(/,/g) || []).length >= 2){
+        items = resto.split(',').map(s => s.trim()).filter(Boolean);
+      } else {
+        return { texto: oracion, sub: [] };
+      }
+      items = items.map(s => s.replace(/^(y|o|e)\s+/i, '').trim()).filter(Boolean);
+      if(items.length < 2) return { texto: oracion, sub: [] };
+      return { texto: introduccion, sub: items, cola: cola };
+    };
+
+    const procesadas = oraciones.map(procesarOracion);
+
+    // Función para construir HTML de items de sublista, soportando una "cola" con segundo disparador
+    const renderColaComoSublista = (cola) => {
+      if(!cola) return '';
+      // Reintentar procesar la cola como una oración independiente
+      const colaProcesada = procesarOracion(cola);
+      if(colaProcesada.sub.length === 0){
+        // No es lista; mostrar como texto
+        return `<li>${escapeHtmlPlan(cola.charAt(0).toUpperCase() + cola.slice(1))}</li>`;
+      }
+      const subItems = colaProcesada.sub.map(s => {
+        const sCap = s.charAt(0).toLowerCase() + s.slice(1);
+        return `<li>${escapeHtmlPlan(sCap)}</li>`;
+      }).join('');
+      return `<li>${escapeHtmlPlan(colaProcesada.texto)}<ul class="marco-eid-criterio-sublista">${subItems}</ul></li>`;
+    };
+
+    // --- PASO 4: Construir HTML final ---
+    const bulletsHtml = procesadas.map(p => {
+      const txt = p.texto.replace(/^[,;:\s]+/, '').replace(/^(y|o|e)\s+/i, '');
+      // Capitalizar primera letra
+      const txtCap = txt.charAt(0).toUpperCase() + txt.slice(1);
+      let li = `<li>${escapeHtmlPlan(txtCap)}`;
+      if(p.sub.length > 0){
+        const subItems = p.sub.map(s => {
+          const sCap = s.charAt(0).toLowerCase() + s.slice(1);
+          return `<li>${escapeHtmlPlan(sCap)}</li>`;
+        }).join('');
+        const colaHtml = p.cola ? renderColaComoSublista(p.cola) : '';
+        li += `<ul class="marco-eid-criterio-sublista">${subItems}${colaHtml}</ul>`;
+      }
+      li += `</li>`;
+      return li;
+    }).join('');
+
+    const encabezadoHtml = sujetoExtraido
+      ? `<div class="marco-eid-criterio-sujeto">${escapeHtmlPlan(sujetoExtraido)}:</div>`
+      : '';
+
     return `
       <div class="marco-eid-criterio">
-        <div class="marco-eid-criterio-sujeto">${escapeHtmlPlan(sujeto)}:</div>
-        <ul class="marco-eid-criterio-lista">${bullets}</ul>
+        ${encabezadoHtml}
+        <ul class="marco-eid-criterio-lista">${bulletsHtml}</ul>
       </div>`;
   };
 
@@ -9419,28 +9538,43 @@ async function renderPaso4MarcoConceptual(){
   // Harvard queda al final, expandible
   const harvardCardHtml = renderCard('harvard', 'marco-harvard');
 
+  // Síntesis del marco: texto fijo que sintetiza el espíritu común de las 4 fuentes
+  // Se muestra como tarjeta puente entre el EID (lo oficial MINEDUC) y los marcos individuales (los detalles).
+  const sintesisHtml = `
+    <div class="marco-sintesis">
+      <div class="marco-sintesis-label">En síntesis · ¿Qué dicen estas fuentes juntas?</div>
+      <div class="marco-sintesis-texto">
+        El <strong>EID</strong> define lo que el MINEDUC <em>evalúa</em> oficialmente: el estándar que tu colegio debe alcanzar.
+        Los demás marcos explican <em>cómo se logra</em> ese estándar en la práctica: el <strong>MBD</strong> (cómo lo lidera el director),
+        el <strong>MBE</strong> (cómo lo enseña el docente), el <strong>CPEIP</strong> y el <strong>Sistema de Desarrollo Profesional Docente</strong>
+        (cómo se forma el equipo para sostenerlo), y los <strong>centros de investigación</strong> (qué muestra la evidencia sobre lo que funciona).
+        Léelos como capas: el EID es el <em>qué</em>, los demás son el <em>cómo</em>.
+      </div>
+    </div>`;
+
   cont.innerHTML = `
+    ${eidPrincipal ? `<div class="marco-eid-bloque">${renderEIDCard(eidPrincipal, false)}</div>` : ''}
+    ${eidsSecundarios.length > 0 ? `<div class="marco-eid-bloque-sec">${eidsSecundarios.map(e => renderEIDCard(e, true)).join('')}</div>` : ''}
+    ${sintesisHtml}
     <div class="marco-grid">
-      ${eidPrincipal ? renderEIDCard(eidPrincipal, false) : ''}
-      ${eidsSecundarios.map(e => renderEIDCard(e, true)).join('')}
       ${renderCard('mbd', 'marco-mbd')}
       ${renderCard('mbe', 'marco-mbe')}
       ${renderCard('cpeip', 'marco-cpeip')}
       ${renderCard('sdpd', 'marco-sdpd')}
       ${renderCard('uc', 'marco-uc')}
-      ${harvardCardHtml ? `
-        <div class="marco-harvard-wrapper">
-          <button type="button" class="marco-harvard-toggle" id="marcoHarvardToggle" onclick="planToggleHarvard()">
-            <span class="toggle-label">
-              <span class="toggle-tag">Opcional</span>
-              <span>Ver marco internacional · Harvard · Elmore</span>
-            </span>
-            <span class="toggle-arrow">▼</span>
-          </button>
-          <div id="marcoHarvardContent" style="display:none">${harvardCardHtml}</div>
-        </div>
-      ` : ''}
     </div>
+    ${harvardCardHtml ? `
+      <div class="marco-harvard-wrapper">
+        <button type="button" class="marco-harvard-toggle" id="marcoHarvardToggle" onclick="planToggleHarvard()">
+          <span class="toggle-label">
+            <span class="toggle-tag">Opcional</span>
+            <span>Ver marco internacional · Harvard · Elmore</span>
+          </span>
+          <span class="toggle-arrow">▼</span>
+        </button>
+        <div id="marcoHarvardContent" style="display:none">${harvardCardHtml}</div>
+      </div>
+    ` : ''}
     <div class="marco-transicion">
       <div class="marco-transicion-label">Lo que viene</div>
       <div class="marco-transicion-texto">Con este marco en mente, ahora vas a ver el <em>estado actual de tu acción</em> y las <em>3 brechas críticas</em> que tu equipo debe cerrar para avanzar.</div>
