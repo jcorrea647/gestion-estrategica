@@ -7150,6 +7150,46 @@ const PLAN_CSS = `
 .marco-harvard .marco-tag{background:#7A5A18; color:#fff}
 .marco-harvard .marco-bullet-icon{background:#7A5A18}
 .marco-harvard .marco-titulo{color:#5C4416}
+/* === EID: Estándar Indicativo de Desempeño (MINEDUC Decreto 27/2020) === */
+.marco-eid{background:#E8EEF5; border:3px solid #1E3A6E}
+.marco-eid .marco-tag{background:#1E3A6E; color:#fff}
+.marco-eid .marco-bullet-icon{background:#1E3A6E}
+.marco-eid .marco-titulo{color:#1E3A6E}
+.marco-eid-codigo{display:inline-block; background:#fff; color:#1E3A6E;
+  padding:2px 8px; border-radius:8px; font-size:11px; font-weight:700;
+  letter-spacing:.5px; margin-right:6px; border:1px solid #1E3A6E}
+.marco-eid-enunciado{font-family:'DM Serif Display','Georgia',serif; font-size:17px;
+  color:#1E3A6E; line-height:1.35; margin:8px 0 12px; font-weight:400; font-style:italic}
+.marco-eid-criterio-label{font-size:10px; font-weight:700; letter-spacing:.8px;
+  text-transform:uppercase; color:#1E3A6E; margin-top:10px; margin-bottom:6px;
+  display:flex; align-items:center; gap:6px}
+.marco-eid-criterio-label::before{content:''; width:14px; height:2px; background:#1E3A6E; display:inline-block}
+.marco-eid-criterio{font-size:13.5px; line-height:1.55; color:#2A2622}
+.marco-eid-secundario{background:#F0F4F9; border:2px solid #6B82A8}
+.marco-eid-secundario .marco-tag{background:#6B82A8; color:#fff}
+.marco-eid-secundario .marco-eid-codigo{color:#6B82A8; border-color:#6B82A8}
+.marco-eid-secundario .marco-eid-enunciado{color:#3D4F73; font-size:15px}
+.marco-eid-secundario .marco-eid-criterio-label{color:#6B82A8}
+.marco-eid-secundario .marco-eid-criterio-label::before{background:#6B82A8}
+/* === HARVARD EXPANDIBLE (queda al final, plegado por defecto) === */
+.marco-harvard-toggle{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; padding:14px 18px; border-radius:10px;
+  background:#F5EFE5; border:1px dashed #7A5A18; color:#5C4416;
+  cursor:pointer; font-size:12.5px; font-weight:600;
+  letter-spacing:.3px; text-align:left;
+  transition:background .15s ease;
+}
+.marco-harvard-toggle:hover{background:#EDE4D8}
+.marco-harvard-toggle .toggle-label{display:flex; align-items:center; gap:8px}
+.marco-harvard-toggle .toggle-tag{
+  background:#7A5A18; color:#fff; padding:3px 8px; border-radius:8px;
+  font-size:9.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+}
+.marco-harvard-toggle .toggle-arrow{font-size:14px; transition:transform .2s ease}
+.marco-harvard-toggle.expanded .toggle-arrow{transform:rotate(180deg)}
+.marco-harvard-wrapper{margin-top:0}
+.marco-harvard-wrapper .marco-card{margin-top:10px}
 .marco-transicion{
   background:var(--accent); color:#fff;
   border-radius:12px; padding:18px 20px; margin-top:18px; text-align:center;
@@ -7400,6 +7440,38 @@ async function planCargarFichaContenido(accionNombre){
     console.warn('planCargarFichaContenido exception:', e.message);
     PLAN_FICHA_CACHE[accionNombre] = null;
     return null;
+  }
+}
+
+// Cache de EIDs (Estándares Indicativos de Desempeño - Decreto 27/2020 MINEDUC) por acción
+// Trae TODOS los EIDs mapeados, ordenados por prioridad asc (1=principal, 2+=relacionados)
+let PLAN_EIDS_CACHE = {};
+async function planCargarEIDsAccion(accionNombre){
+  if(!accionNombre) return [];
+  if(PLAN_EIDS_CACHE[accionNombre] !== undefined) return PLAN_EIDS_CACHE[accionNombre];
+  try{
+    const {data, error} = await sb
+      .from('accion_estandar_mapping')
+      .select('estandar_numero, prioridad, eid_catalogo(codigo, dimension, subdimension, enunciado, nivel_satisfactorio)')
+      .eq('accion_nombre', accionNombre)
+      .order('prioridad', {ascending: true});
+    if(error){ console.warn('planCargarEIDsAccion error:', error.message); PLAN_EIDS_CACHE[accionNombre]=[]; return []; }
+    const eids = (data || [])
+      .filter(m => m.eid_catalogo)
+      .map(m => ({
+        codigo: m.eid_catalogo.codigo || '',
+        dimension: m.eid_catalogo.dimension || '',
+        subdimension: m.eid_catalogo.subdimension || '',
+        enunciado: m.eid_catalogo.enunciado || '',
+        nivel_satisfactorio: m.eid_catalogo.nivel_satisfactorio || '',
+        prioridad: m.prioridad || 99
+      }));
+    PLAN_EIDS_CACHE[accionNombre] = eids;
+    return eids;
+  }catch(e){
+    console.warn('planCargarEIDsAccion exception:', e.message);
+    PLAN_EIDS_CACHE[accionNombre] = [];
+    return [];
   }
 }
 
@@ -9229,17 +9301,22 @@ async function renderPaso4MarcoConceptual(){
     </div>`;
 
   const ficha = await planCargarFichaContenido(accionNombre);
+  // NUEVO: cargar EIDs aplicables a esta acción (cache aparte)
+  const eidsAplicables = await planCargarEIDsAccion(accionNombre);
   const cont = document.getElementById('planMarcoContenedor');
   if(!cont) return; // drawer cerrado
 
   const mc = ficha?.marco_conceptual;
-  if(!mc || (!mc.mbd && !mc.mbe && !mc.cpeip && !mc.sdpd && !mc.uc && !mc.harvard)){
+  const tieneMarco = mc && (mc.mbd || mc.mbe || mc.cpeip || mc.sdpd || mc.uc || mc.harvard);
+  const tieneEIDs = eidsAplicables && eidsAplicables.length > 0;
+
+  if(!tieneMarco && !tieneEIDs){
     cont.innerHTML = `<div class="marco-fallback">El marco conceptual para esta acción aún no está cargado en la base de conocimiento. Puedes continuar al estado actual de todas formas.</div>`;
     return;
   }
 
   const renderCard = (key, cls) => {
-    const c = mc[key];
+    const c = mc?.[key];
     if(!c) return '';
     const bullets = (c.bullets || []).map(b => `
       <li class="marco-bullet">
@@ -9264,20 +9341,76 @@ async function renderPaso4MarcoConceptual(){
       </div>`;
   };
 
+  // NUEVO: Renderer de card EID (principal o secundario)
+  const renderEIDCard = (eid, esSecundario) => {
+    if(!eid) return '';
+    const cls = esSecundario ? 'marco-eid marco-eid-secundario' : 'marco-eid';
+    const tagLabel = esSecundario ? 'EID · ESTÁNDAR RELACIONADO' : 'EID · ESTÁNDAR PRINCIPAL';
+    const origen = 'MINEDUC · DECRETO 27/2020';
+    const dimSub = [eid.dimension, eid.subdimension].filter(Boolean).join(' · ');
+    const criterioHtml = (!esSecundario && eid.nivel_satisfactorio)
+      ? `<div class="marco-eid-criterio-label">Criterio satisfactorio esperado</div>
+         <div class="marco-eid-criterio">${escapeHtmlPlan(eid.nivel_satisfactorio)}</div>`
+      : '';
+    return `
+      <div class="marco-card ${cls}">
+        <div class="marco-head">
+          <span class="marco-tag">${tagLabel}</span>
+          <span class="marco-origen">${origen}</span>
+        </div>
+        ${dimSub ? `<div class="marco-subtitulo">${escapeHtmlPlan(dimSub)}</div>` : ''}
+        <div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
+          <span class="marco-eid-codigo">EID ${escapeHtmlPlan(eid.codigo)}</span>
+        </div>
+        <div class="marco-eid-enunciado">${escapeHtmlPlan(eid.enunciado)}</div>
+        ${criterioHtml}
+      </div>`;
+  };
+
+  // Separar EID principal vs relacionados
+  const eidPrincipal = tieneEIDs ? eidsAplicables[0] : null;
+  const eidsSecundarios = tieneEIDs ? eidsAplicables.slice(1) : [];
+
+  // Harvard queda al final, expandible
+  const harvardCardHtml = renderCard('harvard', 'marco-harvard');
+
   cont.innerHTML = `
     <div class="marco-grid">
+      ${eidPrincipal ? renderEIDCard(eidPrincipal, false) : ''}
+      ${eidsSecundarios.map(e => renderEIDCard(e, true)).join('')}
       ${renderCard('mbd', 'marco-mbd')}
       ${renderCard('mbe', 'marco-mbe')}
       ${renderCard('cpeip', 'marco-cpeip')}
       ${renderCard('sdpd', 'marco-sdpd')}
       ${renderCard('uc', 'marco-uc')}
-      ${renderCard('harvard', 'marco-harvard')}
+      ${harvardCardHtml ? `
+        <div class="marco-harvard-wrapper">
+          <button type="button" class="marco-harvard-toggle" id="marcoHarvardToggle" onclick="planToggleHarvard()">
+            <span class="toggle-label">
+              <span class="toggle-tag">Opcional</span>
+              <span>Ver marco internacional · Harvard · Elmore</span>
+            </span>
+            <span class="toggle-arrow">▼</span>
+          </button>
+          <div id="marcoHarvardContent" style="display:none">${harvardCardHtml}</div>
+        </div>
+      ` : ''}
     </div>
     <div class="marco-transicion">
       <div class="marco-transicion-label">Lo que viene</div>
       <div class="marco-transicion-texto">Con este marco en mente, ahora vas a ver el <em>estado actual de tu acción</em> y las <em>3 brechas críticas</em> que tu equipo debe cerrar para avanzar.</div>
     </div>
   `;
+}
+
+// Toggle del bloque expandible de Harvard en el Marco Conceptual
+function planToggleHarvard(){
+  const btn = document.getElementById('marcoHarvardToggle');
+  const content = document.getElementById('marcoHarvardContent');
+  if(!btn || !content) return;
+  const isOpen = content.style.display !== 'none';
+  content.style.display = isOpen ? 'none' : 'block';
+  btn.classList.toggle('expanded', !isOpen);
 }
 
 /* ====================== PASO 4: CONSTRUCTOR ====================== */
