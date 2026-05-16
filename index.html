@@ -7170,12 +7170,26 @@ const PLAN_CSS = `
 .marco-eid-criterio-label::before{content:''; width:14px; height:2px; background:#1E3A6E; display:inline-block}
 .marco-eid-criterio{font-size:13.5px; line-height:1.55; color:#2A2622}
 .marco-eid-criterio-sujeto{font-weight:700; color:#1E3A6E; margin-bottom:8px; font-size:13.5px}
-.marco-eid-criterio-lista{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px}
-.marco-eid-criterio-lista li{display:flex; gap:8px; align-items:flex-start; padding-left:0; flex-wrap:wrap}
-.marco-eid-criterio-lista li::before{content:'→'; color:#1E3A6E; font-weight:700; flex-shrink:0}
-.marco-eid-criterio-sublista{list-style:none; padding:0; margin:8px 0 0 22px; display:flex; flex-direction:column; gap:4px; width:100%}
-.marco-eid-criterio-sublista li{font-size:12.5px; color:#3D4F73}
-.marco-eid-criterio-sublista li::before{content:'·'; color:#6B82A8; font-weight:700}
+.marco-eid-criterio-lista{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px}
+.marco-eid-criterio-lista > li{
+  position:relative; padding-left:22px; font-size:13.5px; line-height:1.55; color:#2A2622;
+}
+.marco-eid-criterio-lista > li::before{
+  content:'→'; position:absolute; left:0; top:0;
+  color:#1E3A6E; font-weight:700;
+}
+.marco-eid-criterio-sublista{
+  list-style:none; padding:0; margin:8px 0 0 0;
+  display:flex; flex-direction:column; gap:4px;
+}
+.marco-eid-criterio-sublista > li{
+  position:relative; padding-left:16px;
+  font-size:12.5px; line-height:1.5; color:#3D4F73;
+}
+.marco-eid-criterio-sublista > li::before{
+  content:'·'; position:absolute; left:4px; top:-2px;
+  color:#6B82A8; font-weight:700; font-size:16px;
+}
 .marco-eid-secundario{background:#F0F4F9; border:2px solid #6B82A8}
 .marco-eid-secundario .marco-tag{background:#6B82A8; color:#fff}
 .marco-eid-secundario .marco-eid-codigo{color:#6B82A8; border-color:#6B82A8}
@@ -7193,16 +7207,36 @@ const PLAN_CSS = `
   font-size:10px; font-weight:700; letter-spacing:1.2px;
   text-transform:uppercase; color:var(--accent);
   display:flex; align-items:center; gap:8px;
-  margin-bottom:10px;
+  margin-bottom:12px;
 }
 .marco-sintesis-label::before{
   content:''; width:18px; height:2px; background:var(--gold); display:inline-block;
 }
-.marco-sintesis-texto{
-  font-size:14px; line-height:1.6; color:#2A2622;
+.marco-sintesis-eid{
+  background:#fff; border:1px solid #C9D3E5; border-radius:8px;
+  padding:10px 14px; margin-bottom:12px; font-size:13.5px;
+  line-height:1.5; color:#2A2622;
 }
-.marco-sintesis-texto strong{color:var(--accent); font-weight:700}
-.marco-sintesis-texto em{color:#7A5A18; font-style:normal; font-weight:600}
+.marco-sintesis-eid strong{color:#1E3A6E; font-weight:700}
+.marco-sintesis-lista{
+  list-style:none; padding:0; margin:0 0 12px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.marco-sintesis-lista > li{
+  position:relative; padding-left:18px;
+  font-size:13px; line-height:1.5; color:#2A2622;
+}
+.marco-sintesis-lista > li::before{
+  content:'•'; position:absolute; left:0; top:-2px;
+  color:var(--gold); font-weight:700; font-size:18px;
+}
+.marco-sintesis-lista strong{color:var(--accent); font-weight:700}
+.marco-sintesis-cierre{
+  font-size:12.5px; line-height:1.55; color:#5C4416;
+  font-style:italic; padding-top:10px;
+  border-top:1px dashed #D4C8A8;
+}
+.marco-sintesis-cierre em{color:#7A5A18; font-style:normal; font-weight:600}
 /* Bloques EID full-width (fuera del grid de marcos) */
 .marco-eid-bloque{margin-bottom:14px}
 .marco-eid-bloque-sec{margin-bottom:14px; display:flex; flex-direction:column; gap:10px}
@@ -9538,19 +9572,33 @@ async function renderPaso4MarcoConceptual(){
   // Harvard queda al final, expandible
   const harvardCardHtml = renderCard('harvard', 'marco-harvard');
 
-  // Síntesis del marco: texto fijo que sintetiza el espíritu común de las 4 fuentes
-  // Se muestra como tarjeta puente entre el EID (lo oficial MINEDUC) y los marcos individuales (los detalles).
-  const sintesisHtml = `
-    <div class="marco-sintesis">
-      <div class="marco-sintesis-label">En síntesis · ¿Qué dicen estas fuentes juntas?</div>
-      <div class="marco-sintesis-texto">
-        El <strong>EID</strong> define lo que el MINEDUC <em>evalúa</em> oficialmente: el estándar que tu colegio debe alcanzar.
-        Los demás marcos explican <em>cómo se logra</em> ese estándar en la práctica: el <strong>MBD</strong> (cómo lo lidera el director),
-        el <strong>MBE</strong> (cómo lo enseña el docente), el <strong>CPEIP</strong> y el <strong>Sistema de Desarrollo Profesional Docente</strong>
-        (cómo se forma el equipo para sostenerlo), y los <strong>centros de investigación</strong> (qué muestra la evidencia sobre lo que funciona).
-        Léelos como capas: el EID es el <em>qué</em>, los demás son el <em>cómo</em>.
-      </div>
-    </div>`;
+  // Síntesis del marco: se construye dinámicamente con los TÍTULOS reales de cada marco
+  // cargado para esta acción específica. Da una vista de 30 segundos antes de leer el detalle.
+  const construirSintesis = () => {
+    if(!mc) return '';
+    const fuentes = [];
+    if(mc.mbd?.titulo)    fuentes.push({ label: 'MBD',                   titulo: mc.mbd.titulo });
+    if(mc.mbe?.titulo)    fuentes.push({ label: 'MBE',                   titulo: mc.mbe.titulo });
+    if(mc.cpeip?.titulo)  fuentes.push({ label: 'CPEIP',                 titulo: mc.cpeip.titulo });
+    if(mc.sdpd?.titulo)   fuentes.push({ label: 'SDPD',                  titulo: mc.sdpd.titulo });
+    if(mc.uc?.titulo)     fuentes.push({ label: 'CEPPE UC',              titulo: mc.uc.titulo });
+    if(mc.harvard?.titulo)fuentes.push({ label: 'Harvard',               titulo: mc.harvard.titulo });
+    if(fuentes.length === 0) return '';
+    const eidLinea = (tieneEIDs && eidsAplicables[0]?.enunciado)
+      ? `<div class="marco-sintesis-eid"><strong>EID ${escapeHtmlPlan(eidsAplicables[0].codigo)}</strong> (lo que MINEDUC evalúa): ${escapeHtmlPlan(eidsAplicables[0].enunciado)}</div>`
+      : '';
+    const items = fuentes.map(f => `
+      <li><strong>${escapeHtmlPlan(f.label)}:</strong> ${escapeHtmlPlan(f.titulo)}</li>
+    `).join('');
+    return `
+      <div class="marco-sintesis">
+        <div class="marco-sintesis-label">En síntesis · Lo que dicen todas las fuentes</div>
+        ${eidLinea}
+        <ul class="marco-sintesis-lista">${items}</ul>
+        <div class="marco-sintesis-cierre">El EID es <em>qué</em> debes alcanzar; los demás marcos son <em>cómo</em> se logra desde distintas dimensiones (liderazgo, enseñanza, formación docente, evidencia).</div>
+      </div>`;
+  };
+  const sintesisHtml = construirSintesis();
 
   cont.innerHTML = `
     ${eidPrincipal ? `<div class="marco-eid-bloque">${renderEIDCard(eidPrincipal, false)}</div>` : ''}
