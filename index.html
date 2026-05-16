@@ -7196,6 +7196,151 @@ const PLAN_CSS = `
 .marco-eid-secundario .marco-eid-enunciado{color:#3D4F73; font-size:15px}
 .marco-eid-secundario .marco-eid-criterio-label{color:#6B82A8}
 .marco-eid-secundario .marco-eid-criterio-label::before{background:#6B82A8}
+
+/* === EID BLOQUE UNIFICADO (pestañas + toggle satisfactorio/avanzado + mini-tarjetas) === */
+.marco-eid-bloque-unificado{
+  background:#E8EEF5; border:3px solid #1E3A6E; border-radius:12px;
+  padding:18px 20px; margin:0 0 14px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);
+  transition:background .2s ease, border-color .2s ease;
+}
+.marco-eid-head-bloque{
+  display:flex; justify-content:space-between; align-items:center;
+  gap:10px; margin-bottom:14px;
+}
+.marco-eid-head-bloque .marco-tag{
+  background:#1E3A6E; color:#fff; padding:4px 10px; border-radius:11px;
+  font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase;
+}
+.marco-eid-head-bloque .marco-origen{
+  font-size:9.5px; font-weight:600; color:var(--muted);
+  letter-spacing:.5px; text-transform:uppercase;
+}
+/* Pestañas para alternar entre EIDs (solo aparecen si hay >1) */
+.marco-eid-pestanas{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px}
+.marco-eid-pestana{
+  background:transparent; color:#6B82A8; padding:8px 14px;
+  border:1px solid #6B82A8; border-radius:8px;
+  font-size:12px; font-weight:500; cursor:pointer;
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:inherit; transition:all .15s ease;
+}
+.marco-eid-pestana:hover{background:#F0F4F9}
+.marco-eid-pestana.activa{
+  background:#fff; color:#1E3A6E; border:2px solid #1E3A6E; padding:7px 13px;
+}
+.marco-eid-pestana-codigo{
+  background:#6B82A8; color:#fff; padding:1px 6px; border-radius:4px;
+  font-size:10px; font-weight:700;
+}
+.marco-eid-pestana.activa .marco-eid-pestana-codigo{background:#1E3A6E}
+.marco-eid-pestana-label{font-style:italic; font-size:11.5px}
+
+/* Contenido del EID activo */
+.marco-eid-contenido{}
+.marco-eid-contenido.oculto{display:none}
+.marco-eid-contenido .marco-subtitulo{
+  font-size:11.5px; color:var(--muted); font-style:italic; margin-bottom:6px;
+}
+.marco-eid-contenido .marco-eid-enunciado{
+  font-family:'DM Serif Display','Georgia',serif; font-size:17px;
+  color:#1E3A6E; line-height:1.35; margin:6px 0 18px;
+  font-weight:400; font-style:italic;
+}
+
+/* Header del criterio: título a la izq + toggle a la der */
+.marco-eid-criterio-header{
+  display:flex; justify-content:space-between; align-items:center;
+  gap:12px; margin:6px 0 12px; flex-wrap:wrap;
+}
+.marco-eid-criterio-titulo{
+  display:flex; align-items:center; gap:8px;
+  font-size:10px; font-weight:700; letter-spacing:.8px;
+  text-transform:uppercase; color:#1E3A6E;
+}
+.marco-eid-criterio-titulo.oculto{display:none}
+.marco-eid-criterio-titulo[data-nivel-titulo="avanzado"]{color:#7A5A18}
+.marco-eid-criterio-line{
+  width:16px; height:2px; background:#1E3A6E; display:inline-block;
+}
+.marco-eid-criterio-line.avanzado{background:#7A5A18}
+
+/* Toggle Satisfactorio / Avanzado */
+.marco-eid-toggle-nivel{
+  display:inline-flex; background:#fff; border:1px solid #1E3A6E;
+  border-radius:999px; padding:2px; gap:0;
+}
+.marco-eid-toggle-btn{
+  background:transparent; color:#1E3A6E; padding:5px 14px;
+  border-radius:999px; font-size:11px; font-weight:500;
+  border:none; cursor:pointer; font-family:inherit; transition:all .15s ease;
+}
+.marco-eid-toggle-btn:hover{background:rgba(30,58,110,.06)}
+.marco-eid-toggle-btn.activa{
+  background:#1E3A6E; color:#fff;
+}
+.marco-eid-toggle-btn[data-nivel="avanzado"].activa{background:#7A5A18}
+
+/* Cuando se activa el avanzado, cambiar el wrapper completo a paleta dorada */
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa){
+  background:#FAF7F1; border-color:#7A5A18;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-head-bloque .marco-tag{
+  background:#7A5A18;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-contenido .marco-eid-enunciado{
+  color:#7A5A18;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-nivel{
+  border-color:#7A5A18;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn{
+  color:#7A5A18;
+}
+
+/* Línea con el sujeto extraído ("El equipo técnico-pedagógico y los docentes:") */
+.marco-eid-criterio-sujeto-line{
+  font-weight:700; color:#1E3A6E; margin:0 0 10px;
+  font-size:13.5px;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-criterio-sujeto-line{
+  color:#7A5A18;
+}
+
+/* Grid de mini-tarjetas (2 columnas en desktop, 1 en mobile) */
+.marco-eid-criterio-nivel{}
+.marco-eid-criterio-nivel.oculto{display:none}
+.marco-eid-mini-grid{
+  display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;
+}
+.marco-eid-mini-card{
+  background:#fff; border:0.5px solid #C9D3E5; border-radius:8px;
+  padding:12px 14px;
+}
+.marco-eid-mini-card.avanzado{border-color:#D4C8A8}
+.marco-eid-mini-head{
+  display:flex; align-items:center; gap:8px; margin-bottom:6px;
+}
+.marco-eid-mini-num{
+  width:22px; height:22px; background:#1E3A6E; color:#fff;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700; flex-shrink:0;
+}
+.marco-eid-mini-card.avanzado .marco-eid-mini-num{background:#7A5A18}
+.marco-eid-mini-verbo{
+  font-size:11px; font-weight:700; color:#1E3A6E;
+  text-transform:uppercase; letter-spacing:.4px;
+}
+.marco-eid-mini-card.avanzado .marco-eid-mini-verbo{color:#7A5A18}
+.marco-eid-mini-cuerpo{
+  font-size:12.5px; line-height:1.5; color:#2A2622;
+}
+
+@media (max-width:640px){
+  .marco-eid-mini-grid{grid-template-columns:1fr}
+  .marco-eid-criterio-header{flex-direction:column; align-items:flex-start}
+}
+
 /* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
 .marco-sintesis{
   background:linear-gradient(135deg, #FAF7F1 0%, #F2EBDC 100%);
@@ -7521,7 +7666,7 @@ async function planCargarEIDsAccion(accionNombre){
   try{
     const {data, error} = await sb
       .from('accion_estandar_mapping')
-      .select('estandar_numero, prioridad, eid_catalogo(codigo, dimension, subdimension, enunciado, nivel_satisfactorio)')
+      .select('estandar_numero, prioridad, eid_catalogo(codigo, dimension, subdimension, enunciado, nivel_satisfactorio, nivel_avanzado)')
       .eq('accion_nombre', accionNombre)
       .order('prioridad', {ascending: true});
     if(error){ console.warn('planCargarEIDsAccion error:', error.message); PLAN_EIDS_CACHE[accionNombre]=[]; return []; }
@@ -7533,6 +7678,7 @@ async function planCargarEIDsAccion(accionNombre){
         subdimension: m.eid_catalogo.subdimension || '',
         enunciado: m.eid_catalogo.enunciado || '',
         nivel_satisfactorio: m.eid_catalogo.nivel_satisfactorio || '',
+        nivel_avanzado: m.eid_catalogo.nivel_avanzado || '',
         prioridad: m.prioridad || 99
       }));
     PLAN_EIDS_CACHE[accionNombre] = eids;
@@ -9540,28 +9686,160 @@ async function renderPaso4MarcoConceptual(){
       </div>`;
   };
 
-  const renderEIDCard = (eid, esSecundario) => {
-    if(!eid) return '';
-    const cls = esSecundario ? 'marco-eid marco-eid-secundario' : 'marco-eid';
-    const tagLabel = esSecundario ? 'EID · ESTÁNDAR RELACIONADO' : 'EID · ESTÁNDAR PRINCIPAL';
-    const origen = 'MINEDUC · DECRETO 27/2020';
-    const dimSub = [eid.dimension, eid.subdimension].filter(Boolean).join(' · ');
-    const criterioHtml = (!esSecundario && eid.nivel_satisfactorio)
-      ? `<div class="marco-eid-criterio-label">Criterio satisfactorio esperado</div>
-         ${formatearCriterioEID(eid.nivel_satisfactorio)}`
+  // Helper: extrae el "verbo de acción" inicial de un bullet para destacarlo como título de mini-tarjeta.
+  // Ej: "Identifican oportunamente a los estudiantes..." → titulo: "Identifican", resto: "oportunamente a..."
+  const extraerVerboYRestoBullet = (texto) => {
+    if(!texto) return { verbo: '', resto: '' };
+    let t = texto.trim();
+    // 1. Si el bullet empieza con un conector ("Para esto,", "Adicionalmente,", "Por ejemplo,", "Además,"), saltarlo
+    const conectoresIniciales = /^(para\s+esto|para\s+ello|adicionalmente|por\s+ejemplo|además|asimismo|por\s+otra\s+parte|en\s+conjunto\s+con\s+(?:los|las|el|la)?\s*\S+|por\s+su\s+parte)[,;:]?\s+/i;
+    t = t.replace(conectoresIniciales, '');
+    // 2. Tomar hasta la primera coma (o todo si no hay coma), con tope de 2 palabras significativas
+    const hastaPrimeraComa = t.split(',')[0].trim();
+    const palabras = hastaPrimeraComa.split(/\s+/);
+    // 3. Lista corta de palabras "vacías" que NO deben ir al final del verbo (artículos, preposiciones)
+    const palabrasVacias = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'a', 'al', 'de', 'del', 'en', 'con', 'por', 'para', 'su', 'sus', 'lo']);
+    let verbo, resto;
+    if(palabras.length <= 2){
+      verbo = palabras.join(' ');
+      resto = t.substring(hastaPrimeraComa.length).replace(/^[,\s]+/, '').trim();
+    } else {
+      // Tomar 1 o 2 palabras según si la segunda es "vacía" o "significativa"
+      const segunda = (palabras[1] || '').toLowerCase();
+      const palabrasParaVerbo = palabrasVacias.has(segunda) ? 1 : 2;
+      verbo = palabras.slice(0, palabrasParaVerbo).join(' ');
+      // El resto es: palabras restantes del primer segmento + resto del texto desde la coma
+      const restoDelPrimerSegmento = palabras.slice(palabrasParaVerbo).join(' ');
+      const restoDespuesComa = t.includes(',') ? t.substring(hastaPrimeraComa.length) : '';
+      resto = (restoDelPrimerSegmento + ' ' + restoDespuesComa).replace(/^[,\s]+/, '').trim();
+    }
+    if(!resto) { resto = verbo; verbo = ''; }
+    return { verbo, resto };
+  };
+
+  // Render del contenido del criterio (mini-tarjetas) para un nivel dado
+  const renderCriterioMiniTarjetas = (texto, esAvanzado) => {
+    if(!texto) return `<div style="font-size:13px;color:var(--muted);font-style:italic;padding:12px;text-align:center">No hay criterio cargado para este nivel.</div>`;
+
+    // Reusar la lógica de formatearCriterioEID para detectar el sujeto y obtener las oraciones
+    let t = texto.trim();
+    let sujetoExtraido = '';
+    for(let len = 8; len >= 3; len--){
+      const candidato = t.split(/\s+/).slice(0, len).join(' ').replace(/[,;:.]$/,'').trim();
+      if(!candidato) continue;
+      const regex = new RegExp(candidato.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = t.match(regex);
+      if(matches && matches.length >= 2){
+        sujetoExtraido = candidato;
+        t = t.replace(regex, '').replace(/\s+/g, ' ').replace(/^[,;:.\s]+/, '').trim();
+        t = t.replace(/\.\s*[,;]\s*/g, '. ');
+        break;
+      }
+    }
+    let oraciones = t.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ])/).map(s => s.trim()).filter(Boolean);
+    if(oraciones.length === 0){
+      // No se pudo dividir; mostrar texto plano en una sola tarjeta
+      return `
+        <div class="marco-eid-criterio-sujeto-line">${sujetoExtraido ? escapeHtmlPlan(sujetoExtraido) + ':' : ''}</div>
+        <div class="marco-eid-mini-grid">
+          <div class="marco-eid-mini-card${esAvanzado ? ' avanzado' : ''}">
+            <div class="marco-eid-mini-cuerpo">${escapeHtmlPlan(texto)}</div>
+          </div>
+        </div>`;
+    }
+
+    const cards = oraciones.map((oracion, idx) => {
+      const oracionLimpia = oracion.replace(/\.$/, '').trim();
+      const { verbo, resto } = extraerVerboYRestoBullet(oracionLimpia);
+      const num = idx + 1;
+      return `
+        <div class="marco-eid-mini-card${esAvanzado ? ' avanzado' : ''}">
+          <div class="marco-eid-mini-head">
+            <span class="marco-eid-mini-num">${num}</span>
+            ${verbo ? `<span class="marco-eid-mini-verbo">${escapeHtmlPlan(verbo)}</span>` : ''}
+          </div>
+          <div class="marco-eid-mini-cuerpo">${escapeHtmlPlan(resto || oracionLimpia)}</div>
+        </div>`;
+    }).join('');
+
+    const encabezadoSujeto = sujetoExtraido
+      ? `<div class="marco-eid-criterio-sujeto-line">${escapeHtmlPlan(sujetoExtraido)}:</div>`
       : '';
+
     return `
-      <div class="marco-card ${cls}">
-        <div class="marco-head">
-          <span class="marco-tag">${tagLabel}</span>
-          <span class="marco-origen">${origen}</span>
+      ${encabezadoSujeto}
+      <div class="marco-eid-mini-grid">${cards}</div>`;
+  };
+
+  // Render del bloque unificado de EIDs: pestañas para alternar entre EIDs (si hay varios)
+  // + toggle interno satisfactorio/avanzado dentro del EID activo.
+  const renderBloqueEID = (eids) => {
+    if(!eids || eids.length === 0) return '';
+
+    // ID único basado en accionId para evitar colisiones entre microacciones distintas
+    const bloqueId = 'eidblk_' + (s.accionId || 'x').substring(0, 8);
+
+    const pestanasHtml = eids.length > 1
+      ? `<div class="marco-eid-pestanas">
+          ${eids.map((e, i) => `
+            <button type="button" class="marco-eid-pestana${i === 0 ? ' activa' : ''}"
+              data-bloque="${bloqueId}" data-eid-idx="${i}"
+              onclick="planSeleccionarEID('${bloqueId}', ${i})">
+              <span class="marco-eid-pestana-codigo">EID ${escapeHtmlPlan(e.codigo)}</span>
+              <span class="marco-eid-pestana-label">${escapeHtmlPlan(e.subdimension || '')}</span>
+            </button>
+          `).join('')}
+        </div>`
+      : '';
+
+    // Render del contenido de UN EID (se renderiza el de índice 0 por defecto, los demás ocultos)
+    const contenidoEids = eids.map((eid, i) => {
+      const dimSub = [eid.dimension, eid.subdimension].filter(Boolean).join(' · ');
+      const tieneAvanzado = !!eid.nivel_avanzado;
+      const toggleHtml = tieneAvanzado
+        ? `<div class="marco-eid-toggle-nivel">
+            <button type="button" class="marco-eid-toggle-btn activa" data-bloque="${bloqueId}" data-eid-idx="${i}" data-nivel="satisfactorio"
+              onclick="planSeleccionarNivelEID('${bloqueId}', ${i}, 'satisfactorio')">
+              Satisfactorio
+            </button>
+            <button type="button" class="marco-eid-toggle-btn" data-bloque="${bloqueId}" data-eid-idx="${i}" data-nivel="avanzado"
+              onclick="planSeleccionarNivelEID('${bloqueId}', ${i}, 'avanzado')">
+              Avanzado
+            </button>
+          </div>`
+        : '';
+      return `
+        <div class="marco-eid-contenido${i === 0 ? '' : ' oculto'}" data-bloque="${bloqueId}" data-eid-idx="${i}">
+          ${dimSub ? `<div class="marco-subtitulo">${escapeHtmlPlan(dimSub)}</div>` : ''}
+          <div class="marco-eid-enunciado">${escapeHtmlPlan(eid.enunciado)}</div>
+          <div class="marco-eid-criterio-header">
+            <div class="marco-eid-criterio-titulo" data-nivel-titulo="satisfactorio" data-bloque="${bloqueId}" data-eid-idx="${i}">
+              <span class="marco-eid-criterio-line"></span>
+              <span>Criterio satisfactorio · lo esperado</span>
+            </div>
+            <div class="marco-eid-criterio-titulo oculto" data-nivel-titulo="avanzado" data-bloque="${bloqueId}" data-eid-idx="${i}">
+              <span class="marco-eid-criterio-line avanzado"></span>
+              <span>Práctica de excelencia · lo destacado</span>
+            </div>
+            ${toggleHtml}
+          </div>
+          <div class="marco-eid-criterio-nivel" data-nivel-contenido="satisfactorio" data-bloque="${bloqueId}" data-eid-idx="${i}">
+            ${renderCriterioMiniTarjetas(eid.nivel_satisfactorio, false)}
+          </div>
+          <div class="marco-eid-criterio-nivel oculto avanzado-bg" data-nivel-contenido="avanzado" data-bloque="${bloqueId}" data-eid-idx="${i}">
+            ${renderCriterioMiniTarjetas(eid.nivel_avanzado, true)}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="marco-eid-bloque-unificado" id="${bloqueId}">
+        <div class="marco-eid-head-bloque">
+          <span class="marco-tag">EID · ${eids.length > 1 ? 'ESTÁNDARES APLICABLES' : 'ESTÁNDAR PRINCIPAL'}</span>
+          <span class="marco-origen">MINEDUC · DECRETO 27/2020</span>
         </div>
-        ${dimSub ? `<div class="marco-subtitulo">${escapeHtmlPlan(dimSub)}</div>` : ''}
-        <div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
-          <span class="marco-eid-codigo">EID ${escapeHtmlPlan(eid.codigo)}</span>
-        </div>
-        <div class="marco-eid-enunciado">${escapeHtmlPlan(eid.enunciado)}</div>
-        ${criterioHtml}
+        ${pestanasHtml}
+        ${contenidoEids}
       </div>`;
   };
 
@@ -9601,8 +9879,7 @@ async function renderPaso4MarcoConceptual(){
   const sintesisHtml = construirSintesis();
 
   cont.innerHTML = `
-    ${eidPrincipal ? `<div class="marco-eid-bloque">${renderEIDCard(eidPrincipal, false)}</div>` : ''}
-    ${eidsSecundarios.length > 0 ? `<div class="marco-eid-bloque-sec">${eidsSecundarios.map(e => renderEIDCard(e, true)).join('')}</div>` : ''}
+    ${tieneEIDs ? renderBloqueEID(eidsAplicables) : ''}
     ${sintesisHtml}
     <div class="marco-grid">
       ${renderCard('mbd', 'marco-mbd')}
@@ -9638,6 +9915,40 @@ function planToggleHarvard(){
   const isOpen = content.style.display !== 'none';
   content.style.display = isOpen ? 'none' : 'block';
   btn.classList.toggle('expanded', !isOpen);
+}
+
+// Cambia el EID activo dentro del bloque unificado (pestañas)
+function planSeleccionarEID(bloqueId, idx){
+  const bloque = document.getElementById(bloqueId);
+  if(!bloque) return;
+  // Activar pestaña
+  bloque.querySelectorAll('.marco-eid-pestana').forEach((b) => {
+    const bIdx = parseInt(b.dataset.eidIdx, 10);
+    b.classList.toggle('activa', bIdx === idx);
+  });
+  // Mostrar contenido correspondiente, ocultar el resto
+  bloque.querySelectorAll('.marco-eid-contenido').forEach((c) => {
+    const cIdx = parseInt(c.dataset.eidIdx, 10);
+    c.classList.toggle('oculto', cIdx !== idx);
+  });
+}
+
+// Cambia el nivel mostrado (satisfactorio / avanzado) dentro de un EID activo
+function planSeleccionarNivelEID(bloqueId, idx, nivel){
+  const bloque = document.getElementById(bloqueId);
+  if(!bloque) return;
+  // Activar el botón del nivel elegido
+  bloque.querySelectorAll(`.marco-eid-toggle-btn[data-eid-idx="${idx}"]`).forEach((b) => {
+    b.classList.toggle('activa', b.dataset.nivel === nivel);
+  });
+  // Mostrar el título correspondiente
+  bloque.querySelectorAll(`.marco-eid-criterio-titulo[data-eid-idx="${idx}"]`).forEach((t) => {
+    t.classList.toggle('oculto', t.dataset.nivelTitulo !== nivel);
+  });
+  // Mostrar el contenido del nivel correspondiente
+  bloque.querySelectorAll(`.marco-eid-criterio-nivel[data-eid-idx="${idx}"]`).forEach((c) => {
+    c.classList.toggle('oculto', c.dataset.nivelContenido !== nivel);
+  });
 }
 
 /* ====================== PASO 4: CONSTRUCTOR ====================== */
