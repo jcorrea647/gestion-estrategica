@@ -194,9 +194,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .tag{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;font-size:11px}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--accent);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:9999;transition:all .3s;opacity:0;transform:translateY(10px);pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
-.loading-overlay{position:fixed;inset:0;background:linear-gradient(180deg,#F8EFDC 0%,#F0E4C7 100%);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px}
-.loading-overlay-img{width:90%;max-width:520px;height:auto;border-radius:8px;animation:liaxGlow 3s ease-in-out infinite}
-@keyframes liaxGlow{0%,100%{filter:brightness(1)}50%{filter:brightness(1.06)}}
+.loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 .loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:768px){
@@ -392,9 +390,9 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 </div>
 
 <div class="loading-overlay" id="loadingOverlay">
-  <img class="loading-overlay-img" src="/liax-cargando.png" alt="LIAX cargando" onerror="this.style.display='none';this.nextElementSibling.style.display='block';this.nextElementSibling.nextElementSibling.style.display='block'">
-  <div style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:18px;display:none">Gestión Estratégica</div>
-  <div style="color:var(--muted);font-size:12px;display:none" id="loadingMsg">Iniciando...</div>
+  <div class="loading-spinner"></div>
+  <div style="font-family:'DM Serif Display',serif;color:var(--accent);font-size:18px">Gestión Estratégica</div>
+  <div style="color:var(--muted);font-size:12px" id="loadingMsg">Iniciando...</div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -1638,11 +1636,28 @@ async function guardarComentarioPopup(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
   const texto = document.getElementById('comPopupText')?.value.trim()||'';
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
-  if(!ex) { showToast('Guarda primero el % de cumplimiento'); return; }
-  const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
-  if(error){ showToast('Error: '+error.message); return; }
-  const i = DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
-  if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario:texto};
+  if(ex) {
+    // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
+    const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
+    if(error){ showToast('Error: '+error.message); return; }
+    const i = DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
+    if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario:texto};
+  } else {
+    // Caso 2: no existe fila → crear con porcentaje:null, pendiente:true
+    const nuevoPayload = {
+      colegio_id: SESSION.colegioActivo,
+      accion_id: accionId,
+      mes,
+      porcentaje: null,
+      comentario: texto,
+      pendiente: true,
+      updated_at: new Date().toISOString()
+    };
+    const {data, error} = await sb.from('seguimiento').insert(nuevoPayload).select().single();
+    if(error){ showToast('Error: '+error.message); return; }
+    if(data) DB.seguimiento.push(data);
+    else DB.seguimiento.push({...nuevoPayload, id:'temp_'+accionId+'_'+mes});
+  }
   document.getElementById('comPopup')?.remove();
   renderCurrentPanel();
   showToast('Comentario guardado');
@@ -6970,8 +6985,8 @@ const PLAN_CSS = `
 .plan-btn-next:disabled{opacity:.5;cursor:not-allowed}
 
 .plan-loading{text-align:center;padding:60px 20px;color:var(--muted)}
-.plan-loading-spin{width:120px;height:120px;border-radius:50%;overflow:hidden;margin:0 auto 16px;position:relative;background:#F8EFDC url('/liax-cargando.png') no-repeat;background-size:260px auto;background-position:-10px -10px;box-shadow:0 0 0 3px #E5D9C2,0 0 0 6px rgba(193,139,42,.15);animation:liaxThink 4s ease-in-out infinite}
-@keyframes liaxThink{0%,100%{background-position:-10px -10px;transform:rotate(0deg)}25%{background-position:-13px -12px;transform:rotate(-2deg)}75%{background-position:-7px -12px;transform:rotate(2deg)}}
+.plan-loading-spin{width:32px;height:32px;border:3px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:planSpin 1s linear infinite;margin:0 auto 14px}
 @keyframes planSpin{to{transform:rotate(360deg)}}
 
 .plan-save-indicator{display:inline-flex;align-items:center;gap:5px;font-size:10px;
@@ -6989,10 +7004,10 @@ const PLAN_CSS = `
   color:#8A5C00;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit}
 .plan-borrador-banner button:hover{background:#C18B2A;color:#fff}
 
-.plan-loading-inline{display:flex;align-items:center;gap:12px;padding:14px;
+.plan-loading-inline{display:flex;align-items:center;gap:10px;padding:18px;
   background:#FAF7F2;border-radius:6px;color:var(--muted);font-size:13px}
-.plan-loading-spin-sm{width:48px;height:48px;border-radius:50%;overflow:hidden;position:relative;background:#F8EFDC url('/liax-cargando.png') no-repeat;background-size:110px auto;background-position:-5px -3px;box-shadow:0 0 0 2px #E5D9C2;flex-shrink:0;animation:liaxBreathe 2.4s ease-in-out infinite}
-@keyframes liaxBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.plan-loading-spin-sm{width:18px;height:18px;border:2px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:planSpin 1s linear infinite}
 
 .plan-brecha-estandar-tag{display:inline-block;background:#1E3A2F;color:#fff;
   padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;
