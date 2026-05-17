@@ -8945,12 +8945,33 @@ async function renderPaso1Contexto(){
 
 async function planEliminarBorrador(){
   if(!confirm('¿Eliminar este borrador y empezar de cero?')) return;
-  if(PLAN_STATE.microaccionId){
-    try { await sb.from('microacciones').delete().eq('id', PLAN_STATE.microaccionId); }
-    catch(e){ console.warn(e); }
+  const idEliminado = PLAN_STATE.microaccionId;
+  if(idEliminado){
+    try {
+      const {error} = await sb.from('microacciones').delete().eq('id', idEliminado);
+      if(error){ console.warn('[planEliminarBorrador] error en DELETE:', error); showToast('Error: '+error.message); return; }
+    }
+    catch(e){ console.warn('[planEliminarBorrador] excepción en DELETE:', e); }
   }
   planLimpiarLocal();
   const accionId = PLAN_STATE.accionId, mes = PLAN_STATE.mes;
+
+  // CRÍTICO: limpiar caché en memoria DB.microacciones y DB.pasos
+  // Sin esto, abrirPlan() encuentra la fila vieja en caché y reusa
+  // brechas_data antiguo en lugar de pedir uno fresco a la edge function.
+  if(idEliminado && Array.isArray(DB.microacciones)){
+    DB.microacciones = DB.microacciones.filter(m => m.id !== idEliminado);
+  }
+  if(idEliminado && Array.isArray(DB.pasos)){
+    DB.pasos = DB.pasos.filter(p => p.microaccion_id !== idEliminado);
+  }
+  // También limpiar cualquier otra microaccion vieja para esta (accion, mes)
+  // en caché — puede haber filas que ya no existen en DB pero quedaron en memoria.
+  if(Array.isArray(DB.microacciones)){
+    DB.microacciones = DB.microacciones.filter(m =>
+      !(m.accion_id===accionId && m.mes===mes && m.estado==='BORRADOR'));
+  }
+
   PLAN_AUTOSAVE_TIMER && clearTimeout(PLAN_AUTOSAVE_TIMER);
   document.getElementById('planOverlay')?.classList.remove('show');
   document.getElementById('planDrawer')?.classList.remove('show');
