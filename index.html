@@ -7865,12 +7865,25 @@ function planSanearBorrador(){
 function planSnapshotHash(){
   if(!PLAN_STATE) return '';
   const s = PLAN_STATE;
+  // Firma de las brechas para que cualquier cambio (versión, comentario_usado,
+  // causales_top_3, _banda, _reusedFrom) dispare guardado real. Antes este
+  // campo se omitía y las brechas frescas de v8.3 nunca se persistían
+  // porque el hash quedaba idéntico al último guardado.
+  const brechasSig = s.brechasData ? JSON.stringify({
+    v: s.brechasData?._meta?.version || null,
+    com: s.brechasData?._meta?.comentario_usado?.texto || null,
+    top: s.brechasData?.causales_top_3 || null,
+    banda: s.brechasData?._banda || null,
+    reused: s.brechasData?._reusedFrom || null,
+    n: Array.isArray(s.brechasData?.brechas) ? s.brechasData.brechas.length : 0
+  }) : null;
   return JSON.stringify({
     paso: s.paso,
     causas: s.causas,
     causasOtros: s.causasOtros,
     comentario: s.comentario,
     propuestas: !!s.propuestas,
+    brechasSig: brechasSig,
     pasosSeleccionados: s.pasosSeleccionados.map(p=>p.key||p.descripcion),
     pasosOtrosLinea: s.pasosOtrosLinea,
     pasosFocoPropio: s.pasosFocoPropio,
