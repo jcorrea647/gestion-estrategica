@@ -1757,7 +1757,9 @@ async function guardarSeg(accionId, mes, pendiente) {
   if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
   const exSeg=DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   const comentario=exSeg?.comentario||'';
-  const payload={accion_id:accionId,mes,porcentaje:pct,comentario,pendiente,updated_at:new Date().toISOString()};
+  // colegio_id es CRÍTICO: sin él, las filas quedan con NULL y la edge function
+  // generar-brecha-avanzado no puede encontrar el comentario al filtrar por colegio.
+  const payload={colegio_id:SESSION.colegioActivo,accion_id:accionId,mes,porcentaje:pct,comentario,pendiente,updated_at:new Date().toISOString()};
   let error;
   if(exSeg) {
     ({error}=await sb.from('seguimiento').update(payload).eq('id',exSeg.id));
@@ -12653,6 +12655,8 @@ const MAPA_NIVELES_INFO = {
 };
 
 const MAPA_CAUSAS_INFO = {
+  // Sincronizado con CAUSALES_CATALOGO de generar-brecha-avanzado v8.3
+  // Si se modifica el catálogo de la edge function, actualizar también aquí.
   C1:  { grupo:'estructural', nombre:'Tiempo' },
   C2:  { grupo:'estructural', nombre:'Recursos materiales' },
   C3:  { grupo:'estructural', nombre:'Recursos humanos' },
@@ -12662,14 +12666,14 @@ const MAPA_CAUSAS_INFO = {
   C7:  { grupo:'estructural', nombre:'Datos o información' },
   C8:  { grupo:'estructural', nombre:'Evaluación y monitoreo' },
   C9:  { grupo:'estructural', nombre:'Causas externas' },
-  C10: { grupo:'relacional',  nombre:'Liderazgo Intermedio' },
-  C11: { grupo:'relacional',  nombre:'Clima Laboral' },
-  C12: { grupo:'relacional',  nombre:'Comunicación interna' },
-  C13: { grupo:'relacional',  nombre:'Resistencia cultural' },
-  C14: { grupo:'relacional',  nombre:'Compromiso docente' },
-  C15: { grupo:'relacional',  nombre:'Involucramiento Estudiantes' },
-  C16: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
-  C17: { grupo:'relacional',  nombre:'Compromiso de apoderados' }
+  C10: { grupo:'relacional',  nombre:'Liderazgo directivo' },
+  C11: { grupo:'relacional',  nombre:'Cultura institucional' },
+  C12: { grupo:'relacional',  nombre:'Resistencia al cambio' },
+  C13: { grupo:'relacional',  nombre:'Comunicación interna' },
+  C14: { grupo:'relacional',  nombre:'Clima laboral' },
+  C15: { grupo:'relacional',  nombre:'Participación docente' },
+  C16: { grupo:'relacional',  nombre:'Compromiso estudiantil' },
+  C17: { grupo:'relacional',  nombre:'Vinculación con familias' }
 };
 
 /* Mapa nombre legible → slug usado en cache_key de planes_cache.
