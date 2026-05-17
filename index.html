@@ -7536,19 +7536,43 @@ let PLAN_LAST_SAVED_HASH = null;
 let PLAN_BRECHAS_CACHE = {};
 let PLAN_BRECHAS_LOADING = false;
 
+// Helper: valida que una respuesta de brechas tenga _meta.version compatible
+// con la edge function actual. Si no, se considera obsoleta y forzamos regenerar.
+// VERSIONES_VIGENTES: lista de versiones aceptadas. Para forzar regeneración
+// global, basta con sacar versiones viejas de esta lista.
+const VERSIONES_BRECHAS_VIGENTES = ['v8.3'];
+function esBrechaVigente(b) {
+  if (!b || typeof b !== 'object') return false;
+  // Si hay error o modo distinto a PERSONALIZADO, no es vigente
+  if (b.modo === 'ERROR') return false;
+  // Aceptamos FALLBACK_SIN_CONTEXTO porque es legítimo (no hay docs)
+  if (b.modo === 'FALLBACK_SIN_CONTEXTO') return true;
+  const v = b?._meta?.version;
+  if (!v) return false;
+  return VERSIONES_BRECHAS_VIGENTES.includes(v);
+}
+
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'');
-  // 1a. Cache en memoria (misma sesión)
-  if (PLAN_BRECHAS_CACHE[cacheKey]) return PLAN_BRECHAS_CACHE[cacheKey];
+  // 1a. Cache en memoria (misma sesión) — solo si vigente
+  if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) return PLAN_BRECHAS_CACHE[cacheKey];
+  // Si el caché tiene algo no vigente, lo invalidamos para forzar regenerar
+  if (PLAN_BRECHAS_CACHE[cacheKey] && !esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) {
+    console.log('[planCargarBrechas] cache vigente invalidada, regenerando con v8.3');
+    delete PLAN_BRECHAS_CACHE[cacheKey];
+  }
 
-  // 1b. Estado ya hidratado — verificar que la banda coincida
+  // 1b. Estado ya hidratado — verificar que la banda coincida Y que sea vigente
   if (PLAN_STATE && PLAN_STATE.brechasData) {
     const storedBanda = PLAN_STATE.brechasData._banda;
-    if (!storedBanda || storedBanda === (banda||'')) {
+    const bandaOk = !storedBanda || storedBanda === (banda||'');
+    const vigente = esBrechaVigente(PLAN_STATE.brechasData);
+    if (bandaOk && vigente) {
       PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
       return PLAN_STATE.brechasData;
     }
-    // Banda cambió (ej: de 67% MEJORA a 12% CRITICO) — invalidar y regenerar
+    // Banda cambió o brechas viejas sin _meta — invalidar y regenerar
+    if (!vigente) console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando con v8.3');
     PLAN_STATE.brechasData = null;
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
@@ -7566,12 +7590,15 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
       .maybeSingle();
     if (ma && ma.brechas_data) {
       const storedBanda = ma.brechas_data._banda;
-      if(!storedBanda || storedBanda === banda){
+      const bandaOk = !storedBanda || storedBanda === banda;
+      const vigente = esBrechaVigente(ma.brechas_data);
+      if(bandaOk && vigente){
         PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
-      // Banda cambió — no usar brechas antiguas de este mismo plan
+      // Banda cambió o brechas no vigentes (sin _meta.version v8.3) — regenerar
+      if (!vigente) console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando con v8.3');
     }
   } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
 
@@ -7589,10 +7616,10 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         .order('updated_at', { ascending: false })
         .limit(10);
       if(Array.isArray(equivalentes)){
-        // Buscamos el más reciente con la misma banda
+        // Buscamos el más reciente con la misma banda Y que sea vigente (v8.3+)
         const match = equivalentes.find(r => {
           const b = r.brechas_data?._banda;
-          return b && b === banda;
+          return b && b === banda && esBrechaVigente(r.brechas_data);
         });
         if(match && match.brechas_data){
           // Reusamos las brechas pero las marcamos como reusadas para trazabilidad
@@ -7603,6 +7630,11 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
             if (typeof planSyncSupabase === 'function') planSyncSupabase();
           }
           return brechasReusadas;
+        }
+        // Si hay match con banda pero no vigente, lo loggeamos pero NO lo usamos
+        const matchObsoleto = equivalentes.find(r => r.brechas_data?._banda === banda);
+        if (matchObsoleto) {
+          console.log('[planCargarBrechas] cache compartido obsoleto descartado para banda', banda);
         }
       }
     } catch(e) { console.warn('planCargarBrechas lookup banda-compartida:', e.message); }
