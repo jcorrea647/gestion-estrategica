@@ -455,7 +455,11 @@ async function doLoginGoogle() {
 async function handleOAuthReturn() {
   const {data:{session}} = await sb.auth.getSession();
   if (!session?.user) return false;
-  
+  // Limpiar el #access_token de la URL para que no quede visible
+  if (window.location.hash.includes('access_token')) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+ 
   const {data:user, error} = await sb.from('usuarios')
     .select('*').eq('id', session.user.id).eq('activo', true).single();
   
