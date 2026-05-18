@@ -6117,8 +6117,39 @@ function denWizardRender() {
         'style="width:100%;background:var(--surface2);border:1.5px solid var(--accent2);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;resize:none">' +
         (_denWizardData.personas_txt||'') + '</textarea>';
   } else if (_denWizardStep === 7) {
+    // Construir lista de responsables del colegio para el select. Si la
+    // tabla DB.responsables todavía no fue cargada (sesión muy temprana),
+    // cae graceful al input vacío. El input de texto sigue siendo la
+    // fuente de verdad: lo que se guarda es lo que esté ahí al apretar
+    // "Siguiente". El select solo sirve para autocompletar el input.
+    var _denRespsLista = (Array.isArray(DB.responsables) ? DB.responsables : [])
+      .slice()
+      .sort(function(x, y){ return (x.nombre||'').localeCompare(y.nombre||''); });
+    var _denValActual = (_denWizardData.responsable_nombre || '').trim();
+    // Detectar si el valor actual coincide con algún responsable del colegio
+    // (para pre-seleccionar el select). Si no coincide, dejamos el select
+    // en "Otro" y el input mantiene el texto libre.
+    var _denMatchSel = '';
+    if (_denValActual) {
+      var _denMatch = _denRespsLista.find(function(r){
+        var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
+        return label === _denValActual || (r.nombre || '') === _denValActual;
+      });
+      if (_denMatch) _denMatchSel = _denMatch.id;
+    }
     innerHTML += '<div style="font-size:11px;font-weight:700;margin-bottom:6px">RESPONSABLE DEL CASO</div>' +
-      '<input id="wizInput" placeholder="Ej: María López, Encargada de Convivencia" value="' + (_denWizardData.responsable_nombre||'') + '" ' +
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Elige a alguien del colegio o, si es externo (DEM, asesor, fiscalía…), escríbelo abajo.</div>' +
+      '<select id="wizRespSelect" onchange="_denWizardOnRespSelect(this.value)" ' +
+        'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:8px">' +
+        '<option value="">— Elegir del colegio —</option>' +
+        _denRespsLista.map(function(r){
+          var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
+          var sel = (r.id === _denMatchSel) ? ' selected' : '';
+          return '<option value="' + escapeAttr(r.id) + '" data-label="' + escapeAttr(label) + '"' + sel + '>' + escapeHtmlPlan(label) + '</option>';
+        }).join('') +
+        '<option value="__OTRO__"' + ((!_denMatchSel && _denValActual) ? ' selected' : '') + '>Otro / externo (escribir abajo)</option>' +
+      '</select>' +
+      '<input id="wizInput" placeholder="Nombre y cargo del responsable" value="' + escapeAttr(_denValActual) + '" ' +
         'style="width:100%;background:var(--surface2);border:1.5px solid var(--accent2);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:12px">' +
       '<div style="font-size:11px;font-weight:700;margin-bottom:6px">NIVEL DE RIESGO</div>' +
       ['normal','medio','alto','critico'].map(function(r) {
@@ -6224,6 +6255,41 @@ function denWizardEvidencias(input) {
     _denWizardData.evidencias_archivos.push(f);
   });
   denWizardRender();
+}
+
+/* Handler del <select> de responsables en el paso 7 del wizard de denuncia.
+ * Lógica:
+ *  - "" (placeholder) → no toca el input.
+ *  - "__OTRO__"       → no toca el input, deja que el usuario escriba libre.
+ *  - id de responsable → auto-completa el input con "Nombre, Cargo" (igual
+ *                        formato que el option label) para que el director
+ *                        no tenga que retipear, pero puede editar después.
+ * El input sigue siendo la fuente de verdad: lo que se guarda al apretar
+ * "Siguiente" es lo que esté en wizInput.value, no el id del select. */
+function _denWizardOnRespSelect(value) {
+  if (!value || value === '__OTRO__') return;
+  var input = document.getElementById('wizInput');
+  if (!input) return;
+  var sel = document.getElementById('wizRespSelect');
+  if (!sel) return;
+  var opt = sel.querySelector('option[value="' + value.replace(/"/g, '\\"') + '"]');
+  var label = opt ? (opt.getAttribute('data-label') || opt.textContent || '') : '';
+  input.value = label.trim();
+  input.focus();
+}
+
+/* Análogo a _denWizardOnRespSelect pero para el modal "Editar caso" de una
+ * denuncia ya creada. Mismos IDs distintos (editRespSelect / editResp). */
+function _denEditOnRespSelect(value) {
+  if (!value || value === '__OTRO__') return;
+  var input = document.getElementById('editResp');
+  if (!input) return;
+  var sel = document.getElementById('editRespSelect');
+  if (!sel) return;
+  var opt = sel.querySelector('option[value="' + value.replace(/"/g, '\\"') + '"]');
+  var label = opt ? (opt.getAttribute('data-label') || opt.textContent || '') : '';
+  input.value = label.trim();
+  input.focus();
 }
 
 function denWizardQuitarEvidencia(idx) {
@@ -6341,8 +6407,36 @@ function denEditarCaso(denId) {
         '</select>' +
       '</div>' +
       '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">RESPONSABLE</div>' +
-        '<input id="editResp" value="' + (den.responsable_nombre||'') + '" ' +
-          'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box">' +
+        (function(){
+          // Mismo patrón que el wizard paso 7: select del colegio + input
+          // de texto. El input es la fuente de verdad al guardar.
+          var _respsLista = (Array.isArray(DB.responsables) ? DB.responsables : [])
+            .slice()
+            .sort(function(x, y){ return (x.nombre||'').localeCompare(y.nombre||''); });
+          var _valActual = (den.responsable_nombre || '').trim();
+          var _matchId = '';
+          if (_valActual) {
+            var _m = _respsLista.find(function(r){
+              var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
+              return label === _valActual || (r.nombre || '') === _valActual;
+            });
+            if (_m) _matchId = _m.id;
+          }
+          return '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Elige a alguien del colegio o, si es externo, escríbelo abajo.</div>' +
+            '<select id="editRespSelect" onchange="_denEditOnRespSelect(this.value)" ' +
+              'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:6px">' +
+              '<option value="">— Elegir del colegio —</option>' +
+              _respsLista.map(function(r){
+                var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
+                var sel = (r.id === _matchId) ? ' selected' : '';
+                return '<option value="' + escapeAttr(r.id) + '" data-label="' + escapeAttr(label) + '"' + sel + '>' + escapeHtmlPlan(label) + '</option>';
+              }).join('') +
+              '<option value="__OTRO__"' + ((!_matchId && _valActual) ? ' selected' : '') + '>Otro / externo (escribir abajo)</option>' +
+            '</select>' +
+            '<input id="editResp" value="' + escapeAttr(_valActual) + '" ' +
+              'placeholder="Nombre y cargo del responsable" ' +
+              'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box">';
+        })() +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
         '<button id="editCancelBtn" style="flex:1;background:none;border:1px solid var(--border);border-radius:8px;padding:9px;font-size:12px;cursor:pointer;color:var(--muted);font-family:DM Sans,sans-serif">Cancelar</button>' +
@@ -12225,12 +12319,17 @@ function _areaBadge(area){
   return `<span style="background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;border:1px solid ${c.borde}33">${escapeHtmlPlan(area.nombre)}</span>`;
 }
 
-/* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
+/* % cumplimiento del plan = promedio del porcentaje_avance de sus pasos
+ * (consistente con la barra global que se muestra DENTRO del plan abierto,
+ * calculada en _planActualizarProgresoGlobalUI). Antes esta función solo
+ * contaba pasos con estado COMPLETADO, lo que daba 0% mientras los avances
+ * estuvieran entre 0 y 99, creando inconsistencia entre la vista del plan
+ * (que sí promediaba) y la lista de Mis planes / Biblioteca (que no). */
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
-  return Math.round(completos / pasos.length * 100);
+  const suma = pasos.reduce((acc, p) => acc + (Number(p.porcentaje_avance) || 0), 0);
+  return Math.round(suma / pasos.length);
 }
 
 /* Etiqueta de estado con color */
