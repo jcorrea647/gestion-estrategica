@@ -314,6 +314,8 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   <div class="login-box">
     <div class="login-logo">Gestión Estratégica</div>
     <div class="login-sub">Ingresa con tu correo y contrasena</div>
+    <button class="btn btn-full" onclick="doLoginGoogle()" id="loginGoogleBtn" style="background:#fff;border:1px solid var(--border);color:#3c4043;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;font-weight:500"><svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>Continuar con Google</button>
+    <div style="text-align:center;color:var(--muted);font-size:12px;margin:8px 0 16px">— o con correo y contraseña —</div>
     <div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="loginEmail" type="email" placeholder="correo@ejemplo.cl" autocomplete="email"></div>
     <div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="loginPassword" type="password" placeholder="..." onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"><div class="form-error" id="loginError">Correo o contrasena incorrectos.</div></div>
     <button class="btn btn-primary btn-full" onclick="doLogin()" id="loginBtn">Ingresar</button>
@@ -428,10 +430,75 @@ const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
     });
     return;
   }
-  showScreen('screenLogin');
+  const oauthOk = await handleOAuthReturn();
+  if (!oauthOk) showScreen('screenLogin');
 })();
 
-// AUTH
+// AUTH - Login con Google OAuth
+async function doLoginGoogle() {
+  const btn = document.getElementById('loginGoogleBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity='0.6'; }
+  const {error} = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin + window.location.pathname,
+      queryParams: { access_type: 'offline', prompt: 'consent' }
+    }
+  });
+  if (error) {
+    if (btn) { btn.disabled = false; btn.style.opacity='1'; }
+    const errEl = document.getElementById('loginError');
+    if (errEl) { errEl.textContent='Error con Google: '+error.message; errEl.classList.add('show'); }
+  }
+}
+
+async function handleOAuthReturn() {
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session?.user) return false;
+  
+  const {data:user, error} = await sb.from('usuarios')
+    .select('*').eq('id', session.user.id).eq('activo', true).single();
+  
+  if (error || !user) {
+    await sb.auth.signOut();
+    const errEl = document.getElementById('loginError');
+    if (errEl) { errEl.textContent='Tu cuenta Google no tiene perfil. Contacta al administrador.'; errEl.classList.add('show'); }
+    return false;
+  }
+  
+  SESSION.user = user;
+  if (isMulti(user.rol)) {
+    setLoading('Cargando colegios...');
+    let query = sb.from('colegios').select('*').eq('app','gestion').order('nombre');
+    if (user.rol === 'sostenedor') query = query.eq('sostenedor_id', user.id);
+    const {data:cols} = await query;
+    SESSION.colegios = cols || [];
+    hideLoading();
+    _saveSession(user);
+    renderMultiPanel();
+    showScreen('screenMulti');
+  } else {
+    if (!user.colegio_id) return false;
+    const {data: colCheck} = await sb.from('colegios').select('id, app').eq('id', user.colegio_id).maybeSingle();
+    if (!colCheck || (colCheck.app && colCheck.app !== 'gestion')) {
+      await sb.auth.signOut();
+      return false;
+    }
+    setLoading('Cargando datos...');
+    showScreen('screenColegio');
+    try {
+      await loadColegio(user.colegio_id);
+      setupColegioUI();
+      hideLoading();
+      showPanel('dashboard');
+      denLoad();
+      _saveSession(user);
+      _checkPlanAutoOpen();
+    } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
+  }
+  return true;
+}
+  // AUTH
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass  = document.getElementById('loginPassword').value;
