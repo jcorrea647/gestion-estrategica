@@ -1701,6 +1701,11 @@ async function guardarComentarioPopup(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
   const texto = document.getElementById('comPopupText')?.value.trim()||'';
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
+  // Detectar si el texto cambió respecto al previo. Si cambió, hay que
+  // invalidar las brechas cacheadas para que se regeneren con el comentario
+  // nuevo la próxima vez que se abra el plan.
+  const textoAnterior = (ex?.comentario || '').toString().trim();
+  const comentarioCambio = textoAnterior !== texto;
   if(ex) {
     // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
     const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
@@ -1722,6 +1727,13 @@ async function guardarComentarioPopup(accionId, mes) {
     if(error){ showToast('Error: '+error.message); return; }
     if(data) DB.seguimiento.push(data);
     else DB.seguimiento.push({...nuevoPayload, id:'temp_'+accionId+'_'+mes});
+  }
+  // Si el texto del comentario cambió, invalidar las brechas cacheadas:
+  // limpia memoria, PLAN_STATE.brechasData (si el plan está abierto para
+  // esta misma acción/mes) y pone brechas_data=null en microacciones.
+  if (comentarioCambio) {
+    try { await invalidarBrechasPorComentario(SESSION.colegioActivo, accionId, mes); }
+    catch(e){ console.warn('No se pudo invalidar brechas:', e.message); }
   }
   document.getElementById('comPopup')?.remove();
   renderCurrentPanel();
@@ -1812,6 +1824,11 @@ async function guardarSeg(accionId, mes, pendiente) {
     if(i >= 0) DB.seguimiento.splice(i, 1);
     // Limpiar input visual
     if(pctEl){ pctEl.value = ''; pctEl.style.borderColor = ''; }
+    // El DELETE de la fila de seguimiento también borra el comentario asociado
+    // (vive en la misma tabla). Si las brechas estaban cacheadas con un comentario
+    // viejo, hay que invalidarlas para que se regeneren sin ese contexto.
+    try { await invalidarBrechasPorComentario(SESSION.colegioActivo, accionId, mes); }
+    catch(e){ console.warn('No se pudo invalidar brechas al reiniciar:', e.message); }
     showToast('Avance reiniciado — comentarios y evidencias conservados');
     renderCurrentPanel();
     return;
@@ -4571,6 +4588,9 @@ async function guardarCambiosReunion(reunionId){
     // 2) Comentarios por seguimiento (inputs data-seg-id="...")
     const inputs = document.querySelectorAll('input[data-seg-id]');
     const updates = [];
+    // Trackear qué (accion_id, mes) tuvieron cambios para invalidar luego
+    // sus brechas cacheadas (solo una vez por combinación).
+    const invalidaciones = [];
     inputs.forEach(function(inp){
       const segId = inp.getAttribute('data-seg-id');
       const seg = DB.seguimiento.find(s => s.id === segId);
@@ -4578,6 +4598,11 @@ async function guardarCambiosReunion(reunionId){
       const nuevo = inp.value.trim();
       const previo = (seg.comentario||'').trim();
       if(nuevo !== previo){
+        // Recordar accion_id+mes para invalidar brechas después del update.
+        // Solo agregamos si no estaba ya (Set funcional con array+find).
+        if(!invalidaciones.find(x => x.accionId === seg.accion_id && x.mes === seg.mes)){
+          invalidaciones.push({ accionId: seg.accion_id, mes: seg.mes, colegioId: seg.colegio_id || SESSION.colegioActivo });
+        }
         updates.push(
           sb.from('seguimiento')
             .update({comentario: nuevo || null, updated_at: new Date().toISOString()})
@@ -4591,6 +4616,17 @@ async function guardarCambiosReunion(reunionId){
       }
     });
     if(updates.length) await Promise.all(updates);
+
+    // Invalidar brechas cacheadas para cada (acción, mes) cuyo comentario cambió.
+    // Esto fuerza que la próxima vez que el director abra el plan de mejora se
+    // regeneren las brechas considerando el nuevo texto del comentario.
+    if(invalidaciones.length){
+      await Promise.all(invalidaciones.map(function(x){
+        return invalidarBrechasPorComentario(x.colegioId, x.accionId, x.mes).catch(function(e){
+          console.warn('No se pudo invalidar brechas para', x.accionId, x.mes, ':', e.message);
+        });
+      }));
+    }
 
     showToast('✓ Cambios guardados');
     if(btn){ btn.textContent = '💾 Guardar cambios'; btn.disabled = true; }
@@ -7621,8 +7657,69 @@ function esBrechaVigente(b) {
   return VERSIONES_BRECHAS_VIGENTES.includes(v);
 }
 
+/* Helper: hash determinístico y corto del comentario actual para incluirlo en
+ * el cacheKey. Si el comentario cambia, el cacheKey cambia y se regenera
+ * automáticamente (no hay que invalidar manualmente la capa en-memoria). */
+function _planHashComentario(texto){
+  const s = (texto || '').toString().trim();
+  if (!s) return '0';
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  // Base36, máx 8 chars — suficiente para discriminar cambios
+  return (h >>> 0).toString(36).slice(0, 8);
+}
+
+/* Helper: invalida TODAS las capas de caché de brechas para una combinación
+ * colegio+acción+mes. Se llama cada vez que se persiste un cambio al comentario
+ * del seguimiento, para que la próxima vez que se abra el plan se regeneren
+ * las brechas considerando el comentario nuevo.
+ *
+ * Capas que limpia:
+ *   1) PLAN_BRECHAS_CACHE (memoria, misma sesión)
+ *   2) PLAN_STATE.brechasData (si el plan está abierto para esa acción/mes)
+ *   3) microacciones.brechas_data (persistido en Supabase)
+ *
+ * NOTA: el cacheKey ya incluye un hash del comentario (ver planCargarBrechas),
+ * pero la capa de Supabase y el plan abierto requieren limpieza explícita
+ * porque no consultan ese hash.
+ */
+async function invalidarBrechasPorComentario(colegioId, accionId, mes){
+  if (!colegioId || !accionId || !mes) return;
+  try {
+    // 1) Cache en memoria — borrar todas las claves que coincidan con esta acción+mes
+    if (typeof PLAN_BRECHAS_CACHE !== 'undefined' && PLAN_BRECHAS_CACHE) {
+      const prefijo = colegioId + '_' + accionId + '_' + mes + '_';
+      Object.keys(PLAN_BRECHAS_CACHE).forEach(k => {
+        if (k.indexOf(prefijo) === 0) delete PLAN_BRECHAS_CACHE[k];
+      });
+    }
+    // 2) PLAN_STATE.brechasData si el plan abierto es justo este
+    if (typeof PLAN_STATE !== 'undefined' && PLAN_STATE
+        && PLAN_STATE.accionId === accionId
+        && PLAN_STATE.mes === mes) {
+      PLAN_STATE.brechasData = null;
+    }
+    // 3) Supabase: poner brechas_data a null en la microacción de este mes
+    //    (si existe). Si no existe la fila, no hay nada que limpiar.
+    await sb.from('microacciones')
+      .update({ brechas_data: null, updated_at: new Date().toISOString() })
+      .eq('colegio_id', colegioId)
+      .eq('accion_id', accionId)
+      .eq('mes', mes);
+  } catch(e){
+    console.warn('[invalidarBrechasPorComentario]', e.message);
+  }
+}
+
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
-  const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'');
+  // Incluir hash del comentario actual en la cacheKey: si el director cambia
+  // el comentario del seguimiento, el cacheKey cambia automáticamente y la
+  // capa en-memoria deja de devolver brechas viejas.
+  const _segActual = (typeof DB !== 'undefined' && Array.isArray(DB.seguimiento))
+    ? DB.seguimiento.find(s => s.accion_id === accionId && s.mes === mes)
+    : null;
+  const _comHash = _planHashComentario(_segActual?.comentario || '');
+  const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'') + '_c' + _comHash;
   // 1a. Cache en memoria (misma sesión) — solo si vigente
   if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) return PLAN_BRECHAS_CACHE[cacheKey];
   // Si el caché tiene algo no vigente, lo invalidamos para forzar regenerar
@@ -7631,17 +7728,24 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     delete PLAN_BRECHAS_CACHE[cacheKey];
   }
 
-  // 1b. Estado ya hidratado — verificar que la banda coincida Y que sea vigente
+  // 1b. Estado ya hidratado — verificar que la banda coincida, sea vigente,
+  //     Y que el comentario con que se generaron coincida con el actual.
+  //     Esto evita el caso "Borrador retomado" sirviendo brechas que ignoran
+  //     un comentario que el director agregó después.
   if (PLAN_STATE && PLAN_STATE.brechasData) {
     const storedBanda = PLAN_STATE.brechasData._banda;
     const bandaOk = !storedBanda || storedBanda === (banda||'');
     const vigente = esBrechaVigente(PLAN_STATE.brechasData);
-    if (bandaOk && vigente) {
+    const _comUsado = (PLAN_STATE.brechasData?._meta?.comentario_usado?.texto || '').toString().trim();
+    const _comActual = (_segActual?.comentario || '').toString().trim();
+    const comentarioOk = _comUsado === _comActual;
+    if (bandaOk && vigente && comentarioOk) {
       PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
       return PLAN_STATE.brechasData;
     }
-    // Banda cambió o brechas viejas sin _meta — invalidar y regenerar
+    // Banda cambió, brechas viejas sin _meta, o comentario distinto — invalidar
     if (!vigente) console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando con v8.3');
+    if (vigente && !comentarioOk) console.log('[planCargarBrechas] comentario cambió desde la última generación, regenerando brechas');
     PLAN_STATE.brechasData = null;
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
@@ -7661,13 +7765,20 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
       const storedBanda = ma.brechas_data._banda;
       const bandaOk = !storedBanda || storedBanda === banda;
       const vigente = esBrechaVigente(ma.brechas_data);
-      if(bandaOk && vigente){
+      // Validar que el comentario con que se generaron las brechas coincida con
+      // el comentario actual del seguimiento. Si el director cambió el texto
+      // después de la última generación, descartamos y regeneramos.
+      const _comUsado = (ma.brechas_data?._meta?.comentario_usado?.texto || '').toString().trim();
+      const _comActual = (_segActual?.comentario || '').toString().trim();
+      const comentarioOk = _comUsado === _comActual;
+      if(bandaOk && vigente && comentarioOk){
         PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
       // Banda cambió o brechas no vigentes (sin _meta.version v8.3) — regenerar
       if (!vigente) console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando con v8.3');
+      if (!comentarioOk) console.log('[planCargarBrechas] comentario del seguimiento cambió desde la última generación, regenerando');
     }
   } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
 
@@ -7685,10 +7796,17 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         .order('updated_at', { ascending: false })
         .limit(10);
       if(Array.isArray(equivalentes)){
-        // Buscamos el más reciente con la misma banda Y que sea vigente (v8.3+)
+        const _comActual = (_segActual?.comentario || '').toString().trim();
+        // Buscamos el más reciente con la misma banda, vigente, Y que haya sido
+        // generado con el mismo comentario (o ambos vacíos). Si el comentario
+        // del seguimiento actual difiere del comentario_usado de las brechas
+        // candidatas, NO reusamos: hay que regenerar para que el comentario
+        // del director influya en el análisis.
         const match = equivalentes.find(r => {
           const b = r.brechas_data?._banda;
-          return b && b === banda && esBrechaVigente(r.brechas_data);
+          if (!(b && b === banda && esBrechaVigente(r.brechas_data))) return false;
+          const comUsado = (r.brechas_data?._meta?.comentario_usado?.texto || '').toString().trim();
+          return comUsado === _comActual;
         });
         if(match && match.brechas_data){
           // Reusamos las brechas pero las marcamos como reusadas para trazabilidad
@@ -7700,10 +7818,11 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
           }
           return brechasReusadas;
         }
-        // Si hay match con banda pero no vigente, lo loggeamos pero NO lo usamos
+        // Si hay match con banda pero no vigente o con comentario distinto,
+        // lo loggeamos pero NO lo usamos
         const matchObsoleto = equivalentes.find(r => r.brechas_data?._banda === banda);
         if (matchObsoleto) {
-          console.log('[planCargarBrechas] cache compartido obsoleto descartado para banda', banda);
+          console.log('[planCargarBrechas] cache compartido descartado para banda', banda, '(versión obsoleta o comentario distinto)');
         }
       }
     } catch(e) { console.warn('planCargarBrechas lookup banda-compartida:', e.message); }
@@ -7718,6 +7837,11 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     const _accionObj = (DB.acciones || []).find(a => a.id === accionId);
     const _accionNombre = _accionObj?.nombre || '';
     const _accionDescripcion = _accionObj?.descripcion || '';
+    // Pasar el comentario del seguimiento explícitamente en el body. Antes
+    // dependíamos de que la edge function lo buscara por su cuenta filtrando
+    // por colegio_id+accion_id+mes; pasarlo aquí garantiza que la IA lo reciba
+    // aunque la edge function tenga un fallo en el lookup.
+    const _comentarioActual = (_segActual?.comentario || '').toString().trim();
 
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
       method: 'POST',
@@ -7732,7 +7856,8 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         accion_descripcion: _accionDescripcion,
         mes: mes,
         pct: pct,
-        banda: banda
+        banda: banda,
+        comentario: _comentarioActual
       })
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
