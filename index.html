@@ -685,13 +685,14 @@ async function guardarCambioClave() {
   if(nueva.length < 6){ showToast('La contraseña debe tener al menos 6 caracteres'); return; }
   if(nueva !== confirm){ showToast('Las contraseñas nuevas no coinciden'); return; }
 
-  // Verificar contraseña actual
-  const {data:user, error} = await sb.from('usuarios')
-    .select('id').eq('id', SESSION.user.id).eq('password_hash', actual).single();
-  if(error || !user){ showToast('❌ La contraseña actual es incorrecta'); return; }
+  // Verificar contraseña actual reautenticando con Supabase Auth
+  // (no podemos comparar texto plano contra auth.users porque está bcrypteado)
+  const email = SESSION.user.email;
+  const { error: errVerif } = await sb.auth.signInWithPassword({ email, password: actual });
+  if(errVerif){ showToast('❌ La contraseña actual es incorrecta'); return; }
 
-  // Actualizar
-  const {error:updErr} = await sb.from('usuarios').update({password_hash: nueva}).eq('id', SESSION.user.id);
+  // Actualizar la contraseña en auth.users (bcrypt). public.usuarios NO se toca.
+  const { error: updErr } = await sb.auth.updateUser({ password: nueva });
   if(updErr){ showToast('❌ Error: '+updErr.message); return; }
 
   closeModal();
