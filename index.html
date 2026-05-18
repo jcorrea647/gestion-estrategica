@@ -555,8 +555,7 @@ async function _routeAfterAuth(authUserId, opts) {
   }
 }
 
-// ====== RECUPERACION DE CLAVE ======
-const RECOVERY_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/enviar-recovery';
+// ====== RECUPERACION DE CLAVE (Supabase Auth) ======
 
 function abrirRecuperarClave() {
   openModal('Recuperar contraseña',
@@ -581,30 +580,34 @@ async function enviarRecuperacion() {
   if(btnPrim){ btnPrim.textContent = 'Enviando...'; }
 
   try {
-    const resp = await fetch(RECOVERY_FN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email })
+    // Supabase Auth maneja el envío del email de recovery con token seguro.
+    // El link en el email apuntará a esta misma URL con #access_token=...&type=recovery
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
     });
-    const data = await resp.json().catch(function(){ return {}; });
-    if(!resp.ok){ throw new Error(data.error || 'Error enviando solicitud'); }
+    if(error) throw error;
 
     closeModal();
+    // Mensaje genérico: no confirmamos si el email existe o no (anti-enumeración)
     showToast('✉ Si el correo existe, recibirás un enlace en breve.');
   } catch(e) {
     btns.forEach(function(b){ b.disabled = false; });
     if(btnPrim){ btnPrim.textContent = 'Enviar enlace'; }
-    showToast('Error: ' + e.message);
+    showToast('Error: ' + (e.message || 'No se pudo enviar el enlace'));
   }
 }
 
 function detectarRecovery() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('recovery');
-  if(!token) return false;
-  window._recoveryToken = token;
-  showScreen('screenRecovery');
-  return true;
+  // Supabase Auth: el link de recovery llega como hash con type=recovery
+  // Ejemplo: https://app.com/#access_token=xxx&refresh_token=yyy&type=recovery&...
+  const hash = window.location.hash || '';
+  if(hash.includes('type=recovery')) {
+    // Limpiar el hash de la URL para que no quede el token visible
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showScreen('screenRecovery');
+    return true;
+  }
+  return false;
 }
 
 async function guardarNuevaClave() {
@@ -620,38 +623,22 @@ async function guardarNuevaClave() {
 
   btn.textContent='Guardando...'; btn.disabled=true;
 
-  // 1) Buscar token válido (no usado, no expirado)
-  const ahora = new Date().toISOString();
-  const { data: reset, error: errReset } = await sb
-    .from('password_resets')
-    .select('id, usuario_id, expira_en, usado')
-    .eq('token', window._recoveryToken)
-    .maybeSingle();
+  // Supabase ya creó una sesión temporal al procesar el link de recovery.
+  // updateUser actualiza el password en auth.users (bcrypt) usando esa sesión.
+  const { error } = await sb.auth.updateUser({ password: p1 });
 
-  if(errReset || !reset){
+  if(error){
     btn.textContent='Guardar contraseña'; btn.disabled=false;
-    errEl.textContent='Enlace inválido. Solicita uno nuevo.'; errEl.classList.add('show'); return;
-  }
-  if(reset.usado){
-    btn.textContent='Guardar contraseña'; btn.disabled=false;
-    errEl.textContent='Este enlace ya fue usado. Solicita uno nuevo.'; errEl.classList.add('show'); return;
-  }
-  if(reset.expira_en < ahora){
-    btn.textContent='Guardar contraseña'; btn.disabled=false;
-    errEl.textContent='El enlace expiró. Solicita uno nuevo.'; errEl.classList.add('show'); return;
+    // Errores típicos: sesión expirada, password débil según política del proyecto, etc.
+    errEl.textContent='Error: '+(error.message || 'No se pudo actualizar la contraseña');
+    errEl.classList.add('show');
+    return;
   }
 
-  // 2) Actualizar password del usuario
-  const { error: errUpd } = await sb.from('usuarios').update({ password_hash: p1 }).eq('id', reset.usuario_id);
-  if(errUpd){
-    btn.textContent='Guardar contraseña'; btn.disabled=false;
-    errEl.textContent='Error: '+errUpd.message; errEl.classList.add('show'); return;
-  }
+  // Cerrar la sesión temporal de recovery para forzar login limpio con la nueva clave
+  await sb.auth.signOut();
 
-  // 3) Marcar token como usado
-  await sb.from('password_resets').update({ usado: true }).eq('id', reset.id);
-
-  // 4) Mostrar éxito
+  // Mostrar éxito
   document.getElementById('recoveryForm').style.display = 'none';
   document.getElementById('recoveryDone').style.display = 'block';
   document.getElementById('recoverySub').textContent = 'Listo';
