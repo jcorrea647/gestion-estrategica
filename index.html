@@ -422,7 +422,7 @@ const isMulti   = rol => ['superadmin','sostenedor'].includes(rol);
 (async () => {
   hideLoading();
   // Si el usuario llega desde un email de recuperación, mostrar pantalla de nueva clave
-  if(detectarRecovery()) return;
+  if(await detectarRecovery()) return;
   // Si viene de nueva pestaña con plan params, intentar restaurar sesión automáticamente
   if(_planParamsPresent()){
     _tryAutoRestoreSession().then(ok => {
@@ -597,17 +597,22 @@ async function enviarRecuperacion() {
   }
 }
 
-function detectarRecovery() {
+async function detectarRecovery() {
   // Supabase Auth: el link de recovery llega como hash con type=recovery
   // Ejemplo: https://app.com/#access_token=xxx&refresh_token=yyy&type=recovery&...
   const hash = window.location.hash || '';
-  if(hash.includes('type=recovery')) {
-    // Limpiar el hash de la URL para que no quede el token visible
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    showScreen('screenRecovery');
-    return true;
-  }
-  return false;
+  if(!hash.includes('type=recovery')) return false;
+
+  // CRÍTICO: esperar a que el SDK de Supabase procese el hash y establezca la sesión
+  // de recovery. Si limpiamos el hash antes, updateUser() falla con "Auth session missing".
+  // getSession() fuerza al cliente a leer y consumir el access_token del hash.
+  await sb.auth.getSession();
+
+  // Ahora sí, limpiar el hash para que el token no quede visible en la URL
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+
+  showScreen('screenRecovery');
+  return true;
 }
 
 async function guardarNuevaClave() {
