@@ -320,7 +320,6 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="loginPassword" type="password" placeholder="..." onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"><div class="form-error" id="loginError">Correo o contrasena incorrectos.</div></div>
     <button class="btn btn-primary btn-full" onclick="doLogin()" id="loginBtn">Ingresar</button>
     <a class="recovery-link" onclick="abrirRecuperarClave()">¿Olvidaste tu contraseña?</a>
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);text-align:center;line-height:1.8"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5b3a3f3632351b363e3134293a3e283834373a29753837">[email&#160;protected]</a> / admin1234<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="097a667a7d6c676c6d667b496d686c64276a65">[email&#160;protected]</a> / sostenedor123<br><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f19598839492859e83b1958490838594df929d">[email&#160;protected]</a> / director123</div>
   </div>
 </div>
 
@@ -3748,15 +3747,17 @@ function openAddUsuario(){
   openModal('Nuevo usuario',
     '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div>'+
     '<div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-email" type="email"></div>'+
-    '<div class="form-group"><label class="form-label">Contrasena</label><input class="form-input" id="f-pass" type="password"></div>'+
-    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director">Director</option><option value="equipo_gestion">Equipo Gestion</option></select></div>',
+    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director">Director</option><option value="equipo_gestion">Equipo Gestion</option></select></div>'+
+    '<div style="font-size:12px;color:var(--muted);background:#f5f5f0;padding:10px;border-radius:6px;margin-top:8px;line-height:1.5">⚠ El usuario se creará sin contraseña. Para activarlo, pídele que use "¿Olvidaste tu contraseña?" en el login para definir su clave (necesita estar dado de alta en Supabase Auth previamente).</div>',
     [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear usuario',cls:'btn-primary',action:'saveUsuario()'}]);
 }
 async function saveUsuario(){
-  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),pass=document.getElementById('f-pass')?.value,rol=document.getElementById('f-rol')?.value;
-  if(!nombre||!email||!pass){showToast('Completa todos los campos');return;}
-  if(pass.length<6){showToast('La contrasena debe tener al menos 6 caracteres');return;}
-  const{error}=await sb.from('usuarios').insert({colegio_id:SESSION.colegioActivo,nombre,email,password_hash:pass,rol,activo:true}).select().single();
+  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),rol=document.getElementById('f-rol')?.value;
+  if(!nombre||!email){showToast('Completa todos los campos');return;}
+  // Nota: NO se inserta password_hash. La autenticación se maneja por Supabase Auth (auth.users).
+  // Para que el usuario pueda entrar, debe existir también en auth.users (alta manual desde Dashboard
+  // o pendiente: implementar edge function de invitación por email).
+  const{error}=await sb.from('usuarios').insert({colegio_id:SESSION.colegioActivo,nombre,email,rol,activo:true}).select().single();
   if(error){showToast(error.code==='23505'?'Ya existe un usuario con ese email':'Error: '+error.message);return;}
   closeModal();loadUsuariosPanel();showToast('Usuario creado');
 }
@@ -3764,15 +3765,15 @@ function openEditUsuario(id,nombre,email,rol,activo){
   openModal('Editar usuario',
     '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre" value="'+nombre+'"></div>'+
     '<div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-email" type="email" value="'+email+'"></div>'+
-    '<div class="form-group"><label class="form-label">Nueva contrasena (dejar vacio para no cambiar)</label><input class="form-input" id="f-pass" type="password"></div>'+
-    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director"'+(rol==='director'?' selected':'')+'>Director</option><option value="equipo_gestion"'+(rol==='equipo_gestion'?' selected':'')+'>Equipo Gestion</option></select></div>',
+    '<div class="form-group"><label class="form-label">Rol</label><select class="form-select" id="f-rol"><option value="director"'+(rol==='director'?' selected':'')+'>Director</option><option value="equipo_gestion"'+(rol==='equipo_gestion'?' selected':'')+'>Equipo Gestion</option></select></div>'+
+    '<div style="font-size:12px;color:var(--muted);background:#f5f5f0;padding:10px;border-radius:6px;margin-top:8px;line-height:1.5">ℹ Para cambiar la contraseña, el usuario debe usar "¿Olvidaste tu contraseña?" en el login.</div>',
     [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateUsuario('"+id+"')"}]);
 }
 async function updateUsuario(id){
-  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),pass=document.getElementById('f-pass')?.value,rol=document.getElementById('f-rol')?.value;
+  const nombre=document.getElementById('f-nombre')?.value.trim(),email=document.getElementById('f-email')?.value.trim().toLowerCase(),rol=document.getElementById('f-rol')?.value;
   if(!nombre||!email){showToast('Completa nombre y email');return;}
+  // Nota: NO se actualiza password_hash. Cambios de contraseña se hacen vía recovery por email.
   const payload={nombre,email,rol};
-  if(pass){if(pass.length<6){showToast('La contrasena debe tener al menos 6 caracteres');return;}payload.password_hash=pass;}
   const{error}=await sb.from('usuarios').update(payload).eq('id',id);
   if(error){showToast(error.code==='23505'?'Ya existe un usuario con ese email':'Error: '+error.message);return;}
   closeModal();loadUsuariosPanel();showToast('Usuario actualizado');
