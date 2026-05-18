@@ -492,23 +492,11 @@ async function _routeAfterAuth(authUserId, opts) {
   opts = opts || {};
   const errEl = opts.errEl || document.getElementById('loginError');
 
-  // === DIAGNÓSTICO TEMPORAL ===
-  console.log('[DIAG] _routeAfterAuth llamado con UID:', authUserId);
-  const sessCheck = await sb.auth.getSession();
-  console.log('[DIAG] Sesión actual:', sessCheck);
-  // === FIN DIAGNÓSTICO ===
-
   const {data:user, error} = await sb.from('usuarios')
     .select('*').eq('id', authUserId).eq('activo', true).single();
 
-  // === DIAGNÓSTICO TEMPORAL ===
-  console.log('[DIAG] Resultado SELECT usuarios:', user);
-  console.log('[DIAG] Error SELECT usuarios:', error);
-  // === FIN DIAGNÓSTICO ===
-
   if (error || !user) {
-    // NO ejecutar signOut() en modo diagnóstico para poder inspeccionar
-    console.log('[DIAG] NO se hace signOut, sesión preservada para diagnóstico');
+    await sb.auth.signOut();
     if (errEl) {
       errEl.textContent = opts.source === 'oauth'
         ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
