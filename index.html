@@ -7645,7 +7645,12 @@ let PLAN_BRECHAS_LOADING = false;
 // con la edge function actual. Si no, se considera obsoleta y forzamos regenerar.
 // VERSIONES_VIGENTES: lista de versiones aceptadas. Para forzar regeneración
 // global, basta con sacar versiones viejas de esta lista.
-const VERSIONES_BRECHAS_VIGENTES = ['v8.3'];
+// Solo v8.4 está vigente: aunque v8.3 era correcta estructuralmente, su
+// CAUSALES_CATALOGO tenía los nombres viejos de C10..C17 (Liderazgo
+// directivo, Cultura institucional, etc.) y la frase del resumen quedó
+// desfasada del catálogo definitivo. Forzar invalidación de v8.3 garantiza
+// que el primer fetch tras el deploy regenere con los nombres nuevos.
+const VERSIONES_BRECHAS_VIGENTES = ['v8.4'];
 function esBrechaVigente(b) {
   if (!b || typeof b !== 'object') return false;
   // Si hay error o modo distinto a PERSONALIZADO, no es vigente
