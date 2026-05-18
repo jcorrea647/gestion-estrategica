@@ -12447,38 +12447,109 @@ async function renderMisPlanes(){
       </div>`;
   } else {
     html += '<div class="card" style="padding:0;overflow:hidden">';
-    html += '<div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
-    html += '<div>Acción</div><div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Próximo plazo</div><div></div>';
+    html += '<div style="display:grid;grid-template-columns:2.2fr 2.2fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
+    html += '<div>Acción</div><div>Planes por mes</div><div>Próximo plazo</div><div></div>';
     html += '</div>';
 
+    // Agrupar por accion_id: si una acción tiene plan en varios meses,
+    // se muestra en una sola fila con chips clickeables por mes
+    // (ordenados de más antiguo a más reciente dentro del grupo).
+    // El orden entre filas respeta el ordenamiento original `lista`:
+    // la posición del grupo la fija el plan que aparece PRIMERO en lista
+    // (es decir, el "mejor" según el criterio de orden activo).
+    const grupos = []; // [{accion_id, planes: [m, m, ...]}]
+    const idxGrupo = {};
     lista.forEach(m => {
-      const accion = (DB.acciones||[]).find(a => a.id === m.accion_id);
+      if (idxGrupo[m.accion_id] === undefined) {
+        idxGrupo[m.accion_id] = grupos.length;
+        grupos.push({ accion_id: m.accion_id, planes: [] });
+      }
+      grupos[idxGrupo[m.accion_id]].planes.push(m);
+    });
+    // Dentro de cada grupo, ordenar planes de mes más antiguo a más nuevo
+    grupos.forEach(g => g.planes.sort((a, b) => (a.mes||'').localeCompare(b.mes||'')));
+
+    grupos.forEach(g => {
+      const accion = (DB.acciones||[]).find(a => a.id === g.accion_id);
       const accionNombre = accion?.nombre || '(acción eliminada)';
-      const cumpl = _cumplimientoPlan(m.id);
-      const cumplBar = cumpl === null
-        ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
-        : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
-      const respText = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '');
+      const accionDesc = accion?.descripcion || '';
+      const areaPlan = _areaDeAccion(g.accion_id);
+
+      // Para el responsable, tomamos el del plan más reciente del grupo
+      // (es el más representativo del estado actual). Si no hay, queda vacío.
+      const planMasReciente = g.planes.slice().sort((a,b) => (b.mes||'').localeCompare(a.mes||''))[0];
+      const respText = planMasReciente?.acuerdo_quien || (planMasReciente?.acuerdo_co ? '· ' + planMasReciente.acuerdo_co : '');
       const respDisplay = respText
         ? escapeHtmlPlan(respText)
         : '<span style="color:var(--muted)">Sin asignar</span>';
-      const areaPlan = _areaDeAccion(m.accion_id);
+
+      // Próximo plazo: el más urgente del grupo (vencido > hoy > próximo > sin plazo).
+      // Tomamos el plan ACTIVA con menor fecha_objetivo (más cercano a vencer/más vencido).
+      const planParaPlazo = g.planes
+        .filter(m => m.estado === 'ACTIVA' && m.fecha_objetivo)
+        .sort((a,b) => (a.fecha_objetivo||'').localeCompare(b.fecha_objetivo||''))[0]
+        || g.planes.find(m => m.fecha_objetivo) || planMasReciente;
+      const plazoHtml = _plazoBadge(planParaPlazo?.fecha_objetivo);
+
+      // Construir chips de cada mes
+      const chipsHtml = g.planes.map(m => {
+        const cumpl = _cumplimientoPlan(m.id);
+        const dias = _diasHastaFecha(m.fecha_objetivo);
+        const vencido = m.estado === 'ACTIVA' && dias !== null && dias < 0;
+        // Color del chip según cumplimiento (alineado con barra de cumpl previa):
+        //   verde si >=70%, ámbar si >=40%, rojo si <40%, gris si no hay datos
+        // Si está vencido, forzar rojo para llamar la atención.
+        let bg = '#f3f4f6', fg = '#4b5563', bd = '#d1d5db';
+        if (cumpl !== null) {
+          if (vencido || cumpl < 40)      { bg = '#FCEBEB'; fg = '#791F1F'; bd = '#F7C1C1'; }
+          else if (cumpl < 70)            { bg = '#FAEEDA'; fg = '#854F0B'; bd = '#FAC775'; }
+          else                            { bg = '#EAF3DE'; fg = '#3B6D11'; bd = '#C0DD97'; }
+        } else if (vencido) {
+          bg = '#FCEBEB'; fg = '#791F1F'; bd = '#F7C1C1';
+        }
+        const cumplLabel = cumpl === null ? 'sin datos' : (cumpl + '%');
+        const venceLabel = vencido ? `<span style="font-size:10px;padding:1px 5px;background:rgba(121,31,31,0.15);border-radius:999px;margin-left:2px">${Math.abs(dias)}d</span>` : '';
+        const estadoHint = m.estado === 'BORRADOR'
+          ? '<span style="font-size:9px;padding:1px 5px;background:rgba(75,85,99,0.12);color:#4b5563;border-radius:999px;margin-left:2px;letter-spacing:.04em">BORR</span>'
+          : (m.estado === 'COMPLETADA'
+              ? '<span style="font-size:9px;padding:1px 5px;background:rgba(55,48,163,0.12);color:#3730a3;border-radius:999px;margin-left:2px;letter-spacing:.04em">DONE</span>'
+              : '');
+        const titleAttr = `Mes: ${fmtMes(m.mes, true)}\nEstado: ${m.estado||'—'}\nCumplimiento: ${cumplLabel}`;
+        return `<span class="plan-chip-mes"
+                  onclick="event.stopPropagation();abrirPlan('${m.accion_id}','${m.mes}')"
+                  title="${escapeAttr(titleAttr)}"
+                  style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:transform .08s,box-shadow .12s"
+                  onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 1px 4px rgba(0,0,0,.08)'"
+                  onmouseout="this.style.transform='';this.style.boxShadow=''">
+                  <span style="opacity:.75">${fmtMes(m.mes, true)}</span>
+                  <span>${cumplLabel}</span>
+                  ${venceLabel}
+                  ${estadoHint}
+                </span>`;
+      }).join('');
+
+      // Si solo hay 1 plan en el grupo, también se puede hacer click en
+      // la fila entera (retro-compat con UX anterior). Si hay 2+, dejamos
+      // que solo los chips sean clickeables para evitar ambigüedad.
+      const filaClickeable = g.planes.length === 1;
+      const rowClickAttr = filaClickeable
+        ? `onclick="abrirPlan('${g.planes[0].accion_id}','${g.planes[0].mes}')"`
+        : '';
+      const rowCursor = filaClickeable ? 'cursor:pointer;' : '';
 
       html += `
-        <div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s"
+        <div style="display:grid;grid-template-columns:2.2fr 2.2fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;${rowCursor}transition:background .12s"
              onmouseover="this.style.background='var(--bg-soft,#f8f9fa)'"
              onmouseout="this.style.background=''"
-             onclick="abrirPlan('${m.accion_id}','${m.mes}')">
+             ${rowClickAttr}>
           <div>
             ${areaPlan ? `<div style="margin-bottom:5px">${_areaBadge(areaPlan)}</div>` : ''}
             <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
             <div style="font-size:11px;color:var(--muted)">👤 ${respDisplay}</div>
           </div>
-          <div style="font-size:12px;color:var(--text)">${fmtMes(m.mes, true)}</div>
-          <div>${_estadoBadge(m.estado)}</div>
-          <div>${cumplBar}</div>
-          <div>${_plazoBadge(m.fecha_objetivo)}</div>
-          <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${chipsHtml}</div>
+          <div>${plazoHtml}</div>
+          <div style="text-align:right;color:var(--muted);font-size:14px">${filaClickeable ? '›' : ''}</div>
         </div>`;
     });
     html += '</div>';
