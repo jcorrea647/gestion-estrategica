@@ -1,7 +1,9 @@
 name: Backup Diario Gestión Estratégica
 on:
   schedule:
-    - cron: '0 5 * * *'
+    # Cada 6 horas: 00:00, 06:00, 12:00, 18:00 UTC
+    # En Chile (GMT-4): 20:00, 02:00, 08:00, 14:00
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 jobs:
   backup:
@@ -41,7 +43,7 @@ jobs:
             echo "Sin cambios para commitear"
             exit 0
           fi
-          git commit -m "Backup automatico $(date '+%Y-%m-%d')"
+          git commit -m "Backup automatico $(date '+%Y-%m-%d %H:%M UTC')"
           for i in 1 2 3; do
             git fetch origin main
             if git rebase origin/main; then
