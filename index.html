@@ -455,68 +455,57 @@ async function doLoginGoogle() {
 async function handleOAuthReturn() {
   const {data:{session}} = await sb.auth.getSession();
   if (!session?.user) return false;
-  
+
   // Limpiar el #access_token de la URL para que no quede visible
   if (window.location.hash.includes('access_token')) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
-  
-  const {data:user, error} = await sb.from('usuarios')
-    .select('*').eq('id', session.user.id).eq('activo', true).single();
-  
-  if (error || !user) {
-    await sb.auth.signOut();
-    const errEl = document.getElementById('loginError');
-    if (errEl) { errEl.textContent='Tu cuenta Google no tiene perfil. Contacta al administrador.'; errEl.classList.add('show'); }
-    return false;
-  }
-  
-  SESSION.user = user;
-  if (isMulti(user.rol)) {
-    setLoading('Cargando colegios...');
-    let query = sb.from('colegios').select('*').eq('app','gestion').order('nombre');
-    if (user.rol === 'sostenedor') query = query.eq('sostenedor_id', user.id);
-    const {data:cols} = await query;
-    SESSION.colegios = cols || [];
-    hideLoading();
-    _saveSession(user);
-    renderMultiPanel();
-    showScreen('screenMulti');
-  } else {
-    if (!user.colegio_id) return false;
-    const {data: colCheck} = await sb.from('colegios').select('id, app').eq('id', user.colegio_id).maybeSingle();
-    if (!colCheck || (colCheck.app && colCheck.app !== 'gestion')) {
-      await sb.auth.signOut();
-      return false;
-    }
-    setLoading('Cargando datos...');
-    showScreen('screenColegio');
-    try {
-      await loadColegio(user.colegio_id);
-      setupColegioUI();
-      hideLoading();
-      showPanel('dashboard');
-      denLoad();
-      _saveSession(user);
-      _checkPlanAutoOpen();
-    } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
-  }
-  return true;
+
+  return await _routeAfterAuth(session.user.id, {source:'oauth'});
 }
-  // AUTH
+
+  // AUTH - Login con correo + contraseña (Supabase Auth)
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass  = document.getElementById('loginPassword').value;
   const errEl = document.getElementById('loginError');
   const btn   = document.getElementById('loginBtn');
   errEl.classList.remove('show');
+  errEl.textContent = 'Correo o contrasena incorrectos.';
   btn.textContent = 'Verificando...'; btn.disabled = true;
 
-  const {data:user, error} = await sb.from('usuarios')
-    .select('*').eq('email',email).eq('password_hash',pass).eq('activo',true).single();
+  const {data, error} = await sb.auth.signInWithPassword({ email, password: pass });
 
   btn.textContent = 'Ingresar'; btn.disabled = false;
-  if (error || !user) { errEl.classList.add('show'); return; }
+
+  if (error || !data?.user) {
+    errEl.classList.add('show');
+    return;
+  }
+
+  await _routeAfterAuth(data.user.id, {source:'password', errEl});
+}
+
+// Helper compartido: lleva al usuario a screenMulti o screenColegio
+// según su perfil en public.usuarios. Usado por OAuth (Google) y password.
+async function _routeAfterAuth(authUserId, opts) {
+  opts = opts || {};
+  const errEl = opts.errEl || document.getElementById('loginError');
+
+  const {data:user, error} = await sb.from('usuarios')
+    .select('*').eq('id', authUserId).eq('activo', true).single();
+
+  if (error || !user) {
+    await sb.auth.signOut();
+    if (errEl) {
+      errEl.textContent = opts.source === 'oauth'
+        ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
+        : 'Correo o contrasena incorrectos.';
+      errEl.classList.add('show');
+    }
+    return false;
+  }
+
   SESSION.user = user;
 
   if (isMulti(user.rol)) {
@@ -530,27 +519,39 @@ async function doLogin() {
     _saveSession(user);
     renderMultiPanel();
     showScreen('screenMulti');
-  } else {
-    if (!user.colegio_id) { errEl.classList.add('show'); return; }
-    // Verificar que el colegio del usuario pertenezca a la app "gestion"
-    const {data: colCheck} = await sb.from('colegios').select('id, app').eq('id', user.colegio_id).maybeSingle();
-    if (!colCheck) { errEl.classList.add('show'); errEl.textContent='Colegio no encontrado.'; return; }
-    if (colCheck.app && colCheck.app !== 'gestion') {
-      errEl.classList.add('show');
-      errEl.textContent='Tu cuenta no tiene acceso a esta aplicación.';
-      return;
-    }
-    setLoading('Cargando datos...');
-    showScreen('screenColegio');
-    try {
-      await loadColegio(user.colegio_id);
-      setupColegioUI();
-      hideLoading();
-      showPanel('dashboard');
-      denLoad();
-      _saveSession(user);
-      _checkPlanAutoOpen();
-    } catch(e) { hideLoading(); showToast('Error: '+e.message); showScreen('screenLogin'); }
+    return true;
+  }
+
+  if (!user.colegio_id) {
+    await sb.auth.signOut();
+    if (errEl) { errEl.textContent='Tu cuenta no tiene colegio asignado.'; errEl.classList.add('show'); }
+    return false;
+  }
+
+  // Verificar que el colegio del usuario pertenezca a la app "gestion"
+  const {data: colCheck} = await sb.from('colegios').select('id, app').eq('id', user.colegio_id).maybeSingle();
+  if (!colCheck || (colCheck.app && colCheck.app !== 'gestion')) {
+    await sb.auth.signOut();
+    if (errEl) { errEl.textContent='Tu cuenta no tiene acceso a esta aplicación.'; errEl.classList.add('show'); }
+    return false;
+  }
+
+  setLoading('Cargando datos...');
+  showScreen('screenColegio');
+  try {
+    await loadColegio(user.colegio_id);
+    setupColegioUI();
+    hideLoading();
+    showPanel('dashboard');
+    denLoad();
+    _saveSession(user);
+    _checkPlanAutoOpen();
+    return true;
+  } catch(e) {
+    hideLoading();
+    showToast('Error: '+e.message);
+    showScreen('screenLogin');
+    return false;
   }
 }
 
