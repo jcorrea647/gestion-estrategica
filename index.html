@@ -3204,6 +3204,13 @@ async function documentoCargar(tipo, file){
     const { error: updErr } = await sb.from('colegio_documentos').update(updatePayload).eq('id', docRow.id);
     if(updErr) console.warn('[Documentos] Update final:', updErr.message);
 
+    // Invalidar cache de fecha-máxima de docs: el frontend usará la nueva
+    // fecha para detectar que cualquier brecha generada antes de esta
+    // subida quedó obsoleta y debe regenerarse al abrir el plan.
+    if (typeof _DOCS_FECHA_MAX_CACHE !== 'undefined') {
+      delete _DOCS_FECHA_MAX_CACHE[DB.colegio?.id || SESSION?.colegioActivo];
+    }
+
     // 7. Refrescar UI con estado final
     await _docCargarLista(true);
     _docRenderLista(_DOC_CACHE);
@@ -3238,6 +3245,12 @@ async function documentoEliminar(docId, tipo){
     }
     const { error } = await sb.from('colegio_documentos').delete().eq('id', docId);
     if(error) throw error;
+    // Invalidar cache de fecha-máxima de docs (mismo razonamiento que al
+    // subir: si el set de docs cambió, las brechas viejas pueden estar
+    // obsoletas y deben regenerarse).
+    if (typeof _DOCS_FECHA_MAX_CACHE !== 'undefined') {
+      delete _DOCS_FECHA_MAX_CACHE[DB.colegio?.id || SESSION?.colegioActivo];
+    }
     await _docCargarLista(true);
     _docRenderLista(_DOC_CACHE);
     showToast('Documento eliminado');
@@ -7745,15 +7758,107 @@ let PLAN_BRECHAS_LOADING = false;
 // desfasada del catálogo definitivo. Forzar invalidación de v8.3 garantiza
 // que el primer fetch tras el deploy regenere con los nombres nuevos.
 const VERSIONES_BRECHAS_VIGENTES = ['v8.4'];
-function esBrechaVigente(b) {
+
+// Flag global: marca si la última carga de brechas regeneró automáticamente
+// (por obsolescencia detectada). El banner "Borrador retomado" se esconde
+// cuando este flag está activo, porque el "borrador" ya no es el que el
+// director dejó: las brechas se refrescaron sin que él tenga que apretar
+// "Empezar de cero". Se resetea al inicio de cada planCargarBrechas().
+let _BRECHAS_AUTO_REGENERADAS = false;
+
+// Cache de fecha del documento institucional más recientemente actualizado
+// (PEI/PME/FASE). Se usa para detectar si las brechas guardadas son
+// anteriores a un cambio de documentos → regla #4 de auto-regeneración.
+// Se hidrata bajo demanda con _ultimaFechaDocsColegio().
+let _DOCS_FECHA_MAX_CACHE = {};
+
+async function _ultimaFechaDocsColegio(colegioId){
+  if (!colegioId) return null;
+  if (_DOCS_FECHA_MAX_CACHE[colegioId] !== undefined) return _DOCS_FECHA_MAX_CACHE[colegioId];
+  try {
+    const { data, error } = await sb.from('colegio_documentos')
+      .select('updated_at')
+      .eq('colegio_id', colegioId)
+      .eq('estado', 'LISTO')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) { _DOCS_FECHA_MAX_CACHE[colegioId] = null; return null; }
+    _DOCS_FECHA_MAX_CACHE[colegioId] = data?.updated_at || null;
+    return _DOCS_FECHA_MAX_CACHE[colegioId];
+  } catch(e){
+    _DOCS_FECHA_MAX_CACHE[colegioId] = null;
+    return null;
+  }
+}
+
+/* esBrechaVigente — decide si una respuesta cacheada de brechas puede
+ * reusarse o si hay que regenerar con la IA. Reglas:
+ *   1. Si hay error o no es un objeto válido → no vigente.
+ *   2. Si el modo es ERROR o LOCAL → no vigente (inservible para el flujo).
+ *   3. FALLBACK_SIN_CONTEXTO solo es vigente si NO hay documentos cargados
+ *      ahora. Si el director subió docs después, hay que regenerar para
+ *      pasar a modo PERSONALIZADO.
+ *   4. PERSONALIZADO requiere versión vigente Y al menos una brecha con
+ *      causales sugeridas (las brechas sin causales son inservibles para
+ *      el paso "Causales" del wizard).
+ *   5. Si las brechas se generaron antes del último update de los documentos
+ *      institucionales del colegio → no vigente (los docs cambiaron).
+ *
+ * Esta función soporta firma sync (sin docsFechaMax) para retrocompat:
+ * en ese caso se omiten las reglas que requieren fecha de docs.
+ */
+function esBrechaVigente(b, opts) {
   if (!b || typeof b !== 'object') return false;
-  // Si hay error o modo distinto a PERSONALIZADO, no es vigente
+  // Regla 1-2: estados claramente inservibles
   if (b.modo === 'ERROR') return false;
-  // Aceptamos FALLBACK_SIN_CONTEXTO porque es legítimo (no hay docs)
-  if (b.modo === 'FALLBACK_SIN_CONTEXTO') return true;
+  if (b.modo === 'LOCAL') return false;
+
+  // Regla 3: FALLBACK_SIN_CONTEXTO es vigente solo si sigue sin haber docs
+  if (b.modo === 'FALLBACK_SIN_CONTEXTO') {
+    const docsFechaMax = opts?.docsFechaMax;
+    // Si no nos pasaron info de docs, retrocompat: lo aceptamos (caller
+    // tendrá que decidir aparte). Si nos pasaron y hay docs ahora,
+    // invalidamos para que se regenere con contexto personalizado.
+    if (docsFechaMax === undefined) return true;
+    if (docsFechaMax) return false;
+    return true;
+  }
+
+  // Regla 4: PERSONALIZADO necesita versión vigente
   const v = b?._meta?.version;
   if (!v) return false;
-  return VERSIONES_BRECHAS_VIGENTES.includes(v);
+  if (!VERSIONES_BRECHAS_VIGENTES.includes(v)) return false;
+
+  // Regla 4b: PERSONALIZADO necesita al menos 1 brecha con causales sugeridas
+  // (si no, el paso "Causales" del wizard queda sin pre-marcado y la promesa
+  // de "personalizado" no se cumple)
+  if (!Array.isArray(b.brechas) || b.brechas.length === 0) return false;
+  const tieneCausales = b.brechas.some(br =>
+    Array.isArray(br.causales_sugeridas) && br.causales_sugeridas.length > 0
+  ) || (Array.isArray(b.causales_top_3) && b.causales_top_3.length > 0);
+  if (!tieneCausales) return false;
+
+  // Regla 5: comparar fecha de generación de las brechas con fecha del último
+  // doc institucional. Si los docs cambiaron después, regenerar.
+  const docsFechaMax = opts?.docsFechaMax;
+  if (docsFechaMax) {
+    const generadoEn = b?._meta?.generado_en;
+    if (generadoEn) {
+      try {
+        if (new Date(docsFechaMax).getTime() > new Date(generadoEn).getTime()) {
+          return false;
+        }
+      } catch(e){ /* fechas malformadas → seguir adelante, no invalidar */ }
+    }
+    // Sin _meta.generado_en (brechas pre-v8.4 estricta), no podemos comparar
+    // con seguridad. Damos por bueno para no provocar regeneraciones masivas
+    // gratis. Cuando las brechas se regeneren por otra causa (versión, etc.),
+    // empezarán a tener generado_en y la regla 5 se aplicará en el siguiente
+    // ciclo.
+  }
+
+  return true;
 }
 
 /* Helper: hash determinístico y corto del comentario actual para incluirlo en
@@ -7811,6 +7916,18 @@ async function invalidarBrechasPorComentario(colegioId, accionId, mes){
 }
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
+  // Resetear el flag de auto-regeneración para esta carga. Se pondrá true
+  // si alguna capa del caché es invalidada por obsolescencia (versión vieja,
+  // modo inservible, docs actualizados, etc.) y termina forzando regenerar
+  // con la IA. El renderer del paso 1 lo lee para esconder el banner
+  // "Borrador retomado" cuando las brechas ya no son las que el director dejó.
+  _BRECHAS_AUTO_REGENERADAS = false;
+
+  // Cargar fecha del último doc institucional del colegio. Si los docs
+  // cambiaron después de que se generaron las brechas, hay que regenerar.
+  const _docsFechaMax = await _ultimaFechaDocsColegio(colegioId);
+  const _vigOpts = { docsFechaMax: _docsFechaMax };
+
   // Incluir hash del comentario actual en la cacheKey: si el director cambia
   // el comentario del seguimiento, el cacheKey cambia automáticamente y la
   // capa en-memoria deja de devolver brechas viejas.
@@ -7820,10 +7937,11 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   const _comHash = _planHashComentario(_segActual?.comentario || '');
   const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'') + '_c' + _comHash;
   // 1a. Cache en memoria (misma sesión) — solo si vigente
-  if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) return PLAN_BRECHAS_CACHE[cacheKey];
+  if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey], _vigOpts)) return PLAN_BRECHAS_CACHE[cacheKey];
   // Si el caché tiene algo no vigente, lo invalidamos para forzar regenerar
-  if (PLAN_BRECHAS_CACHE[cacheKey] && !esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) {
-    console.log('[planCargarBrechas] cache vigente invalidada, regenerando con v8.3');
+  if (PLAN_BRECHAS_CACHE[cacheKey] && !esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey], _vigOpts)) {
+    console.log('[planCargarBrechas] cache en memoria obsoleto, regenerando');
+    _BRECHAS_AUTO_REGENERADAS = true;
     delete PLAN_BRECHAS_CACHE[cacheKey];
   }
 
@@ -7834,7 +7952,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   if (PLAN_STATE && PLAN_STATE.brechasData) {
     const storedBanda = PLAN_STATE.brechasData._banda;
     const bandaOk = !storedBanda || storedBanda === (banda||'');
-    const vigente = esBrechaVigente(PLAN_STATE.brechasData);
+    const vigente = esBrechaVigente(PLAN_STATE.brechasData, _vigOpts);
     const _comUsado = (PLAN_STATE.brechasData?._meta?.comentario_usado?.texto || '').toString().trim();
     const _comActual = (_segActual?.comentario || '').toString().trim();
     const comentarioOk = _comUsado === _comActual;
@@ -7843,8 +7961,14 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
       return PLAN_STATE.brechasData;
     }
     // Banda cambió, brechas viejas sin _meta, o comentario distinto — invalidar
-    if (!vigente) console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando con v8.3');
-    if (vigente && !comentarioOk) console.log('[planCargarBrechas] comentario cambió desde la última generación, regenerando brechas');
+    if (!vigente) {
+      console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando');
+      _BRECHAS_AUTO_REGENERADAS = true;
+    }
+    if (vigente && !comentarioOk) {
+      console.log('[planCargarBrechas] comentario cambió desde la última generación, regenerando brechas');
+      _BRECHAS_AUTO_REGENERADAS = true;
+    }
     PLAN_STATE.brechasData = null;
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
@@ -7863,7 +7987,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     if (ma && ma.brechas_data) {
       const storedBanda = ma.brechas_data._banda;
       const bandaOk = !storedBanda || storedBanda === banda;
-      const vigente = esBrechaVigente(ma.brechas_data);
+      const vigente = esBrechaVigente(ma.brechas_data, _vigOpts);
       // Validar que el comentario con que se generaron las brechas coincida con
       // el comentario actual del seguimiento. Si el director cambió el texto
       // después de la última generación, descartamos y regeneramos.
@@ -7875,9 +7999,15 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
-      // Banda cambió o brechas no vigentes (sin _meta.version v8.3) — regenerar
-      if (!vigente) console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando con v8.3');
-      if (!comentarioOk) console.log('[planCargarBrechas] comentario del seguimiento cambió desde la última generación, regenerando');
+      // Banda cambió o brechas no vigentes (sin _meta.version vigente) — regenerar
+      if (!vigente) {
+        console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando');
+        _BRECHAS_AUTO_REGENERADAS = true;
+      }
+      if (!comentarioOk) {
+        console.log('[planCargarBrechas] comentario del seguimiento cambió desde la última generación, regenerando');
+        _BRECHAS_AUTO_REGENERADAS = true;
+      }
     }
   } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
 
@@ -7903,7 +8033,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         // del director influya en el análisis.
         const match = equivalentes.find(r => {
           const b = r.brechas_data?._banda;
-          if (!(b && b === banda && esBrechaVigente(r.brechas_data))) return false;
+          if (!(b && b === banda && esBrechaVigente(r.brechas_data, _vigOpts))) return false;
           const comUsado = (r.brechas_data?._meta?.comentario_usado?.texto || '').toString().trim();
           return comUsado === _comActual;
         });
@@ -7918,10 +8048,13 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
           return brechasReusadas;
         }
         // Si hay match con banda pero no vigente o con comentario distinto,
-        // lo loggeamos pero NO lo usamos
+        // lo loggeamos pero NO lo usamos. Marcamos auto-regeneración para
+        // ocultar el banner "Borrador retomado" si la única razón por la que
+        // estamos generando con la IA es que el cache compartido era obsoleto.
         const matchObsoleto = equivalentes.find(r => r.brechas_data?._banda === banda);
         if (matchObsoleto) {
           console.log('[planCargarBrechas] cache compartido descartado para banda', banda, '(versión obsoleta o comentario distinto)');
+          _BRECHAS_AUTO_REGENERADAS = true;
         }
       }
     } catch(e) { console.warn('planCargarBrechas lookup banda-compartida:', e.message); }
@@ -8955,7 +9088,7 @@ async function renderPaso1Contexto(){
   const nivel = nivelLogro(s.pct) || nivelLogro(0);
 
   const banner = (s.causas.length || s.comentario || s.propuestas)
-    ? '<div class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
+    ? '<div id="planBorradorBanner" class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
     : '';
 
   // Render inicial con loading. El recuadro narrativo de nivel + bullets se
@@ -8991,6 +9124,17 @@ async function renderPaso1Contexto(){
     brechasResp = await planCargarBrechas(DB.colegio.id, s.accionId, s.mes, s.pct, banda);
   } catch(e) {
     console.warn('[Brechas] Error al cargar:', e.message);
+  }
+
+  // Si las brechas se auto-regeneraron (por versión vieja, modo inservible,
+  // docs nuevos, etc.), el banner "Borrador retomado" ya no aplica: el
+  // director no está mirando lo que dejó, sino una versión refrescada.
+  // Ocultamos el banner y mostramos un toast informativo de bajo
+  // intervencionismo (no requiere acción del usuario, solo informa).
+  if (_BRECHAS_AUTO_REGENERADAS) {
+    const bannerEl = document.getElementById('planBorradorBanner');
+    if (bannerEl) bannerEl.remove();
+    try { showToast('🔄 Brechas actualizadas con tu información más reciente'); } catch(e){}
   }
   const cont = document.getElementById('planBrechasContenedor');
   if (!cont) return; // Drawer ya cerrado
