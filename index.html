@@ -8957,6 +8957,38 @@ async function renderPaso1Contexto(){
   // nueva como el de retomar un borrador donde las causas se borraron pero
   // las brechas se conservaron.
   console.log('[pre-marcado] modoBullets=', modoBullets, 's.causas.length=', (s.causas || []).length, 'causales_top_3=', JSON.stringify(brechasResp?.causales_top_3));
+
+  // Detectar si las causas actuales son un pre-marcado obsoleto que debe
+  // reemplazarse. Condiciones para considerarlo "obsoleto y reemplazable":
+  //   (a) modoBullets === 'PERSONALIZADO' (hay brechas IA frescas con top-3 nuevo)
+  //   (b) hay un causales_top_3 nuevo de la IA con al menos 1 código
+  //   (c) TODAS las causas actuales tienen _sugeridaPorIA === true (es decir,
+  //       son pre-marcado puro, no hay nada que el director haya tocado
+  //       manualmente: ni agregó causas propias, ni desmarcó alguna sugerida,
+  //       ni reordenó la lista). Si alguna causa NO tiene _sugeridaPorIA o
+  //       el set difiere de un pre-marcado puro, respetamos la elección manual.
+  //   (d) el set de códigos actuales NO coincide exactamente con el top-3 nuevo.
+  //
+  // Bajo esas 4 condiciones, reemplazamos. Si falla alguna, dejamos como está.
+  if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length > 0){
+    const nuevoTop3 = Array.isArray(brechasResp?.causales_top_3)
+      ? brechasResp.causales_top_3.map(c => (c||'').toString().trim().toUpperCase()).filter(c => c.match(/^C\d{1,2}$/))
+      : [];
+    if(nuevoTop3.length > 0){
+      const todasSonPreMarcado = s.causas.every(c => c._sugeridaPorIA === true);
+      const sinCausasOtros = !Array.isArray(s.causasOtros) || s.causasOtros.length === 0;
+      const codigosActuales = s.causas.map(c => (c.codigo||'').toString().trim().toUpperCase()).sort();
+      const codigosNuevos = [...nuevoTop3].sort();
+      const setIgual = codigosActuales.length === codigosNuevos.length
+                       && codigosActuales.every((c, i) => c === codigosNuevos[i]);
+      if(todasSonPreMarcado && sinCausasOtros && !setIgual){
+        console.log('[pre-marcado] causas previas obsoletas detectadas, limpiando para reaplicar');
+        console.log('[pre-marcado] codigos actuales:', codigosActuales, '→ nuevos:', codigosNuevos);
+        s.causas = []; // limpiar para que el bloque siguiente reaplique
+      }
+    }
+  }
+
   if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length === 0){
     let top3 = Array.isArray(brechasResp?.causales_top_3) ? brechasResp.causales_top_3 : [];
 
