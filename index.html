@@ -466,7 +466,7 @@ async function handleOAuthReturn() {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 
-  return await _routeAfterAuth(session.user.id, {source:'oauth'});
+  return await _routeAfterAuth(session.user, {source:'oauth'});
 }
 
   // AUTH - Login con correo + contraseña (Supabase Auth)
@@ -488,24 +488,56 @@ async function doLogin() {
     return;
   }
 
-  await _routeAfterAuth(data.user.id, {source:'password', errEl});
+  await _routeAfterAuth(data.user, {source:'password', errEl});
 }
 
 // Helper compartido: lleva al usuario a screenMulti o screenColegio
 // según su perfil en public.usuarios. Usado por OAuth (Google) y password.
-async function _routeAfterAuth(authUserId, opts) {
+//
+// Nota sobre el cambio v2: antes esta función cruzaba por authUser.id contra
+// public.usuarios.id. Eso fallaba cuando un admin eliminaba y recreaba un
+// usuario en Google: Supabase Auth le asignaba un id nuevo, pero el registro
+// en public.usuarios seguía con el id viejo, y el cruce no encontraba nada.
+// Resultado típico: "Tu cuenta Google no tiene perfil" aunque la persona
+// existiera perfectamente activa en public.usuarios. Ahora cruzamos por email
+// (que sí es estable entre recreaciones), lo cual también evita tener que
+// sincronizar UUIDs manualmente cada vez que pase esto.
+async function _routeAfterAuth(authUser, opts) {
   opts = opts || {};
   const errEl = opts.errEl || document.getElementById('loginError');
+  const authEmail = (authUser?.email || '').toLowerCase().trim();
 
-  const {data:user, error} = await sb.from('usuarios')
-    .select('*').eq('id', authUserId).eq('activo', true).single();
+  if (!authEmail) {
+    await sb.auth.signOut();
+    if (errEl) {
+      errEl.textContent = 'No se pudo obtener el correo de tu cuenta. Intenta de nuevo.';
+      errEl.classList.add('show');
+    }
+    return false;
+  }
+
+  // Buscar perfil por email (case-insensitive). Incluye inactivos para
+  // diagnosticar mejor el motivo del rechazo.
+  const {data:userMatch, error} = await sb.from('usuarios')
+    .select('*').ilike('email', authEmail).limit(1);
+
+  const user = (userMatch && userMatch.length) ? userMatch[0] : null;
 
   if (error || !user) {
     await sb.auth.signOut();
     if (errEl) {
       errEl.textContent = opts.source === 'oauth'
-        ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
+        ? 'Tu cuenta no está registrada en la plataforma. Contacta al administrador.'
         : 'Correo o contrasena incorrectos.';
+      errEl.classList.add('show');
+    }
+    return false;
+  }
+
+  if (!user.activo) {
+    await sb.auth.signOut();
+    if (errEl) {
+      errEl.textContent = 'Tu cuenta está desactivada. Contacta al administrador.';
       errEl.classList.add('show');
     }
     return false;
