@@ -452,6 +452,30 @@ async function doLoginGoogle() {
 }
 
 async function handleOAuthReturn() {
+  // Detectar errores devueltos por Supabase/OAuth en la URL (hash o query)
+  // Esto incluye el rechazo del trigger sync_usuario_on_auth_signup
+  // cuando el email no tiene perfil pre-creado en la tabla usuarios.
+  const hashParams  = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+  const queryParams = new URLSearchParams(window.location.search || '');
+  const errorCode = hashParams.get('error')             || queryParams.get('error')             || '';
+  const errorDesc = hashParams.get('error_description') || queryParams.get('error_description') || '';
+
+  if (errorCode || errorDesc) {
+    // Limpiar la URL para no dejar el error pegado al recargar
+    history.replaceState(null, '', window.location.pathname);
+    const errEl = document.getElementById('loginError');
+    if (errEl) {
+      const desc = decodeURIComponent(errorDesc || '');
+      if (/EMAIL_NO_AUTORIZADO/i.test(desc)) {
+        errEl.textContent = 'Tu cuenta no está autorizada. Contacta al administrador.';
+      } else {
+        errEl.textContent = 'No se pudo iniciar sesión: ' + (desc || errorCode);
+      }
+      errEl.classList.add('show');
+    }
+    return false;
+  }
+
   const {data:{session}} = await sb.auth.getSession();
   if (!session?.user) return false;
 
@@ -498,7 +522,7 @@ async function _routeAfterAuth(authUserId, opts) {
     await sb.auth.signOut();
     if (errEl) {
       errEl.textContent = opts.source === 'oauth'
-        ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
+        ? 'Tu cuenta no está autorizada. Contacta al administrador.'
         : 'Correo o contrasena incorrectos.';
       errEl.classList.add('show');
     }
