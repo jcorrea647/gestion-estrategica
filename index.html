@@ -9030,7 +9030,7 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
+  const PASO_LABELS = ['','Marco','Brechas','Factores','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
   for(let i=1;i<=5;i++){
@@ -9538,16 +9538,16 @@ function renderPaso2Diagnostico(){
 
   document.getElementById('planBody').innerHTML = `
     <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
-    <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
+    <p class="lead">Marca hasta 3 factores en orden de importancia. Si tu caso no encaja, agrega factores propios en Otros.</p>
     ${bannerIA}
-    ${grupoHtml('Causas estructurales y técnicas', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
-    ${grupoHtml('Causas relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
+    ${grupoHtml('Factores estructurales y técnicos', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
+    ${grupoHtml('Factores relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
     <div class="plan-otros-box">
-      <h4>Otros — causas propias del contexto</h4>
+      <h4>Otros — factores propios del contexto</h4>
       <div class="plan-otros-sub">Adicionales a las 3 ranqueadas. Aportan contexto al sistema.</div>
       ${otrosHtml}
       <div class="plan-otros-add">
-        <input type="text" id="planOtroInput" placeholder="Escribe otra causa..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
+        <input type="text" id="planOtroInput" placeholder="Escribe otro factor..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
         <button onclick="planAgregarOtro()">+ Agregar</button>
       </div>
     </div>
