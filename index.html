@@ -211,11 +211,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   #topRolBadge{display:none}
   .logout-btn{padding:3px 8px;font-size:11px}
   .back-btn{padding:3px 8px;font-size:11px}
-  .hamburger-btn{display:flex !important}
-  /* En mobile, ocultar el botón Mapa de Acciones del topbar — el header se
-     sobrecarga y empuja el resto fuera. Sigue siendo accesible desde el
-     menú lateral (drawer) si está activado por permisos. */
-  #topMapaAccionesBtn{display:none !important}
+  .hamburger-btn{display:flex}
 
   /* Sidebar como drawer */
   .sidebar{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:500;background:var(--surface);border-top:1px solid var(--border);overflow-y:auto;padding:8px 0}
@@ -282,11 +278,9 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   .btn.btn-sm{min-height:30px}
 }
 
-.hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px;order:-1;flex-shrink:0}
-.hamburger-btn span{display:block;width:22px;height:2.5px;background:#fff;border-radius:2px;transition:all .2s}
-.hamburger-btn:hover{background:rgba(255,255,255,.12)}
-.hamburger-btn:active{background:rgba(255,255,255,.2)}
-.mobile-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.5);z-index:499}
+.hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px}
+.hamburger-btn span{display:block;width:20px;height:2px;background:rgba(255,255,255,.8);border-radius:2px;transition:all .2s}
+.mobile-overlay{display:none;position:fixed;inset:0;top:56px;background:rgba(0,0,0,.4);z-index:499}
 .mobile-overlay.show{display:block}
 .reunion-banner{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border-radius:var(--r);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow)}
 .rb-title{font-family:'DM Serif Display',serif;color:#fff;font-size:16px;margin-bottom:2px}
@@ -466,7 +460,7 @@ async function handleOAuthReturn() {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 
-  return await _routeAfterAuth(session.user, {source:'oauth'});
+  return await _routeAfterAuth(session.user.id, {source:'oauth'});
 }
 
   // AUTH - Login con correo + contraseña (Supabase Auth)
@@ -488,56 +482,24 @@ async function doLogin() {
     return;
   }
 
-  await _routeAfterAuth(data.user, {source:'password', errEl});
+  await _routeAfterAuth(data.user.id, {source:'password', errEl});
 }
 
 // Helper compartido: lleva al usuario a screenMulti o screenColegio
 // según su perfil en public.usuarios. Usado por OAuth (Google) y password.
-//
-// Nota sobre el cambio v2: antes esta función cruzaba por authUser.id contra
-// public.usuarios.id. Eso fallaba cuando un admin eliminaba y recreaba un
-// usuario en Google: Supabase Auth le asignaba un id nuevo, pero el registro
-// en public.usuarios seguía con el id viejo, y el cruce no encontraba nada.
-// Resultado típico: "Tu cuenta Google no tiene perfil" aunque la persona
-// existiera perfectamente activa en public.usuarios. Ahora cruzamos por email
-// (que sí es estable entre recreaciones), lo cual también evita tener que
-// sincronizar UUIDs manualmente cada vez que pase esto.
-async function _routeAfterAuth(authUser, opts) {
+async function _routeAfterAuth(authUserId, opts) {
   opts = opts || {};
   const errEl = opts.errEl || document.getElementById('loginError');
-  const authEmail = (authUser?.email || '').toLowerCase().trim();
 
-  if (!authEmail) {
-    await sb.auth.signOut();
-    if (errEl) {
-      errEl.textContent = 'No se pudo obtener el correo de tu cuenta. Intenta de nuevo.';
-      errEl.classList.add('show');
-    }
-    return false;
-  }
-
-  // Buscar perfil por email (case-insensitive). Incluye inactivos para
-  // diagnosticar mejor el motivo del rechazo.
-  const {data:userMatch, error} = await sb.from('usuarios')
-    .select('*').ilike('email', authEmail).limit(1);
-
-  const user = (userMatch && userMatch.length) ? userMatch[0] : null;
+  const {data:user, error} = await sb.from('usuarios')
+    .select('*').eq('id', authUserId).eq('activo', true).single();
 
   if (error || !user) {
     await sb.auth.signOut();
     if (errEl) {
       errEl.textContent = opts.source === 'oauth'
-        ? 'Tu cuenta no está registrada en la plataforma. Contacta al administrador.'
+        ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
         : 'Correo o contrasena incorrectos.';
-      errEl.classList.add('show');
-    }
-    return false;
-  }
-
-  if (!user.activo) {
-    await sb.auth.signOut();
-    if (errEl) {
-      errEl.textContent = 'Tu cuenta está desactivada. Contacta al administrador.';
       errEl.classList.add('show');
     }
     return false;
@@ -1739,11 +1701,6 @@ async function guardarComentarioPopup(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
   const texto = document.getElementById('comPopupText')?.value.trim()||'';
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
-  // Detectar si el texto cambió respecto al previo. Si cambió, hay que
-  // invalidar las brechas cacheadas para que se regeneren con el comentario
-  // nuevo la próxima vez que se abra el plan.
-  const textoAnterior = (ex?.comentario || '').toString().trim();
-  const comentarioCambio = textoAnterior !== texto;
   if(ex) {
     // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
     const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
@@ -1765,13 +1722,6 @@ async function guardarComentarioPopup(accionId, mes) {
     if(error){ showToast('Error: '+error.message); return; }
     if(data) DB.seguimiento.push(data);
     else DB.seguimiento.push({...nuevoPayload, id:'temp_'+accionId+'_'+mes});
-  }
-  // Si el texto del comentario cambió, invalidar las brechas cacheadas:
-  // limpia memoria, PLAN_STATE.brechasData (si el plan está abierto para
-  // esta misma acción/mes) y pone brechas_data=null en microacciones.
-  if (comentarioCambio) {
-    try { await invalidarBrechasPorComentario(SESSION.colegioActivo, accionId, mes); }
-    catch(e){ console.warn('No se pudo invalidar brechas:', e.message); }
   }
   document.getElementById('comPopup')?.remove();
   renderCurrentPanel();
@@ -1862,11 +1812,6 @@ async function guardarSeg(accionId, mes, pendiente) {
     if(i >= 0) DB.seguimiento.splice(i, 1);
     // Limpiar input visual
     if(pctEl){ pctEl.value = ''; pctEl.style.borderColor = ''; }
-    // El DELETE de la fila de seguimiento también borra el comentario asociado
-    // (vive en la misma tabla). Si las brechas estaban cacheadas con un comentario
-    // viejo, hay que invalidarlas para que se regeneren sin ese contexto.
-    try { await invalidarBrechasPorComentario(SESSION.colegioActivo, accionId, mes); }
-    catch(e){ console.warn('No se pudo invalidar brechas al reiniciar:', e.message); }
     showToast('Avance reiniciado — comentarios y evidencias conservados');
     renderCurrentPanel();
     return;
@@ -2276,6 +2221,7 @@ function renderAdminEstructura() {
     html += '</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
     html += '<button class="btn btn-primary btn-sm" style="background:var(--gold);border-color:var(--gold)" onclick="descargarBackup()">⬇ Descargar Backup</button>';
+    html += '<button class="btn btn-outline btn-sm" onclick="abrirVerificarBackup()" title="Inspecciona un archivo de backup sin modificar la base de datos">🔍 Verificar Backup</button>';
     html += '<button class="btn btn-primary btn-sm" style="background:#9B2335;border-color:#9B2335" onclick="abrirRestaurarBackup()">⬆ Restaurar Backup</button>';
     html += '</div></div></div>';
   }
@@ -3242,13 +3188,6 @@ async function documentoCargar(tipo, file){
     const { error: updErr } = await sb.from('colegio_documentos').update(updatePayload).eq('id', docRow.id);
     if(updErr) console.warn('[Documentos] Update final:', updErr.message);
 
-    // Invalidar cache de fecha-máxima de docs: el frontend usará la nueva
-    // fecha para detectar que cualquier brecha generada antes de esta
-    // subida quedó obsoleta y debe regenerarse al abrir el plan.
-    if (typeof _DOCS_FECHA_MAX_CACHE !== 'undefined') {
-      delete _DOCS_FECHA_MAX_CACHE[DB.colegio?.id || SESSION?.colegioActivo];
-    }
-
     // 7. Refrescar UI con estado final
     await _docCargarLista(true);
     _docRenderLista(_DOC_CACHE);
@@ -3283,12 +3222,6 @@ async function documentoEliminar(docId, tipo){
     }
     const { error } = await sb.from('colegio_documentos').delete().eq('id', docId);
     if(error) throw error;
-    // Invalidar cache de fecha-máxima de docs (mismo razonamiento que al
-    // subir: si el set de docs cambió, las brechas viejas pueden estar
-    // obsoletas y deben regenerarse).
-    if (typeof _DOCS_FECHA_MAX_CACHE !== 'undefined') {
-      delete _DOCS_FECHA_MAX_CACHE[DB.colegio?.id || SESSION?.colegioActivo];
-    }
     await _docCargarLista(true);
     _docRenderLista(_DOC_CACHE);
     showToast('Documento eliminado');
@@ -3412,6 +3345,44 @@ function descargarBackup() {
 }
 
 // =================== RESTAURAR BACKUP ===================
+//
+// ⚠️ ATENCIÓN AL EQUIPO QUE MODIFIQUE EL BACKUP
+// ─────────────────────────────────────────────────────────
+// Este restaurador acepta cualquier versión 2.x (vía esVersionBackupSoportada).
+//
+// Si vas a cambiar la ESTRUCTURA del backup (no agregar tablas, sino mover
+// cosas de lugar — por ejemplo, sacar `colegios` del nivel raíz, o renombrar
+// `meta`), tienes que:
+//   1. Subir el major: 2.x → 3.0
+//   2. Actualizar esVersionBackupSoportada() para aceptar 3.x
+//   3. Adaptar analizarBackup() para leer la nueva estructura
+//   4. Correr una restauración de prueba antes de mergear
+//
+// AGREGAR TABLAS NUEVAS es seguro y NO requiere cambiar la versión major:
+//   - El restaurador detecta tablas desconocidas y avisa visiblemente al
+//     usuario ("Tabla X no reconocida, sus N registros no se restaurarán").
+//   - Las tablas conocidas se restauran normalmente.
+//   - Para soportar la tabla nueva, basta con agregarla a: `claves`,
+//     el array `tablas`, `dbData`, `ordenInsercion`, los remapeos de FKs
+//     y los reportes (filas en mostrarPreviewRestauracion y mostrarReporteRestauracion).
+//
+// El merge es siempre INSERT-ONLY: nunca sobrescribe ni elimina nada de la BD.
+// ─────────────────────────────────────────────────────────
+
+// Acepta cualquier versión 2.x ≥ 2.0. v1.x se considera obsoleta (formato distinto).
+// v3+ NO se acepta porque implica cambio estructural mayor — actualízame si pasa.
+function esVersionBackupSoportada(version) {
+  if(!version || typeof version !== 'string') return false;
+  const partes = version.split('.');
+  const major = parseInt(partes[0], 10);
+  const minor = parseInt(partes[1], 10);
+  if(isNaN(major) || isNaN(minor)) return false;
+  // Aceptamos 2.0, 2.1, 2.4.1, 2.5, 2.9, etc. Hasta 2.99.
+  if(major !== 2) return false;
+  if(minor < 0) return false;
+  return true;
+}
+
 function abrirRestaurarBackup() {
   if(SESSION.user?.rol !== 'superadmin'){ showToast('Solo superadmin puede restaurar backups'); return; }
   openModal('⬆ Restaurar Backup',
@@ -3460,8 +3431,8 @@ async function analizarBackup() {
     errEl.style.display='block';
     return;
   }
-  if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
-    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1. Descarga un backup nuevo.';
+  if(backup.meta.version && !esVersionBackupSoportada(backup.meta.version)) {
+    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Se aceptan versiones 2.x ≥ 2.0. Descarga un backup nuevo.';
     errEl.style.display='block';
     return;
   }
@@ -3485,12 +3456,164 @@ async function analizarBackup() {
 
   // Guardar para el siguiente paso
   window._backupRestaurar = datosColegio;
+  window._backupMetaFecha = backup.meta.fecha_backup ? new Date(backup.meta.fecha_backup).toLocaleString('es-CL') : '—';
+  window._backupMetaVersion = backup.meta.version || '?';
 
   // Calcular el diff por tabla
   const diff = calcularDiffRestauracion(datosColegio);
 
   // Mostrar pantalla de previsualización
   mostrarPreviewRestauracion(diff, datosColegio);
+}
+
+// =================== VERIFICAR BACKUP (solo lectura) ===================
+// Lee un archivo de backup y muestra qué contiene SIN tocar la base de datos.
+// Útil para confirmar que un archivo descargado tiene los datos esperados
+// antes de hacer cualquier restauración real.
+function abrirVerificarBackup() {
+  openModal('🔍 Verificar Backup',
+    '<div style="background:#E8F0FB;border:1px solid #1F4E79;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:#1F4E79;line-height:1.5">'+
+    '<div style="font-weight:600;margin-bottom:4px">ℹ Modo solo lectura</div>'+
+    'Esta acción inspecciona el archivo de backup y te muestra qué contiene. <strong>No modifica la base de datos.</strong> Úsala para confirmar que un backup tiene los datos esperados antes de restaurar.'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">Archivo de backup (.json)</label>'+
+    '<input type="file" id="verifyFile" accept=".json" class="form-input" style="padding:8px"></div>'+
+    '<div id="verifyError" style="font-size:12px;color:var(--red);display:none;margin-top:8px"></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Inspeccionar archivo',cls:'btn-primary',action:'verificarBackup()'}]);
+}
+
+async function verificarBackup() {
+  const fileInput = document.getElementById('verifyFile');
+  const errEl = document.getElementById('verifyError');
+  errEl.style.display = 'none'; errEl.textContent = '';
+  if(!fileInput || !fileInput.files || !fileInput.files[0]){ errEl.textContent='Selecciona un archivo .json'; errEl.style.display='block'; return; }
+
+  const file = fileInput.files[0];
+  let backup;
+  try {
+    const text = await file.text();
+    backup = JSON.parse(text);
+  } catch(e) {
+    errEl.textContent='Error: el archivo no es un JSON válido. ('+e.message+')';
+    errEl.style.display='block';
+    return;
+  }
+
+  // Estructura mínima
+  if(!backup.meta || !backup.colegios) {
+    errEl.textContent='Estructura inválida: el archivo no parece un backup de Gestión Estratégica.';
+    errEl.style.display='block';
+    return;
+  }
+
+  const version = backup.meta.version || '?';
+  const fecha = backup.meta.fecha_backup ? new Date(backup.meta.fecha_backup).toLocaleString('es-CL') : '—';
+  const versionOk = esVersionBackupSoportada(version);
+  const tamanoKB = (file.size / 1024).toFixed(0);
+
+  // Buscar el colegio activo en el backup
+  let datosColegio = null;
+  let otrosColegios = [];
+  for(const cid in backup.colegios) {
+    const c = backup.colegios[cid];
+    if(c.colegio && c.colegio.rbd === DB.colegio.rbd) {
+      datosColegio = c;
+    } else if(c.colegio) {
+      otrosColegios.push({ nombre: c.colegio.nombre, rbd: c.colegio.rbd });
+    }
+  }
+
+  // Header con metadata
+  let html = '<div style="background:var(--surface2);border-radius:8px;padding:12px 14px;font-size:12px;margin-bottom:14px;line-height:1.7">';
+  html += '<div><strong>Archivo:</strong> '+file.name+' ('+tamanoKB+' KB)</div>';
+  html += '<div><strong>Versión:</strong> '+version+(versionOk?' <span style="color:var(--green)">✓ soportada</span>':' <span style="color:var(--red)">✗ no soportada</span>')+'</div>';
+  html += '<div><strong>Fecha del backup:</strong> '+fecha+'</div>';
+  html += '<div><strong>Total colegios en el archivo:</strong> '+Object.keys(backup.colegios).length+'</div>';
+  html += '</div>';
+
+  if(!datosColegio) {
+    html += '<div style="background:#FCEEED;border:1px solid var(--red);border-radius:8px;padding:12px 14px;font-size:13px;color:#7d1a2a;margin-bottom:14px">';
+    html += '<strong>⚠ El colegio actual (RBD '+DB.colegio.rbd+') NO está en este archivo.</strong>';
+    if(otrosColegios.length > 0) {
+      html += '<div style="margin-top:8px;font-size:12px">Colegios encontrados en el archivo:<ul style="margin:4px 0 0 18px">';
+      otrosColegios.forEach(function(c){ html += '<li>'+c.nombre+' (RBD '+c.rbd+')</li>'; });
+      html += '</ul></div>';
+    }
+    html += '</div>';
+  } else {
+    // Inventario del colegio actual
+    html += '<div style="background:#E8F5EE;border:1px solid var(--green);border-radius:8px;padding:12px 14px;font-size:13px;color:#155028;margin-bottom:14px">';
+    html += '<strong>✓ Colegio encontrado:</strong> '+datosColegio.colegio.nombre+' (RBD '+datosColegio.colegio.rbd+')';
+    html += '</div>';
+
+    const tablasMostrar = [
+      ['Cargos', 'cargos'],
+      ['Responsables', 'responsables'],
+      ['Áreas', 'areas'],
+      ['Objetivos', 'objetivos'],
+      ['Acciones', 'acciones'],
+      ['Asignaciones acción-responsable', 'accion_responsable'],
+      ['Seguimientos mensuales', 'seguimiento'],
+      ['Reuniones', 'reuniones'],
+      ['Participantes de reuniones', 'reunion_participantes'],
+      ['Evidencias', 'evidencias'],
+      ['Denuncias', 'denuncias'],
+      ['PEI institucional', 'colegio_pei'],
+      ['PME oficial', 'colegio_pme_oficial'],
+      ['Documentos institucionales', 'colegio_documentos'],
+      ['Planes de mejora (microacciones)', 'microacciones'],
+      ['Pasos de planes', 'microacciones_pasos'],
+      ['Acciones de denuncia', 'acciones_denuncia'],
+      ['Log de denuncia', 'log_denuncia'],
+      ['Mensajes de caso', 'mensajes_caso'],
+      ['Evidencias de denuncia', 'evidencias_denuncia'],
+      ['Planes del director', 'planes_director'],
+    ];
+
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
+    html += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">Registros</th></tr></thead><tbody>';
+    tablasMostrar.forEach(function(t){
+      const arr = datosColegio[t[1]] || [];
+      const n = Array.isArray(arr) ? arr.length : 0;
+      const color = n > 0 ? 'var(--green)' : 'var(--muted)';
+      html += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+t[0]+'</td>';
+      html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:'+color+';font-weight:'+(n>0?'600':'400')+'">'+n+'</td></tr>';
+    });
+    html += '</tbody></table>';
+
+    // Seguimientos por mes (especialmente útil para diagnosticar pérdida de datos)
+    const seg = datosColegio.seguimiento || [];
+    if(seg.length > 0) {
+      const porMes = {};
+      seg.forEach(function(s){ porMes[s.mes] = (porMes[s.mes]||0) + 1; });
+      const meses = Object.keys(porMes).sort();
+      html += '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">';
+      html += '<strong>Seguimientos por mes:</strong> ';
+      html += meses.map(function(m){ return m+' ('+porMes[m]+')'; }).join(' · ');
+      html += '</div>';
+    }
+
+    // Detectar tablas desconocidas para informar
+    const tablasConocidasSet = new Set(tablasMostrar.map(function(t){return t[1];}).concat(['colegio']));
+    const desconocidas = [];
+    Object.keys(datosColegio).forEach(function(k){
+      if(!tablasConocidasSet.has(k) && Array.isArray(datosColegio[k]) && datosColegio[k].length > 0) {
+        desconocidas.push({ nombre: k, registros: datosColegio[k].length });
+      }
+    });
+    if(desconocidas.length > 0) {
+      html += '<div style="background:#FFF4E5;border:1px solid #B8860B;border-radius:8px;padding:12px 14px;font-size:12px;color:#7A5A00">';
+      html += '<strong>⚠ Tablas no reconocidas:</strong><ul style="margin:4px 0 0 18px">';
+      desconocidas.forEach(function(d){ html += '<li><code>'+d.nombre+'</code>: '+d.registros+' registros</li>'; });
+      html += '</ul></div>';
+    }
+  }
+
+  document.getElementById('modalTitle').textContent = '🔍 Resultado de la verificación';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>';
+  document.getElementById('modal').style.maxWidth = '720px';
 }
 
 function calcularDiffRestauracion(datosBackup) {
@@ -3507,9 +3630,37 @@ function calcularDiffRestauracion(datosBackup) {
     reunion_participantes: function(b, db){ return db.find(x => x.reunion_id === b.reunion_id && x.nombre === b.nombre); },
     evidencias: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes && x.url === b.url); },
     denuncias: function(b, db){ return db.find(x => x.id === b.id); },
+    // === Tablas nuevas v2.4.1 ===
+    // PEI: solo 1 registro por colegio. Si ya existe uno, lo respetamos (no sobrescribimos).
+    colegio_pei: function(b, db){ return db.length > 0 ? db[0] : null; },
+    // PME oficial: clave compuesta por año + dimensión (un objetivo estratégico por dimensión por año)
+    colegio_pme_oficial: function(b, db){ return db.find(x => x.ano === b.ano && x.dimension === b.dimension); },
+    // Documentos institucionales: clave por tipo (PEI/PME/etc)
+    colegio_documentos: function(b, db){ return db.find(x => x.tipo === b.tipo); },
+    // Microacciones (planes de mejora): clave por accion_id + mes + version
+    microacciones: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes && (x.version||1) === (b.version||1)); },
+    // Pasos de microacción: clave por microaccion_id + descripcion
+    microacciones_pasos: function(b, db){ return db.find(x => x.microaccion_id === b.microaccion_id && x.descripcion === b.descripcion); },
+    // Acciones de denuncia, log, mensajes, evidencias: por ID (vienen del propio backup)
+    acciones_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
+    log_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
+    mensajes_caso: function(b, db){ return db.find(x => x.id === b.id); },
+    evidencias_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
+    // Planes director: por accion_id (un plan por acción)
+    planes_director: function(b, db){ return db.find(x => x.accion_id === b.accion_id); },
   };
 
-  const tablas = ['cargos','responsables','areas','objetivos','acciones','accion_responsable','seguimiento','reuniones','reunion_participantes','evidencias','denuncias'];
+  // TABLAS CONOCIDAS por el restaurador. Si el backup trae una tabla que no está acá,
+  // se reporta como "desconocida" y se ignora con aviso visible (no se aborta).
+  const tablas = [
+    'cargos','responsables','areas','objetivos','acciones','accion_responsable',
+    'seguimiento','reuniones','reunion_participantes','evidencias','denuncias',
+    // Nuevas v2.4.1:
+    'colegio_pei','colegio_pme_oficial','colegio_documentos',
+    'microacciones','microacciones_pasos',
+    'acciones_denuncia','log_denuncia','mensajes_caso','evidencias_denuncia',
+    'planes_director'
+  ];
   const resultado = {};
 
   // Datos actuales en BD para comparar
@@ -3525,6 +3676,20 @@ function calcularDiffRestauracion(datosBackup) {
     reunion_participantes: [],  // se calculará desde reuniones
     evidencias: [],  // no está en DB en memoria, lo asumimos vacío para preview
     denuncias: [],   // idem
+    // Nuevas v2.4.1: para el preview, asumimos vacío y dejamos que el insert lo decida.
+    // Si la tabla ya tiene datos en BD, el restaurador igual no sobrescribe porque
+    // el INSERT fallaría por unique/PK; pero para casi todos los casos del Carmela
+    // Carvajal el problema es que la tabla está vacía justamente por el bug.
+    colegio_pei: DB.colegio_pei ? [DB.colegio_pei] : [],
+    colegio_pme_oficial: DB.colegio_pme_oficial || [],
+    colegio_documentos: DB.colegio_documentos || [],
+    microacciones: DB.microacciones || [],
+    microacciones_pasos: DB.microacciones_pasos || [],
+    acciones_denuncia: [],
+    log_denuncia: [],
+    mensajes_caso: [],
+    evidencias_denuncia: [],
+    planes_director: DB.planes_director || [],
   };
   // Aplanar reunion_participantes de DB.reuniones
   (DB.reuniones || []).forEach(function(r){
@@ -3533,7 +3698,7 @@ function calcularDiffRestauracion(datosBackup) {
 
   tablas.forEach(function(tabla){
     const desdeBackup = datosBackup[tabla] || [];
-    const enDB = dbData[tabla];
+    const enDB = dbData[tabla] || [];
     const fnClave = claves[tabla];
     let nuevos = 0, existentes = 0;
     const itemsNuevos = [];
@@ -3548,12 +3713,27 @@ function calcularDiffRestauracion(datosBackup) {
     resultado[tabla] = { total: desdeBackup.length, nuevos: nuevos, existentes: existentes, itemsNuevos: itemsNuevos };
   });
 
+  // === Detectar tablas DESCONOCIDAS en el backup ===
+  // Si una versión futura (ej. v2.5) agrega tablas nuevas que este restaurador no conoce,
+  // las listamos para avisar al usuario en vez de fallar silenciosamente.
+  const tablasEsperadasMeta = new Set(['colegio']);  // 'colegio' es metadata, no se restaura
+  const tablasConocidas = new Set([...tablas, ...tablasEsperadasMeta]);
+  const tablasDesconocidas = [];
+  Object.keys(datosBackup).forEach(function(k){
+    if(!tablasConocidas.has(k) && Array.isArray(datosBackup[k]) && datosBackup[k].length > 0) {
+      tablasDesconocidas.push({ nombre: k, registros: datosBackup[k].length });
+    }
+  });
+  resultado.__tablasDesconocidas = tablasDesconocidas;
+
   return resultado;
 }
 
 function mostrarPreviewRestauracion(diff, datosColegio) {
-  const totalNuevos = Object.values(diff).reduce(function(a, b){ return a + b.nuevos; }, 0);
-  const totalExistentes = Object.values(diff).reduce(function(a, b){ return a + b.existentes; }, 0);
+  // OJO: diff.__tablasDesconocidas no es una fila de stats; lo procesamos aparte.
+  const tablasConStats = Object.keys(diff).filter(function(k){ return k !== '__tablasDesconocidas'; });
+  const totalNuevos = tablasConStats.reduce(function(a, k){ return a + (diff[k].nuevos || 0); }, 0);
+  const totalExistentes = tablasConStats.reduce(function(a, k){ return a + (diff[k].existentes || 0); }, 0);
 
   const filas = [
     ['Cargos', diff.cargos],
@@ -3567,12 +3747,24 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
     ['Participantes de reuniones', diff.reunion_participantes],
     ['Evidencias', diff.evidencias],
     ['Denuncias', diff.denuncias],
+    // Nuevas v2.4.1:
+    ['PEI institucional', diff.colegio_pei],
+    ['PME oficial', diff.colegio_pme_oficial],
+    ['Documentos institucionales', diff.colegio_documentos],
+    ['Planes de mejora (microacciones)', diff.microacciones],
+    ['Pasos de planes', diff.microacciones_pasos],
+    ['Acciones de denuncia', diff.acciones_denuncia],
+    ['Log de denuncia', diff.log_denuncia],
+    ['Mensajes de caso', diff.mensajes_caso],
+    ['Evidencias de denuncia', diff.evidencias_denuncia],
+    ['Planes del director', diff.planes_director],
   ];
 
   let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
   tablaHTML += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">En backup</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--green)">Nuevos a agregar</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Ya existen</th></tr></thead><tbody>';
   filas.forEach(function(f){
     const nombre = f[0], d = f[1];
+    if(!d) return;  // Si la tabla no vino en el diff (backup viejo sin esa key), saltar
     const colorNuevos = d.nuevos > 0 ? 'var(--green)' : 'var(--muted)';
     tablaHTML += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+nombre+'</td>';
     tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee">'+d.total+'</td>';
@@ -3580,6 +3772,22 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
     tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:var(--muted)">'+d.existentes+'</td></tr>';
   });
   tablaHTML += '</tbody></table>';
+
+  // === AVISO DE TABLAS DESCONOCIDAS ===
+  // Si el backup viene de una versión más nueva que este restaurador, lo decimos claro.
+  let avisoDesconocidas = '';
+  const tablasDesconocidas = diff.__tablasDesconocidas || [];
+  if(tablasDesconocidas.length > 0) {
+    avisoDesconocidas =
+      '<div style="background:#FFF4E5;border:1px solid #B8860B;border-radius:8px;padding:12px 14px;font-size:12px;color:#7A5A00;margin-bottom:14px">'+
+      '<div style="font-weight:600;margin-bottom:4px">⚠ Tablas no reconocidas en este backup</div>'+
+      '<div style="margin-bottom:6px">Este restaurador no conoce las siguientes tablas. <strong>Sus datos NO se restaurarán</strong> hasta que la plataforma se actualice:</div>'+
+      '<ul style="margin:4px 0 0 18px;padding:0">'+
+      tablasDesconocidas.map(function(t){ return '<li><code>'+t.nombre+'</code>: '+t.registros+' registros</li>'; }).join('')+
+      '</ul>'+
+      '<div style="margin-top:8px;font-size:11px">El resto de las tablas se restaurará normalmente. Reporta esto al equipo técnico.</div>'+
+      '</div>';
+  }
 
   let resumen;
   if(totalNuevos === 0) {
@@ -3598,8 +3806,8 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
 
   document.getElementById('modalTitle').textContent = '⬆ Análisis del Backup';
   document.getElementById('modalBody').innerHTML =
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup del <strong>'+(datosColegio.colegio.nombre)+'</strong> · Fecha del backup: '+(window._backupMetaFecha || '—')+'</div>'+
-    resumen + tablaHTML + confirmacionHTML;
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup del <strong>'+(datosColegio.colegio.nombre)+'</strong> · Fecha del backup: '+(window._backupMetaFecha || '—')+(window._backupMetaVersion ? ' · Versión: '+window._backupMetaVersion : '')+'</div>'+
+    avisoDesconocidas + resumen + tablaHTML + confirmacionHTML;
 
   const acciones = totalNuevos > 0
     ? '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>' +
@@ -3644,6 +3852,17 @@ async function ejecutarRestauracion() {
     'seguimiento',     // depende de acciones
     'evidencias',      // depende de acciones
     'denuncias',       // sin dependencias
+    // === Nuevas v2.4.1 ===
+    'colegio_pei',           // sin dependencias (solo colegio_id)
+    'colegio_pme_oficial',   // sin dependencias (solo colegio_id)
+    'colegio_documentos',    // sin dependencias (solo colegio_id)
+    'microacciones',         // depende de acciones (FK accion_id)
+    'microacciones_pasos',   // depende de microacciones
+    'acciones_denuncia',     // depende de denuncias
+    'log_denuncia',          // depende de denuncias
+    'mensajes_caso',         // depende de denuncias
+    'evidencias_denuncia',   // depende de denuncias
+    'planes_director',       // depende de acciones
   ];
 
   const reporte = { agregados: 0, errores: [], porTabla: {} };
@@ -3684,6 +3903,28 @@ async function ejecutarRestauracion() {
           payload.accion_id = idMaps.acciones[payload.accion_id];
         }
         if(tabla === 'evidencias' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
+          payload.accion_id = idMaps.acciones[payload.accion_id];
+        }
+        // === Remapeo FKs tablas v2.4.1 ===
+        if(tabla === 'microacciones' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
+          payload.accion_id = idMaps.acciones[payload.accion_id];
+        }
+        if(tabla === 'microacciones_pasos' && idMaps.microacciones && idMaps.microacciones[payload.microaccion_id]) {
+          payload.microaccion_id = idMaps.microacciones[payload.microaccion_id];
+        }
+        if(tabla === 'acciones_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
+          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
+        }
+        if(tabla === 'log_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
+          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
+        }
+        if(tabla === 'mensajes_caso' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
+          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
+        }
+        if(tabla === 'evidencias_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
+          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
+        }
+        if(tabla === 'planes_director' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
           payload.accion_id = idMaps.acciones[payload.accion_id];
         }
         // Para tablas que tienen ID, conservamos el ID original si no choca; si hay choque, dejamos que la BD genere uno nuevo
@@ -3732,6 +3973,17 @@ function mostrarReporteRestauracion(reporte) {
     ['Participantes de reuniones', reporte.porTabla.reunion_participantes || 0],
     ['Evidencias', reporte.porTabla.evidencias || 0],
     ['Denuncias', reporte.porTabla.denuncias || 0],
+    // Nuevas v2.4.1:
+    ['PEI institucional', reporte.porTabla.colegio_pei || 0],
+    ['PME oficial', reporte.porTabla.colegio_pme_oficial || 0],
+    ['Documentos institucionales', reporte.porTabla.colegio_documentos || 0],
+    ['Planes de mejora (microacciones)', reporte.porTabla.microacciones || 0],
+    ['Pasos de planes', reporte.porTabla.microacciones_pasos || 0],
+    ['Acciones de denuncia', reporte.porTabla.acciones_denuncia || 0],
+    ['Log de denuncia', reporte.porTabla.log_denuncia || 0],
+    ['Mensajes de caso', reporte.porTabla.mensajes_caso || 0],
+    ['Evidencias de denuncia', reporte.porTabla.evidencias_denuncia || 0],
+    ['Planes del director', reporte.porTabla.planes_director || 0],
   ];
 
   let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
@@ -4639,9 +4891,6 @@ async function guardarCambiosReunion(reunionId){
     // 2) Comentarios por seguimiento (inputs data-seg-id="...")
     const inputs = document.querySelectorAll('input[data-seg-id]');
     const updates = [];
-    // Trackear qué (accion_id, mes) tuvieron cambios para invalidar luego
-    // sus brechas cacheadas (solo una vez por combinación).
-    const invalidaciones = [];
     inputs.forEach(function(inp){
       const segId = inp.getAttribute('data-seg-id');
       const seg = DB.seguimiento.find(s => s.id === segId);
@@ -4649,11 +4898,6 @@ async function guardarCambiosReunion(reunionId){
       const nuevo = inp.value.trim();
       const previo = (seg.comentario||'').trim();
       if(nuevo !== previo){
-        // Recordar accion_id+mes para invalidar brechas después del update.
-        // Solo agregamos si no estaba ya (Set funcional con array+find).
-        if(!invalidaciones.find(x => x.accionId === seg.accion_id && x.mes === seg.mes)){
-          invalidaciones.push({ accionId: seg.accion_id, mes: seg.mes, colegioId: seg.colegio_id || SESSION.colegioActivo });
-        }
         updates.push(
           sb.from('seguimiento')
             .update({comentario: nuevo || null, updated_at: new Date().toISOString()})
@@ -4667,17 +4911,6 @@ async function guardarCambiosReunion(reunionId){
       }
     });
     if(updates.length) await Promise.all(updates);
-
-    // Invalidar brechas cacheadas para cada (acción, mes) cuyo comentario cambió.
-    // Esto fuerza que la próxima vez que el director abra el plan de mejora se
-    // regeneren las brechas considerando el nuevo texto del comentario.
-    if(invalidaciones.length){
-      await Promise.all(invalidaciones.map(function(x){
-        return invalidarBrechasPorComentario(x.colegioId, x.accionId, x.mes).catch(function(e){
-          console.warn('No se pudo invalidar brechas para', x.accionId, x.mes, ':', e.message);
-        });
-      }));
-    }
 
     showToast('✓ Cambios guardados');
     if(btn){ btn.textContent = '💾 Guardar cambios'; btn.disabled = true; }
@@ -6168,39 +6401,8 @@ function denWizardRender() {
         'style="width:100%;background:var(--surface2);border:1.5px solid var(--accent2);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;resize:none">' +
         (_denWizardData.personas_txt||'') + '</textarea>';
   } else if (_denWizardStep === 7) {
-    // Construir lista de responsables del colegio para el select. Si la
-    // tabla DB.responsables todavía no fue cargada (sesión muy temprana),
-    // cae graceful al input vacío. El input de texto sigue siendo la
-    // fuente de verdad: lo que se guarda es lo que esté ahí al apretar
-    // "Siguiente". El select solo sirve para autocompletar el input.
-    var _denRespsLista = (Array.isArray(DB.responsables) ? DB.responsables : [])
-      .slice()
-      .sort(function(x, y){ return (x.nombre||'').localeCompare(y.nombre||''); });
-    var _denValActual = (_denWizardData.responsable_nombre || '').trim();
-    // Detectar si el valor actual coincide con algún responsable del colegio
-    // (para pre-seleccionar el select). Si no coincide, dejamos el select
-    // en "Otro" y el input mantiene el texto libre.
-    var _denMatchSel = '';
-    if (_denValActual) {
-      var _denMatch = _denRespsLista.find(function(r){
-        var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
-        return label === _denValActual || (r.nombre || '') === _denValActual;
-      });
-      if (_denMatch) _denMatchSel = _denMatch.id;
-    }
     innerHTML += '<div style="font-size:11px;font-weight:700;margin-bottom:6px">RESPONSABLE DEL CASO</div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Elige a alguien del colegio o, si es externo (DEM, asesor, fiscalía…), escríbelo abajo.</div>' +
-      '<select id="wizRespSelect" onchange="_denWizardOnRespSelect(this.value)" ' +
-        'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:8px">' +
-        '<option value="">— Elegir del colegio —</option>' +
-        _denRespsLista.map(function(r){
-          var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
-          var sel = (r.id === _denMatchSel) ? ' selected' : '';
-          return '<option value="' + escapeAttr(r.id) + '" data-label="' + escapeAttr(label) + '"' + sel + '>' + escapeHtmlPlan(label) + '</option>';
-        }).join('') +
-        '<option value="__OTRO__"' + ((!_denMatchSel && _denValActual) ? ' selected' : '') + '>Otro / externo (escribir abajo)</option>' +
-      '</select>' +
-      '<input id="wizInput" placeholder="Nombre y cargo del responsable" value="' + escapeAttr(_denValActual) + '" ' +
+      '<input id="wizInput" placeholder="Ej: María López, Encargada de Convivencia" value="' + (_denWizardData.responsable_nombre||'') + '" ' +
         'style="width:100%;background:var(--surface2);border:1.5px solid var(--accent2);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:12px">' +
       '<div style="font-size:11px;font-weight:700;margin-bottom:6px">NIVEL DE RIESGO</div>' +
       ['normal','medio','alto','critico'].map(function(r) {
@@ -6306,41 +6508,6 @@ function denWizardEvidencias(input) {
     _denWizardData.evidencias_archivos.push(f);
   });
   denWizardRender();
-}
-
-/* Handler del <select> de responsables en el paso 7 del wizard de denuncia.
- * Lógica:
- *  - "" (placeholder) → no toca el input.
- *  - "__OTRO__"       → no toca el input, deja que el usuario escriba libre.
- *  - id de responsable → auto-completa el input con "Nombre, Cargo" (igual
- *                        formato que el option label) para que el director
- *                        no tenga que retipear, pero puede editar después.
- * El input sigue siendo la fuente de verdad: lo que se guarda al apretar
- * "Siguiente" es lo que esté en wizInput.value, no el id del select. */
-function _denWizardOnRespSelect(value) {
-  if (!value || value === '__OTRO__') return;
-  var input = document.getElementById('wizInput');
-  if (!input) return;
-  var sel = document.getElementById('wizRespSelect');
-  if (!sel) return;
-  var opt = sel.querySelector('option[value="' + value.replace(/"/g, '\\"') + '"]');
-  var label = opt ? (opt.getAttribute('data-label') || opt.textContent || '') : '';
-  input.value = label.trim();
-  input.focus();
-}
-
-/* Análogo a _denWizardOnRespSelect pero para el modal "Editar caso" de una
- * denuncia ya creada. Mismos IDs distintos (editRespSelect / editResp). */
-function _denEditOnRespSelect(value) {
-  if (!value || value === '__OTRO__') return;
-  var input = document.getElementById('editResp');
-  if (!input) return;
-  var sel = document.getElementById('editRespSelect');
-  if (!sel) return;
-  var opt = sel.querySelector('option[value="' + value.replace(/"/g, '\\"') + '"]');
-  var label = opt ? (opt.getAttribute('data-label') || opt.textContent || '') : '';
-  input.value = label.trim();
-  input.focus();
 }
 
 function denWizardQuitarEvidencia(idx) {
@@ -6458,36 +6625,8 @@ function denEditarCaso(denId) {
         '</select>' +
       '</div>' +
       '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px">RESPONSABLE</div>' +
-        (function(){
-          // Mismo patrón que el wizard paso 7: select del colegio + input
-          // de texto. El input es la fuente de verdad al guardar.
-          var _respsLista = (Array.isArray(DB.responsables) ? DB.responsables : [])
-            .slice()
-            .sort(function(x, y){ return (x.nombre||'').localeCompare(y.nombre||''); });
-          var _valActual = (den.responsable_nombre || '').trim();
-          var _matchId = '';
-          if (_valActual) {
-            var _m = _respsLista.find(function(r){
-              var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
-              return label === _valActual || (r.nombre || '') === _valActual;
-            });
-            if (_m) _matchId = _m.id;
-          }
-          return '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Elige a alguien del colegio o, si es externo, escríbelo abajo.</div>' +
-            '<select id="editRespSelect" onchange="_denEditOnRespSelect(this.value)" ' +
-              'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box;margin-bottom:6px">' +
-              '<option value="">— Elegir del colegio —</option>' +
-              _respsLista.map(function(r){
-                var label = (r.nombre || '') + (r.cargo ? ', ' + r.cargo : '');
-                var sel = (r.id === _matchId) ? ' selected' : '';
-                return '<option value="' + escapeAttr(r.id) + '" data-label="' + escapeAttr(label) + '"' + sel + '>' + escapeHtmlPlan(label) + '</option>';
-              }).join('') +
-              '<option value="__OTRO__"' + ((!_matchId && _valActual) ? ' selected' : '') + '>Otro / externo (escribir abajo)</option>' +
-            '</select>' +
-            '<input id="editResp" value="' + escapeAttr(_valActual) + '" ' +
-              'placeholder="Nombre y cargo del responsable" ' +
-              'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box">';
-        })() +
+        '<input id="editResp" value="' + (den.responsable_nombre||'') + '" ' +
+          'style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px;font-family:DM Sans,sans-serif;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
         '<button id="editCancelBtn" style="flex:1;background:none;border:1px solid var(--border);border-radius:8px;padding:9px;font-size:12px;cursor:pointer;color:var(--muted);font-family:DM Sans,sans-serif">Cancelar</button>' +
@@ -7790,223 +7929,39 @@ let PLAN_BRECHAS_LOADING = false;
 // con la edge function actual. Si no, se considera obsoleta y forzamos regenerar.
 // VERSIONES_VIGENTES: lista de versiones aceptadas. Para forzar regeneración
 // global, basta con sacar versiones viejas de esta lista.
-// Solo v8.4 está vigente: aunque v8.3 era correcta estructuralmente, su
-// CAUSALES_CATALOGO tenía los nombres viejos de C10..C17 (Liderazgo
-// directivo, Cultura institucional, etc.) y la frase del resumen quedó
-// desfasada del catálogo definitivo. Forzar invalidación de v8.3 garantiza
-// que el primer fetch tras el deploy regenere con los nombres nuevos.
-const VERSIONES_BRECHAS_VIGENTES = ['v8.4'];
-
-// Flag global: marca si la última carga de brechas regeneró automáticamente
-// (por obsolescencia detectada). El banner "Borrador retomado" se esconde
-// cuando este flag está activo, porque el "borrador" ya no es el que el
-// director dejó: las brechas se refrescaron sin que él tenga que apretar
-// "Empezar de cero". Se resetea al inicio de cada planCargarBrechas().
-let _BRECHAS_AUTO_REGENERADAS = false;
-
-// Cache de fecha del documento institucional más recientemente actualizado
-// (PEI/PME/FASE). Se usa para detectar si las brechas guardadas son
-// anteriores a un cambio de documentos → regla #4 de auto-regeneración.
-// Se hidrata bajo demanda con _ultimaFechaDocsColegio().
-let _DOCS_FECHA_MAX_CACHE = {};
-
-async function _ultimaFechaDocsColegio(colegioId){
-  if (!colegioId) return null;
-  if (_DOCS_FECHA_MAX_CACHE[colegioId] !== undefined) return _DOCS_FECHA_MAX_CACHE[colegioId];
-  try {
-    const { data, error } = await sb.from('colegio_documentos')
-      .select('updated_at')
-      .eq('colegio_id', colegioId)
-      .eq('estado', 'LISTO')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) { _DOCS_FECHA_MAX_CACHE[colegioId] = null; return null; }
-    _DOCS_FECHA_MAX_CACHE[colegioId] = data?.updated_at || null;
-    return _DOCS_FECHA_MAX_CACHE[colegioId];
-  } catch(e){
-    _DOCS_FECHA_MAX_CACHE[colegioId] = null;
-    return null;
-  }
-}
-
-/* esBrechaVigente — decide si una respuesta cacheada de brechas puede
- * reusarse o si hay que regenerar con la IA. Reglas:
- *   1. Si hay error o no es un objeto válido → no vigente.
- *   2. Si el modo es ERROR o LOCAL → no vigente (inservible para el flujo).
- *   3. FALLBACK_SIN_CONTEXTO solo es vigente si NO hay documentos cargados
- *      ahora. Si el director subió docs después, hay que regenerar para
- *      pasar a modo PERSONALIZADO.
- *   4. PERSONALIZADO requiere versión vigente Y al menos una brecha con
- *      causales sugeridas (las brechas sin causales son inservibles para
- *      el paso "Causales" del wizard).
- *   5. Si las brechas se generaron antes del último update de los documentos
- *      institucionales del colegio → no vigente (los docs cambiaron).
- *
- * Esta función soporta firma sync (sin docsFechaMax) para retrocompat:
- * en ese caso se omiten las reglas que requieren fecha de docs.
- */
-function esBrechaVigente(b, opts) {
+const VERSIONES_BRECHAS_VIGENTES = ['v8.3'];
+function esBrechaVigente(b) {
   if (!b || typeof b !== 'object') return false;
-  // Regla 1-2: estados claramente inservibles
+  // Si hay error o modo distinto a PERSONALIZADO, no es vigente
   if (b.modo === 'ERROR') return false;
-  if (b.modo === 'LOCAL') return false;
-
-  // Regla 3: FALLBACK_SIN_CONTEXTO es vigente solo si sigue sin haber docs
-  if (b.modo === 'FALLBACK_SIN_CONTEXTO') {
-    const docsFechaMax = opts?.docsFechaMax;
-    // Si no nos pasaron info de docs, retrocompat: lo aceptamos (caller
-    // tendrá que decidir aparte). Si nos pasaron y hay docs ahora,
-    // invalidamos para que se regenere con contexto personalizado.
-    if (docsFechaMax === undefined) return true;
-    if (docsFechaMax) return false;
-    return true;
-  }
-
-  // Regla 4: PERSONALIZADO necesita versión vigente
+  // Aceptamos FALLBACK_SIN_CONTEXTO porque es legítimo (no hay docs)
+  if (b.modo === 'FALLBACK_SIN_CONTEXTO') return true;
   const v = b?._meta?.version;
   if (!v) return false;
-  if (!VERSIONES_BRECHAS_VIGENTES.includes(v)) return false;
-
-  // Regla 4b: PERSONALIZADO necesita al menos 1 brecha con causales sugeridas
-  // (si no, el paso "Causales" del wizard queda sin pre-marcado y la promesa
-  // de "personalizado" no se cumple)
-  if (!Array.isArray(b.brechas) || b.brechas.length === 0) return false;
-  const tieneCausales = b.brechas.some(br =>
-    Array.isArray(br.causales_sugeridas) && br.causales_sugeridas.length > 0
-  ) || (Array.isArray(b.causales_top_3) && b.causales_top_3.length > 0);
-  if (!tieneCausales) return false;
-
-  // Regla 5: comparar fecha de generación de las brechas con fecha del último
-  // doc institucional. Si los docs cambiaron después, regenerar.
-  const docsFechaMax = opts?.docsFechaMax;
-  if (docsFechaMax) {
-    const generadoEn = b?._meta?.generado_en;
-    if (generadoEn) {
-      try {
-        if (new Date(docsFechaMax).getTime() > new Date(generadoEn).getTime()) {
-          return false;
-        }
-      } catch(e){ /* fechas malformadas → seguir adelante, no invalidar */ }
-    }
-    // Sin _meta.generado_en (brechas pre-v8.4 estricta), no podemos comparar
-    // con seguridad. Damos por bueno para no provocar regeneraciones masivas
-    // gratis. Cuando las brechas se regeneren por otra causa (versión, etc.),
-    // empezarán a tener generado_en y la regla 5 se aplicará en el siguiente
-    // ciclo.
-  }
-
-  return true;
-}
-
-/* Helper: hash determinístico y corto del comentario actual para incluirlo en
- * el cacheKey. Si el comentario cambia, el cacheKey cambia y se regenera
- * automáticamente (no hay que invalidar manualmente la capa en-memoria). */
-function _planHashComentario(texto){
-  const s = (texto || '').toString().trim();
-  if (!s) return '0';
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  // Base36, máx 8 chars — suficiente para discriminar cambios
-  return (h >>> 0).toString(36).slice(0, 8);
-}
-
-/* Helper: invalida TODAS las capas de caché de brechas para una combinación
- * colegio+acción+mes. Se llama cada vez que se persiste un cambio al comentario
- * del seguimiento, para que la próxima vez que se abra el plan se regeneren
- * las brechas considerando el comentario nuevo.
- *
- * Capas que limpia:
- *   1) PLAN_BRECHAS_CACHE (memoria, misma sesión)
- *   2) PLAN_STATE.brechasData (si el plan está abierto para esa acción/mes)
- *   3) microacciones.brechas_data (persistido en Supabase)
- *
- * NOTA: el cacheKey ya incluye un hash del comentario (ver planCargarBrechas),
- * pero la capa de Supabase y el plan abierto requieren limpieza explícita
- * porque no consultan ese hash.
- */
-async function invalidarBrechasPorComentario(colegioId, accionId, mes){
-  if (!colegioId || !accionId || !mes) return;
-  try {
-    // 1) Cache en memoria — borrar todas las claves que coincidan con esta acción+mes
-    if (typeof PLAN_BRECHAS_CACHE !== 'undefined' && PLAN_BRECHAS_CACHE) {
-      const prefijo = colegioId + '_' + accionId + '_' + mes + '_';
-      Object.keys(PLAN_BRECHAS_CACHE).forEach(k => {
-        if (k.indexOf(prefijo) === 0) delete PLAN_BRECHAS_CACHE[k];
-      });
-    }
-    // 2) PLAN_STATE.brechasData si el plan abierto es justo este
-    if (typeof PLAN_STATE !== 'undefined' && PLAN_STATE
-        && PLAN_STATE.accionId === accionId
-        && PLAN_STATE.mes === mes) {
-      PLAN_STATE.brechasData = null;
-    }
-    // 3) Supabase: poner brechas_data a null en la microacción de este mes
-    //    (si existe). Si no existe la fila, no hay nada que limpiar.
-    await sb.from('microacciones')
-      .update({ brechas_data: null, updated_at: new Date().toISOString() })
-      .eq('colegio_id', colegioId)
-      .eq('accion_id', accionId)
-      .eq('mes', mes);
-  } catch(e){
-    console.warn('[invalidarBrechasPorComentario]', e.message);
-  }
+  return VERSIONES_BRECHAS_VIGENTES.includes(v);
 }
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
-  // Resetear el flag de auto-regeneración para esta carga. Se pondrá true
-  // si alguna capa del caché es invalidada por obsolescencia (versión vieja,
-  // modo inservible, docs actualizados, etc.) y termina forzando regenerar
-  // con la IA. El renderer del paso 1 lo lee para esconder el banner
-  // "Borrador retomado" cuando las brechas ya no son las que el director dejó.
-  _BRECHAS_AUTO_REGENERADAS = false;
-
-  // Cargar fecha del último doc institucional del colegio. Si los docs
-  // cambiaron después de que se generaron las brechas, hay que regenerar.
-  const _docsFechaMax = await _ultimaFechaDocsColegio(colegioId);
-  const _vigOpts = { docsFechaMax: _docsFechaMax };
-
-  // Incluir hash del comentario actual en la cacheKey: si el director cambia
-  // el comentario del seguimiento, el cacheKey cambia automáticamente y la
-  // capa en-memoria deja de devolver brechas viejas.
-  const _segActual = (typeof DB !== 'undefined' && Array.isArray(DB.seguimiento))
-    ? DB.seguimiento.find(s => s.accion_id === accionId && s.mes === mes)
-    : null;
-  const _comHash = _planHashComentario(_segActual?.comentario || '');
-  const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'') + '_c' + _comHash;
+  const cacheKey = colegioId + '_' + accionId + '_' + mes + '_' + (banda||'');
   // 1a. Cache en memoria (misma sesión) — solo si vigente
-  if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey], _vigOpts)) return PLAN_BRECHAS_CACHE[cacheKey];
+  if (PLAN_BRECHAS_CACHE[cacheKey] && esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) return PLAN_BRECHAS_CACHE[cacheKey];
   // Si el caché tiene algo no vigente, lo invalidamos para forzar regenerar
-  if (PLAN_BRECHAS_CACHE[cacheKey] && !esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey], _vigOpts)) {
-    console.log('[planCargarBrechas] cache en memoria obsoleto, regenerando');
-    _BRECHAS_AUTO_REGENERADAS = true;
+  if (PLAN_BRECHAS_CACHE[cacheKey] && !esBrechaVigente(PLAN_BRECHAS_CACHE[cacheKey])) {
+    console.log('[planCargarBrechas] cache vigente invalidada, regenerando con v8.3');
     delete PLAN_BRECHAS_CACHE[cacheKey];
   }
 
-  // 1b. Estado ya hidratado — verificar que la banda coincida, sea vigente,
-  //     Y que el comentario con que se generaron coincida con el actual.
-  //     Esto evita el caso "Borrador retomado" sirviendo brechas que ignoran
-  //     un comentario que el director agregó después.
+  // 1b. Estado ya hidratado — verificar que la banda coincida Y que sea vigente
   if (PLAN_STATE && PLAN_STATE.brechasData) {
     const storedBanda = PLAN_STATE.brechasData._banda;
     const bandaOk = !storedBanda || storedBanda === (banda||'');
-    const vigente = esBrechaVigente(PLAN_STATE.brechasData, _vigOpts);
-    const _comUsado = (PLAN_STATE.brechasData?._meta?.comentario_usado?.texto || '').toString().trim();
-    const _comActual = (_segActual?.comentario || '').toString().trim();
-    const comentarioOk = _comUsado === _comActual;
-    if (bandaOk && vigente && comentarioOk) {
+    const vigente = esBrechaVigente(PLAN_STATE.brechasData);
+    if (bandaOk && vigente) {
       PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
       return PLAN_STATE.brechasData;
     }
-    // Banda cambió, brechas viejas sin _meta, o comentario distinto — invalidar
-    if (!vigente) {
-      console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando');
-      _BRECHAS_AUTO_REGENERADAS = true;
-    }
-    if (vigente && !comentarioOk) {
-      console.log('[planCargarBrechas] comentario cambió desde la última generación, regenerando brechas');
-      _BRECHAS_AUTO_REGENERADAS = true;
-    }
+    // Banda cambió o brechas viejas sin _meta — invalidar y regenerar
+    if (!vigente) console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando con v8.3');
     PLAN_STATE.brechasData = null;
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
   }
@@ -8025,27 +7980,14 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     if (ma && ma.brechas_data) {
       const storedBanda = ma.brechas_data._banda;
       const bandaOk = !storedBanda || storedBanda === banda;
-      const vigente = esBrechaVigente(ma.brechas_data, _vigOpts);
-      // Validar que el comentario con que se generaron las brechas coincida con
-      // el comentario actual del seguimiento. Si el director cambió el texto
-      // después de la última generación, descartamos y regeneramos.
-      const _comUsado = (ma.brechas_data?._meta?.comentario_usado?.texto || '').toString().trim();
-      const _comActual = (_segActual?.comentario || '').toString().trim();
-      const comentarioOk = _comUsado === _comActual;
-      if(bandaOk && vigente && comentarioOk){
+      const vigente = esBrechaVigente(ma.brechas_data);
+      if(bandaOk && vigente){
         PLAN_BRECHAS_CACHE[cacheKey] = ma.brechas_data;
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
-      // Banda cambió o brechas no vigentes (sin _meta.version vigente) — regenerar
-      if (!vigente) {
-        console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando');
-        _BRECHAS_AUTO_REGENERADAS = true;
-      }
-      if (!comentarioOk) {
-        console.log('[planCargarBrechas] comentario del seguimiento cambió desde la última generación, regenerando');
-        _BRECHAS_AUTO_REGENERADAS = true;
-      }
+      // Banda cambió o brechas no vigentes (sin _meta.version v8.3) — regenerar
+      if (!vigente) console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando con v8.3');
     }
   } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
 
@@ -8063,17 +8005,10 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         .order('updated_at', { ascending: false })
         .limit(10);
       if(Array.isArray(equivalentes)){
-        const _comActual = (_segActual?.comentario || '').toString().trim();
-        // Buscamos el más reciente con la misma banda, vigente, Y que haya sido
-        // generado con el mismo comentario (o ambos vacíos). Si el comentario
-        // del seguimiento actual difiere del comentario_usado de las brechas
-        // candidatas, NO reusamos: hay que regenerar para que el comentario
-        // del director influya en el análisis.
+        // Buscamos el más reciente con la misma banda Y que sea vigente (v8.3+)
         const match = equivalentes.find(r => {
           const b = r.brechas_data?._banda;
-          if (!(b && b === banda && esBrechaVigente(r.brechas_data, _vigOpts))) return false;
-          const comUsado = (r.brechas_data?._meta?.comentario_usado?.texto || '').toString().trim();
-          return comUsado === _comActual;
+          return b && b === banda && esBrechaVigente(r.brechas_data);
         });
         if(match && match.brechas_data){
           // Reusamos las brechas pero las marcamos como reusadas para trazabilidad
@@ -8085,14 +8020,10 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
           }
           return brechasReusadas;
         }
-        // Si hay match con banda pero no vigente o con comentario distinto,
-        // lo loggeamos pero NO lo usamos. Marcamos auto-regeneración para
-        // ocultar el banner "Borrador retomado" si la única razón por la que
-        // estamos generando con la IA es que el cache compartido era obsoleto.
+        // Si hay match con banda pero no vigente, lo loggeamos pero NO lo usamos
         const matchObsoleto = equivalentes.find(r => r.brechas_data?._banda === banda);
         if (matchObsoleto) {
-          console.log('[planCargarBrechas] cache compartido descartado para banda', banda, '(versión obsoleta o comentario distinto)');
-          _BRECHAS_AUTO_REGENERADAS = true;
+          console.log('[planCargarBrechas] cache compartido obsoleto descartado para banda', banda);
         }
       }
     } catch(e) { console.warn('planCargarBrechas lookup banda-compartida:', e.message); }
@@ -8107,11 +8038,6 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     const _accionObj = (DB.acciones || []).find(a => a.id === accionId);
     const _accionNombre = _accionObj?.nombre || '';
     const _accionDescripcion = _accionObj?.descripcion || '';
-    // Pasar el comentario del seguimiento explícitamente en el body. Antes
-    // dependíamos de que la edge function lo buscara por su cuenta filtrando
-    // por colegio_id+accion_id+mes; pasarlo aquí garantiza que la IA lo reciba
-    // aunque la edge function tenga un fallo en el lookup.
-    const _comentarioActual = (_segActual?.comentario || '').toString().trim();
 
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
       method: 'POST',
@@ -8126,8 +8052,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         accion_descripcion: _accionDescripcion,
         mes: mes,
         pct: pct,
-        banda: banda,
-        comentario: _comentarioActual
+        banda: banda
       })
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -8469,13 +8394,7 @@ async function planSyncSupabase(){
   s._isInserting = true;
   try {
     if(s.microaccionId){
-      // FIX defensa-en-profundidad: el UPDATE filtra explícitamente por
-      // estado = 'BORRADOR'. Si por una race condition o bug futuro el
-      // planSyncSupabase llega hasta acá apuntando a un plan ACTIVA o
-      // COMPLETADA, el WHERE no matchea ninguna fila y la BD no se toca.
-      // Sin esto, un autosave podía convertir un plan ACTIVA en BORRADOR
-      // (perdiendo causas/pasos/asignaciones por estar PLAN_STATE parcial).
-      const { error } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId).eq('estado', 'BORRADOR');
+      const { error } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
       if(error) throw error;
     } else {
       const { data, error } = await sb.from('microacciones').insert(payload).select().single();
@@ -8499,8 +8418,8 @@ async function planSyncSupabase(){
             .limit(1);
           if(errSel || !existente || !existente.length) throw error; // re-tirar el original
           s.microaccionId = existente[0].id;
-          // Reintentar como UPDATE (con la misma protección estado=BORRADOR)
-          const { error: errUpd } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId).eq('estado', 'BORRADOR');
+          // Reintentar como UPDATE
+          const { error: errUpd } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
           if(errUpd) throw errUpd;
           console.log('[planSync] Borrador recuperado:', s.microaccionId);
         } else {
@@ -9074,7 +8993,7 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Factores','Construye tu plan','Planes'];
+  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
   for(let i=1;i<=5;i++){
@@ -9132,7 +9051,7 @@ async function renderPaso1Contexto(){
   const nivel = nivelLogro(s.pct) || nivelLogro(0);
 
   const banner = (s.causas.length || s.comentario || s.propuestas)
-    ? '<div id="planBorradorBanner" class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
+    ? '<div class="plan-borrador-banner"><strong>Borrador retomado.</strong> Continúa donde quedaste.<button onclick="planEliminarBorrador()">Empezar de cero</button></div>'
     : '';
 
   // Render inicial con loading. El recuadro narrativo de nivel + bullets se
@@ -9168,17 +9087,6 @@ async function renderPaso1Contexto(){
     brechasResp = await planCargarBrechas(DB.colegio.id, s.accionId, s.mes, s.pct, banda);
   } catch(e) {
     console.warn('[Brechas] Error al cargar:', e.message);
-  }
-
-  // Si las brechas se auto-regeneraron (por versión vieja, modo inservible,
-  // docs nuevos, etc.), el banner "Borrador retomado" ya no aplica: el
-  // director no está mirando lo que dejó, sino una versión refrescada.
-  // Ocultamos el banner y mostramos un toast informativo de bajo
-  // intervencionismo (no requiere acción del usuario, solo informa).
-  if (_BRECHAS_AUTO_REGENERADAS) {
-    const bannerEl = document.getElementById('planBorradorBanner');
-    if (bannerEl) bannerEl.remove();
-    try { showToast('🔄 Brechas actualizadas con tu información más reciente'); } catch(e){}
   }
   const cont = document.getElementById('planBrechasContenedor');
   if (!cont) return; // Drawer ya cerrado
@@ -9239,38 +9147,6 @@ async function renderPaso1Contexto(){
   // nueva como el de retomar un borrador donde las causas se borraron pero
   // las brechas se conservaron.
   console.log('[pre-marcado] modoBullets=', modoBullets, 's.causas.length=', (s.causas || []).length, 'causales_top_3=', JSON.stringify(brechasResp?.causales_top_3));
-
-  // Detectar si las causas actuales son un pre-marcado obsoleto que debe
-  // reemplazarse. Condiciones para considerarlo "obsoleto y reemplazable":
-  //   (a) modoBullets === 'PERSONALIZADO' (hay brechas IA frescas con top-3 nuevo)
-  //   (b) hay un causales_top_3 nuevo de la IA con al menos 1 código
-  //   (c) TODAS las causas actuales tienen _sugeridaPorIA === true (es decir,
-  //       son pre-marcado puro, no hay nada que el director haya tocado
-  //       manualmente: ni agregó causas propias, ni desmarcó alguna sugerida,
-  //       ni reordenó la lista). Si alguna causa NO tiene _sugeridaPorIA o
-  //       el set difiere de un pre-marcado puro, respetamos la elección manual.
-  //   (d) el set de códigos actuales NO coincide exactamente con el top-3 nuevo.
-  //
-  // Bajo esas 4 condiciones, reemplazamos. Si falla alguna, dejamos como está.
-  if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length > 0){
-    const nuevoTop3 = Array.isArray(brechasResp?.causales_top_3)
-      ? brechasResp.causales_top_3.map(c => (c||'').toString().trim().toUpperCase()).filter(c => c.match(/^C\d{1,2}$/))
-      : [];
-    if(nuevoTop3.length > 0){
-      const todasSonPreMarcado = s.causas.every(c => c._sugeridaPorIA === true);
-      const sinCausasOtros = !Array.isArray(s.causasOtros) || s.causasOtros.length === 0;
-      const codigosActuales = s.causas.map(c => (c.codigo||'').toString().trim().toUpperCase()).sort();
-      const codigosNuevos = [...nuevoTop3].sort();
-      const setIgual = codigosActuales.length === codigosNuevos.length
-                       && codigosActuales.every((c, i) => c === codigosNuevos[i]);
-      if(todasSonPreMarcado && sinCausasOtros && !setIgual){
-        console.log('[pre-marcado] causas previas obsoletas detectadas, limpiando para reaplicar');
-        console.log('[pre-marcado] codigos actuales:', codigosActuales, '→ nuevos:', codigosNuevos);
-        s.causas = []; // limpiar para que el bloque siguiente reaplique
-      }
-    }
-  }
-
   if(modoBullets === 'PERSONALIZADO' && (s.causas || []).length === 0){
     let top3 = Array.isArray(brechasResp?.causales_top_3) ? brechasResp.causales_top_3 : [];
 
@@ -9582,16 +9458,16 @@ function renderPaso2Diagnostico(){
 
   document.getElementById('planBody').innerHTML = `
     <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
-    <p class="lead">Marca hasta 3 factores en orden de importancia. Si tu caso no encaja, agrega factores propios en Otros.</p>
+    <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
     ${bannerIA}
-    ${grupoHtml('Factores estructurales y técnicos', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
-    ${grupoHtml('Factores relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
+    ${grupoHtml('Causas estructurales y técnicas', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
+    ${grupoHtml('Causas relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
     <div class="plan-otros-box">
-      <h4>Otros — factores propios del contexto</h4>
+      <h4>Otros — causas propias del contexto</h4>
       <div class="plan-otros-sub">Adicionales a las 3 ranqueadas. Aportan contexto al sistema.</div>
       ${otrosHtml}
       <div class="plan-otros-add">
-        <input type="text" id="planOtroInput" placeholder="Escribe otro factor..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
+        <input type="text" id="planOtroInput" placeholder="Escribe otra causa..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
         <button onclick="planAgregarOtro()">+ Agregar</button>
       </div>
     </div>
@@ -12507,17 +12383,12 @@ function _areaBadge(area){
   return `<span style="background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;border:1px solid ${c.borde}33">${escapeHtmlPlan(area.nombre)}</span>`;
 }
 
-/* % cumplimiento del plan = promedio del porcentaje_avance de sus pasos
- * (consistente con la barra global que se muestra DENTRO del plan abierto,
- * calculada en _planActualizarProgresoGlobalUI). Antes esta función solo
- * contaba pasos con estado COMPLETADO, lo que daba 0% mientras los avances
- * estuvieran entre 0 y 99, creando inconsistencia entre la vista del plan
- * (que sí promediaba) y la lista de Mis planes / Biblioteca (que no). */
+/* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const suma = pasos.reduce((acc, p) => acc + (Number(p.porcentaje_avance) || 0), 0);
-  return Math.round(suma / pasos.length);
+  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
+  return Math.round(completos / pasos.length * 100);
 }
 
 /* Etiqueta de estado con color */
@@ -12734,109 +12605,38 @@ async function renderMisPlanes(){
       </div>`;
   } else {
     html += '<div class="card" style="padding:0;overflow:hidden">';
-    html += '<div style="display:grid;grid-template-columns:2.2fr 2.2fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
-    html += '<div>Acción</div><div>Planes por mes</div><div>Próximo plazo</div><div></div>';
+    html += '<div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
+    html += '<div>Acción</div><div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Próximo plazo</div><div></div>';
     html += '</div>';
 
-    // Agrupar por accion_id: si una acción tiene plan en varios meses,
-    // se muestra en una sola fila con chips clickeables por mes
-    // (ordenados de más antiguo a más reciente dentro del grupo).
-    // El orden entre filas respeta el ordenamiento original `lista`:
-    // la posición del grupo la fija el plan que aparece PRIMERO en lista
-    // (es decir, el "mejor" según el criterio de orden activo).
-    const grupos = []; // [{accion_id, planes: [m, m, ...]}]
-    const idxGrupo = {};
     lista.forEach(m => {
-      if (idxGrupo[m.accion_id] === undefined) {
-        idxGrupo[m.accion_id] = grupos.length;
-        grupos.push({ accion_id: m.accion_id, planes: [] });
-      }
-      grupos[idxGrupo[m.accion_id]].planes.push(m);
-    });
-    // Dentro de cada grupo, ordenar planes de mes más antiguo a más nuevo
-    grupos.forEach(g => g.planes.sort((a, b) => (a.mes||'').localeCompare(b.mes||'')));
-
-    grupos.forEach(g => {
-      const accion = (DB.acciones||[]).find(a => a.id === g.accion_id);
+      const accion = (DB.acciones||[]).find(a => a.id === m.accion_id);
       const accionNombre = accion?.nombre || '(acción eliminada)';
-      const accionDesc = accion?.descripcion || '';
-      const areaPlan = _areaDeAccion(g.accion_id);
-
-      // Para el responsable, tomamos el del plan más reciente del grupo
-      // (es el más representativo del estado actual). Si no hay, queda vacío.
-      const planMasReciente = g.planes.slice().sort((a,b) => (b.mes||'').localeCompare(a.mes||''))[0];
-      const respText = planMasReciente?.acuerdo_quien || (planMasReciente?.acuerdo_co ? '· ' + planMasReciente.acuerdo_co : '');
+      const cumpl = _cumplimientoPlan(m.id);
+      const cumplBar = cumpl === null
+        ? '<span style="color:var(--muted);font-size:11px">Sin pasos aún</span>'
+        : `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--border-light,#e5e7eb);border-radius:3px;overflow:hidden;min-width:60px"><div style="width:${cumpl}%;height:100%;background:${cumpl>=70?'var(--green,#10b981)':cumpl>=40?'var(--gold,#f59e0b)':'var(--red,#ef4444)'}"></div></div><span style="font-size:11px;font-weight:600;min-width:32px">${cumpl}%</span></div>`;
+      const respText = m.acuerdo_quien || (m.acuerdo_co ? '· ' + m.acuerdo_co : '');
       const respDisplay = respText
         ? escapeHtmlPlan(respText)
         : '<span style="color:var(--muted)">Sin asignar</span>';
-
-      // Próximo plazo: el más urgente del grupo (vencido > hoy > próximo > sin plazo).
-      // Tomamos el plan ACTIVA con menor fecha_objetivo (más cercano a vencer/más vencido).
-      const planParaPlazo = g.planes
-        .filter(m => m.estado === 'ACTIVA' && m.fecha_objetivo)
-        .sort((a,b) => (a.fecha_objetivo||'').localeCompare(b.fecha_objetivo||''))[0]
-        || g.planes.find(m => m.fecha_objetivo) || planMasReciente;
-      const plazoHtml = _plazoBadge(planParaPlazo?.fecha_objetivo);
-
-      // Construir chips de cada mes
-      const chipsHtml = g.planes.map(m => {
-        const cumpl = _cumplimientoPlan(m.id);
-        const dias = _diasHastaFecha(m.fecha_objetivo);
-        const vencido = m.estado === 'ACTIVA' && dias !== null && dias < 0;
-        // Color del chip según cumplimiento (alineado con barra de cumpl previa):
-        //   verde si >=70%, ámbar si >=40%, rojo si <40%, gris si no hay datos
-        // Si está vencido, forzar rojo para llamar la atención.
-        let bg = '#f3f4f6', fg = '#4b5563', bd = '#d1d5db';
-        if (cumpl !== null) {
-          if (vencido || cumpl < 40)      { bg = '#FCEBEB'; fg = '#791F1F'; bd = '#F7C1C1'; }
-          else if (cumpl < 70)            { bg = '#FAEEDA'; fg = '#854F0B'; bd = '#FAC775'; }
-          else                            { bg = '#EAF3DE'; fg = '#3B6D11'; bd = '#C0DD97'; }
-        } else if (vencido) {
-          bg = '#FCEBEB'; fg = '#791F1F'; bd = '#F7C1C1';
-        }
-        const cumplLabel = cumpl === null ? 'sin datos' : (cumpl + '%');
-        const venceLabel = vencido ? `<span style="font-size:10px;padding:1px 5px;background:rgba(121,31,31,0.15);border-radius:999px;margin-left:2px">${Math.abs(dias)}d</span>` : '';
-        const estadoHint = m.estado === 'BORRADOR'
-          ? '<span style="font-size:9px;padding:1px 5px;background:rgba(75,85,99,0.12);color:#4b5563;border-radius:999px;margin-left:2px;letter-spacing:.04em">BORR</span>'
-          : (m.estado === 'COMPLETADA'
-              ? '<span style="font-size:9px;padding:1px 5px;background:rgba(55,48,163,0.12);color:#3730a3;border-radius:999px;margin-left:2px;letter-spacing:.04em">DONE</span>'
-              : '');
-        const titleAttr = `Mes: ${fmtMes(m.mes, true)}\nEstado: ${m.estado||'—'}\nCumplimiento: ${cumplLabel}`;
-        return `<span class="plan-chip-mes"
-                  onclick="event.stopPropagation();abrirPlan('${m.accion_id}','${m.mes}')"
-                  title="${escapeAttr(titleAttr)}"
-                  style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:transform .08s,box-shadow .12s"
-                  onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 1px 4px rgba(0,0,0,.08)'"
-                  onmouseout="this.style.transform='';this.style.boxShadow=''">
-                  <span style="opacity:.75">${fmtMes(m.mes, true)}</span>
-                  <span>${cumplLabel}</span>
-                  ${venceLabel}
-                  ${estadoHint}
-                </span>`;
-      }).join('');
-
-      // Si solo hay 1 plan en el grupo, también se puede hacer click en
-      // la fila entera (retro-compat con UX anterior). Si hay 2+, dejamos
-      // que solo los chips sean clickeables para evitar ambigüedad.
-      const filaClickeable = g.planes.length === 1;
-      const rowClickAttr = filaClickeable
-        ? `onclick="abrirPlan('${g.planes[0].accion_id}','${g.planes[0].mes}')"`
-        : '';
-      const rowCursor = filaClickeable ? 'cursor:pointer;' : '';
+      const areaPlan = _areaDeAccion(m.accion_id);
 
       html += `
-        <div style="display:grid;grid-template-columns:2.2fr 2.2fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;${rowCursor}transition:background .12s"
+        <div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s"
              onmouseover="this.style.background='var(--bg-soft,#f8f9fa)'"
              onmouseout="this.style.background=''"
-             ${rowClickAttr}>
+             onclick="abrirPlan('${m.accion_id}','${m.mes}')">
           <div>
             ${areaPlan ? `<div style="margin-bottom:5px">${_areaBadge(areaPlan)}</div>` : ''}
             <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px">${escapeHtmlPlan(accionNombre)}</div>
             <div style="font-size:11px;color:var(--muted)">👤 ${respDisplay}</div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${chipsHtml}</div>
-          <div>${plazoHtml}</div>
-          <div style="text-align:right;color:var(--muted);font-size:14px">${filaClickeable ? '›' : ''}</div>
+          <div style="font-size:12px;color:var(--text)">${fmtMes(m.mes, true)}</div>
+          <div>${_estadoBadge(m.estado)}</div>
+          <div>${cumplBar}</div>
+          <div>${_plazoBadge(m.fecha_objetivo)}</div>
+          <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
         </div>`;
     });
     html += '</div>';
@@ -13242,13 +13042,8 @@ const MAPA_NIVELES_INFO = {
 };
 
 const MAPA_CAUSAS_INFO = {
-  // Catálogo definitivo: 9 estructurales + 8 relacionales = 17 causales.
-  // FUENTE DE VERDAD: tabla `causales_catalogo` de Supabase (cargada en
-  // CAUSAS_TAXONOMIA via loadCausalesCatalogo). Este mapa hardcoded existe
-  // SOLO para la pantalla "Mapa de Acciones" del superadmin, donde se renderiza
-  // el nombre de la causal asociada a cada plan precomputado. Si se modifica
-  // el catálogo en Supabase o en la edge function generar-brecha-avanzado,
-  // ACTUALIZAR también aquí (de lo contrario los nombres quedan desfasados).
+  // Sincronizado con CAUSALES_CATALOGO de generar-brecha-avanzado v8.3
+  // Si se modifica el catálogo de la edge function, actualizar también aquí.
   C1:  { grupo:'estructural', nombre:'Tiempo' },
   C2:  { grupo:'estructural', nombre:'Recursos materiales' },
   C3:  { grupo:'estructural', nombre:'Recursos humanos' },
@@ -13258,14 +13053,14 @@ const MAPA_CAUSAS_INFO = {
   C7:  { grupo:'estructural', nombre:'Datos o información' },
   C8:  { grupo:'estructural', nombre:'Evaluación y monitoreo' },
   C9:  { grupo:'estructural', nombre:'Causas externas' },
-  C10: { grupo:'relacional',  nombre:'Liderazgo Intermedio' },
-  C11: { grupo:'relacional',  nombre:'Clima Laboral' },
-  C12: { grupo:'relacional',  nombre:'Comunicación interna' },
-  C13: { grupo:'relacional',  nombre:'Resistencia cultural' },
-  C14: { grupo:'relacional',  nombre:'Compromiso docente' },
-  C15: { grupo:'relacional',  nombre:'Involucramiento Estudiantes' },
-  C16: { grupo:'relacional',  nombre:'Comunicación con apoderados' },
-  C17: { grupo:'relacional',  nombre:'Compromiso de apoderados' }
+  C10: { grupo:'relacional',  nombre:'Liderazgo directivo' },
+  C11: { grupo:'relacional',  nombre:'Cultura institucional' },
+  C12: { grupo:'relacional',  nombre:'Resistencia al cambio' },
+  C13: { grupo:'relacional',  nombre:'Comunicación interna' },
+  C14: { grupo:'relacional',  nombre:'Clima laboral' },
+  C15: { grupo:'relacional',  nombre:'Participación docente' },
+  C16: { grupo:'relacional',  nombre:'Compromiso estudiantil' },
+  C17: { grupo:'relacional',  nombre:'Vinculación con familias' }
 };
 
 /* Mapa nombre legible → slug usado en cache_key de planes_cache.
