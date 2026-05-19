@@ -11,8 +11,13 @@ const sb = createClient(
 // Registro de advertencias para alertar en el email
 const advertencias = [];
 
+// Límite duro por consulta. PostgREST tiene un default de 1000 — si no
+// pasamos range, Supabase trunca silenciosamente. Subimos a 50.000 (margen
+// holgado: hoy la tabla más grande es planes_cache con ~2k filas).
+const ROW_LIMIT = 50000;
+
 async function fetchAll(tabla, filtros = {}) {
-  let query = sb.from(tabla).select('*');
+  let query = sb.from(tabla).select('*').range(0, ROW_LIMIT - 1);
   for (const [col, val] of Object.entries(filtros)) {
     query = query.eq(col, val);
   }
@@ -23,7 +28,14 @@ async function fetchAll(tabla, filtros = {}) {
     advertencias.push(msg);
     return [];
   }
-  return data || [];
+  const filas = data || [];
+  // Si llegamos al techo, casi seguro hay truncamiento. Advertir fuerte.
+  if (filas.length === ROW_LIMIT) {
+    const msg = `Tabla "${tabla}" alcanzó el límite de ${ROW_LIMIT} filas. POSIBLE TRUNCAMIENTO — subir ROW_LIMIT o paginar.`;
+    console.warn(`⚠️  ${msg}`);
+    advertencias.push(msg);
+  }
+  return filas;
 }
 
 // Quita campos sensibles de un usuario antes de guardarlo en el backup
@@ -76,7 +88,7 @@ async function main() {
   const usuarios       = usuariosRaw.map(sanitizeUsuario);
   console.log(`✅  Colegios: ${colegios.length} | Usuarios: ${usuarios.length} (sin password_hash)`);
 
-  // ── NUEVO v2.4: planes_cache es GLOBAL, no por colegio ────────
+  // ── v2.4: planes_cache es GLOBAL, no por colegio ──────────────
   // Es la biblioteca compartida de planes generados por IA (con curación
   // humana). No tiene colegio_id porque el punto del cache es reusarse
   // entre colegios cuando el cache_key matchea. Si se pierde, se regenera
@@ -228,7 +240,7 @@ async function main() {
   const backup = {
     meta: {
       fecha_backup:    horaCompleta,
-      version:         '2.4',
+      version:         '2.4.1',
       plataforma:      'Gestión Estratégica',
       total_colegios:  colegios.length,
       supabase_project: 'tykbytaymysxgvyvlgah',
@@ -289,7 +301,7 @@ async function main() {
         from: `"Gestión Estratégica Backup" <${process.env.EMAIL_USER}>`,
         to:   process.env.EMAIL_TO,
         subject: subject,
-        text: `${tieneAlerta ? '⚠ BACKUP CON ADVERTENCIAS' : '✅ Backup completado exitosamente'}.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\nVersión: 2.4\nPlanes cache (global): ${planesCache.length} registros\n${bodyAdvertencias}\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups\n\nNota: el backup excluye contraseñas y tokens por seguridad.`,
+        text: `${tieneAlerta ? '⚠ BACKUP CON ADVERTENCIAS' : '✅ Backup completado exitosamente'}.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\nVersión: 2.4.1\nPlanes cache (global): ${planesCache.length} registros\n${bodyAdvertencias}\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups\n\nNota: el backup excluye contraseñas y tokens por seguridad.`,
       });
 
       console.log(`📧  Email enviado a ${process.env.EMAIL_TO}`);
