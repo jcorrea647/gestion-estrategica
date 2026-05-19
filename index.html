@@ -211,7 +211,11 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   #topRolBadge{display:none}
   .logout-btn{padding:3px 8px;font-size:11px}
   .back-btn{padding:3px 8px;font-size:11px}
-  .hamburger-btn{display:flex}
+  .hamburger-btn{display:flex !important}
+  /* En mobile, ocultar el botón Mapa de Acciones del topbar — el header se
+     sobrecarga y empuja el resto fuera. Sigue siendo accesible desde el
+     menú lateral (drawer) si está activado por permisos. */
+  #topMapaAccionesBtn{display:none !important}
 
   /* Sidebar como drawer */
   .sidebar{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:500;background:var(--surface);border-top:1px solid var(--border);overflow-y:auto;padding:8px 0}
@@ -278,9 +282,11 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
   .btn.btn-sm{min-height:30px}
 }
 
-.hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px}
-.hamburger-btn span{display:block;width:20px;height:2px;background:rgba(255,255,255,.8);border-radius:2px;transition:all .2s}
-.mobile-overlay{display:none;position:fixed;inset:0;top:56px;background:rgba(0,0,0,.4);z-index:499}
+.hamburger-btn{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:8px;border-radius:6px;margin-right:4px;order:-1;flex-shrink:0}
+.hamburger-btn span{display:block;width:22px;height:2.5px;background:#fff;border-radius:2px;transition:all .2s}
+.hamburger-btn:hover{background:rgba(255,255,255,.12)}
+.hamburger-btn:active{background:rgba(255,255,255,.2)}
+.mobile-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.5);z-index:499}
 .mobile-overlay.show{display:block}
 .reunion-banner{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border-radius:var(--r);padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow)}
 .rb-title{font-family:'DM Serif Display',serif;color:#fff;font-size:16px;margin-bottom:2px}
