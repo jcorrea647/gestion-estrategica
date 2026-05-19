@@ -76,9 +76,22 @@ async function main() {
   const usuarios       = usuariosRaw.map(sanitizeUsuario);
   console.log(`✅  Colegios: ${colegios.length} | Usuarios: ${usuarios.length} (sin password_hash)`);
 
+  // ── NUEVO v2.4: planes_cache es GLOBAL, no por colegio ────────
+  // Es la biblioteca compartida de planes generados por IA (con curación
+  // humana). No tiene colegio_id porque el punto del cache es reusarse
+  // entre colegios cuando el cache_key matchea. Si se pierde, se regenera
+  // pero perdemos los tokens de IA gastados + las notas del curador.
+  const planesCache = await fetchAll('planes_cache');
+  console.log(`✅  Planes cache (global): ${planesCache.length}`);
+
   if (backupAnterior) {
     chequearConteo('colegios', colegios.length, backupAnterior.colegios ? Object.keys(backupAnterior.colegios).length : null);
     chequearConteo('usuarios', usuarios.length, backupAnterior.usuarios?.length);
+    // Conteo histórico de planes_cache: puede venir del nivel raíz (v2.4+)
+    // o estar disperso entre colegios (v2.3, en cuyo caso la comparación
+    // no es exacta, pero al menos detectamos colapsos a 0)
+    const conteoCacheAnterior = backupAnterior.planes_cache?.length ?? null;
+    chequearConteo('planes_cache', planesCache.length, conteoCacheAnterior);
   }
 
   // Alerta dura: 0 colegios o 0 usuarios = backup inservible
@@ -156,15 +169,14 @@ async function main() {
       microaccionesPasos.push(...pasos);
     }
 
-    // ── NUEVO v2.3: Documentos institucionales del colegio ─────
-    // Estos faltaban antes. Si un colegio carga PEI/PME/FASE y se borra
-    // accidentalmente, sin esto era imposible recuperarlo.
+    // ── v2.3: Documentos institucionales del colegio ───────────
+    // Si un colegio carga PEI/PME/FASE y se borra accidentalmente,
+    // sin esto era imposible recuperarlo.
     const colegioDocumentos = await fetchAll('colegio_documentos', { colegio_id: cid });
     const colegioPei        = await fetchAll('colegio_pei',        { colegio_id: cid });
     const colegioPmeOficial = await fetchAll('colegio_pme_oficial', { colegio_id: cid });
 
-    // ── NUEVO v2.3: Planes generados por IA (cache) ─────────────
-    const planesCache    = await fetchAll('planes_cache',    { colegio_id: cid });
+    // ── v2.4: planes_director SÍ es por colegio (sí tiene colegio_id) ──
     const planesDirector = await fetchAll('planes_director', { colegio_id: cid });
 
     console.log(`   Áreas: ${areas.length} | Objetivos: ${objetivos.length} | Acciones: ${acciones.length}`);
@@ -172,7 +184,7 @@ async function main() {
     console.log(`   Denuncias: ${denuncias.length}`);
     console.log(`   Microacciones: ${microacciones.length} | Pasos: ${microaccionesPasos.length}`);
     console.log(`   Documentos: ${colegioDocumentos.length} | PEI: ${colegioPei.length} | PME oficial: ${colegioPmeOficial.length}`);
-    console.log(`   Planes cache: ${planesCache.length} | Planes director: ${planesDirector.length}`);
+    console.log(`   Planes director: ${planesDirector.length}`);
 
     // Validar conteos contra backup anterior
     if (datosAnteriores) {
@@ -203,11 +215,11 @@ async function main() {
       evidencias_denuncia: evidenciasDenuncia,
       microacciones,
       microacciones_pasos: microaccionesPasos,
-      // NUEVO v2.3
+      // v2.3
       colegio_documentos:  colegioDocumentos,
       colegio_pei:         colegioPei,
       colegio_pme_oficial: colegioPmeOficial,
-      planes_cache:        planesCache,
+      // v2.4: planes_cache YA NO va por colegio (es global, ver arriba)
       planes_director:     planesDirector,
     };
   }
@@ -216,16 +228,17 @@ async function main() {
   const backup = {
     meta: {
       fecha_backup:    horaCompleta,
-      version:         '2.3',
+      version:         '2.4',
       plataforma:      'Gestión Estratégica',
       total_colegios:  colegios.length,
       supabase_project: 'tykbytaymysxgvyvlgah',
       nota_seguridad:  'Este backup NO incluye password_hash ni password_resets por seguridad.',
-      modulos:         ['estructura_plan','seguimiento','evidencias','reuniones','denuncias','plan_microacciones','documentos_institucionales','planes_cache'],
+      modulos:         ['estructura_plan','seguimiento','evidencias','reuniones','denuncias','plan_microacciones','documentos_institucionales','planes_cache_global','planes_director'],
       advertencias_count: advertencias.length,
       advertencias:    advertencias.length > 0 ? advertencias : null,
     },
     usuarios,
+    planes_cache: planesCache,
     colegios: porColegio,
   };
 
@@ -276,7 +289,7 @@ async function main() {
         from: `"Gestión Estratégica Backup" <${process.env.EMAIL_USER}>`,
         to:   process.env.EMAIL_TO,
         subject: subject,
-        text: `${tieneAlerta ? '⚠ BACKUP CON ADVERTENCIAS' : '✅ Backup completado exitosamente'}.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\nVersión: 2.3\n${bodyAdvertencias}\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups\n\nNota: el backup excluye contraseñas y tokens por seguridad.`,
+        text: `${tieneAlerta ? '⚠ BACKUP CON ADVERTENCIAS' : '✅ Backup completado exitosamente'}.\n\nFecha: ${new Date().toLocaleString('es-CL')}\nArchivo: backups/${filename}\nTamaño: ${sizeKB} KB\nVersión: 2.4\nPlanes cache (global): ${planesCache.length} registros\n${bodyAdvertencias}\nResumen por colegio:\n${resumen}\n\nEl archivo está disponible en:\nhttps://github.com/jcorrea647/gestion-estrategica/tree/main/backups\n\nNota: el backup excluye contraseñas y tokens por seguridad.`,
       });
 
       console.log(`📧  Email enviado a ${process.env.EMAIL_TO}`);
