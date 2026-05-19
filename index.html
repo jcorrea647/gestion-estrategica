@@ -452,30 +452,6 @@ async function doLoginGoogle() {
 }
 
 async function handleOAuthReturn() {
-  // Detectar errores devueltos por Supabase/OAuth en la URL (hash o query)
-  // Esto incluye el rechazo del trigger sync_usuario_on_auth_signup
-  // cuando el email no tiene perfil pre-creado en la tabla usuarios.
-  const hashParams  = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
-  const queryParams = new URLSearchParams(window.location.search || '');
-  const errorCode = hashParams.get('error')             || queryParams.get('error')             || '';
-  const errorDesc = hashParams.get('error_description') || queryParams.get('error_description') || '';
-
-  if (errorCode || errorDesc) {
-    // Limpiar la URL para no dejar el error pegado al recargar
-    history.replaceState(null, '', window.location.pathname);
-    const errEl = document.getElementById('loginError');
-    if (errEl) {
-      const desc = decodeURIComponent(errorDesc || '');
-      if (/EMAIL_NO_AUTORIZADO/i.test(desc)) {
-        errEl.textContent = 'Tu cuenta no está autorizada. Contacta al administrador.';
-      } else {
-        errEl.textContent = 'No se pudo iniciar sesión: ' + (desc || errorCode);
-      }
-      errEl.classList.add('show');
-    }
-    return false;
-  }
-
   const {data:{session}} = await sb.auth.getSession();
   if (!session?.user) return false;
 
@@ -522,7 +498,7 @@ async function _routeAfterAuth(authUserId, opts) {
     await sb.auth.signOut();
     if (errEl) {
       errEl.textContent = opts.source === 'oauth'
-        ? 'Tu cuenta no está autorizada. Contacta al administrador.'
+        ? 'Tu cuenta Google no tiene perfil. Contacta al administrador.'
         : 'Correo o contrasena incorrectos.';
       errEl.classList.add('show');
     }
@@ -7202,9 +7178,22 @@ const PLAN_CSS = `
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
 .plan-header{background:var(--accent);color:#fff;padding:16px 24px;
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+  display:flex;align-items:flex-start;gap:16px;flex-wrap:nowrap}
+.plan-header-main{flex:1;min-width:0}
 .plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400}
 .plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.plan-header-desc{font-size:13px;color:rgba(255,255,255,.85);line-height:1.5;margin-top:6px;max-width:760px}
+.plan-header-desc:empty{display:none}
+.plan-header-tags{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:500;margin-top:8px}
+.plan-header-tags:empty{display:none}
+.plan-header-badge{flex-shrink:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+  border-radius:8px;padding:10px 14px;min-width:160px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.plan-header-badge:empty{display:none}
+.plan-badge-row .plan-badge-label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:500;margin-bottom:2px}
+.plan-badge-row .plan-badge-value{font-size:14px;font-weight:500;color:#fff}
+.plan-badge-row .plan-badge-pct{display:flex;align-items:baseline;gap:6px}
+.plan-badge-row .plan-badge-pct-num{font-size:20px;font-weight:500;line-height:1}
+.plan-badge-pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:999px;font-weight:500}
 .plan-close{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
   color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;
   display:flex;align-items:center;justify-content:center}
@@ -7726,6 +7715,10 @@ const PLAN_CSS = `
 }
 .marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn{
   color:#7A5A18;
+}
+/* Excepción: el botón activo mantiene texto blanco para conservar contraste sobre el fondo dorado */
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn.activa{
+  color:#fff;
 }
 
 /* Línea con el sujeto extraído ("El equipo técnico-pedagógico y los docentes:") */
@@ -8998,10 +8991,13 @@ function asegurarDrawer(){
   dw.id='planDrawer'; dw.className='plan-drawer';
   dw.innerHTML = `
     <div class="plan-header">
-      <div>
+      <div class="plan-header-main">
         <h2 id="planTitle">Plan de mejora</h2>
+        <div class="plan-header-desc" id="planHeaderDesc"></div>
+        <div class="plan-header-tags" id="planHeaderTags"></div>
         <div class="plan-sub" id="planSubtitle"></div>
       </div>
+      <div class="plan-header-badge" id="planHeaderBadge"></div>
       <button class="plan-close" onclick="cerrarPlan()">×</button>
     </div>
     <div class="plan-progress" id="planProgress"></div>
@@ -9012,10 +9008,76 @@ function asegurarDrawer(){
 }
 
 /* ====================== ROUTER PASOS ====================== */
+/* Encabezado unificado del drawer del plan.
+ * Rellena descripción, etiquetas (Gestión · Liceo) y recuadro (mes actual + nivel de logro).
+ * Se llama en cada renderPlanPaso() para que el encabezado sea idéntico en las 5 pestañas. */
+function _planRenderHeaderInfo(){
+  const s = PLAN_STATE;
+  const accion = s.accion || {};
+
+  // Descripción de la acción
+  const descEl = document.getElementById('planHeaderDesc');
+  if(descEl) descEl.textContent = accion.descripcion || '';
+
+  // Etiquetas: ÁREA/DIMENSIÓN · COLEGIO
+  const tagsEl = document.getElementById('planHeaderTags');
+  if(tagsEl){
+    const partes = [];
+    const areaNombre = accion.area_nombre || accion.dimension || s.areaNombre || '';
+    if(areaNombre) partes.push(areaNombre.toUpperCase());
+    const cole = (DB && DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
+    if(cole) partes.push(cole.toUpperCase());
+    tagsEl.textContent = partes.join(' · ');
+  }
+
+  // Recuadro derecho: mes actual del sistema + nivel de logro
+  const badgeEl = document.getElementById('planHeaderBadge');
+  if(badgeEl){
+    // Mes actual del sistema (formato YYYY-MM para coincidir con la BD)
+    const ahora = new Date();
+    const mesActualISO = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0');
+    const mesActualLabel = (typeof fmtMes==='function') ? fmtMes(mesActualISO) : mesActualISO;
+
+    // Porcentaje de logro: PLAN_STATE.pct si existe, si no recalcular para el mes actual
+    let pct = (typeof s.pct === 'number') ? s.pct : null;
+    if(pct === null && accion.id && typeof DB!=='undefined' && DB.seguimiento){
+      const segs = DB.seguimiento.filter(x => x.accion_id===accion.id && x.mes===mesActualISO && !x.pendiente && x.porcentaje!=null);
+      if(segs.length){
+        pct = Math.round(segs.reduce((a,x)=>a+parseFloat(x.porcentaje),0)/segs.length);
+      }
+    }
+
+    // Clasificación oficial (Inicial/Básico/En Desarrollo/Satisfactorio/Consolidado)
+    const nivel = (typeof nivelLogro==='function' && pct!==null) ? nivelLogro(pct) : null;
+
+    let html = '';
+    html += '<div class="plan-badge-row">';
+    html +=   '<div class="plan-badge-label">Mes evaluado</div>';
+    html +=   '<div class="plan-badge-value">'+mesActualLabel+'</div>';
+    html += '</div>';
+    html += '<div class="plan-badge-row">';
+    html +=   '<div class="plan-badge-label">Nivel de logro</div>';
+    if(pct!==null && nivel){
+      html += '<div class="plan-badge-pct">';
+      html +=   '<span class="plan-badge-pct-num">'+pct+'%</span>';
+      html +=   '<span class="plan-badge-pill" style="background:'+nivel.bg+';color:'+nivel.color+'">'+nivel.nombre+'</span>';
+      html += '</div>';
+    } else {
+      html += '<div class="plan-badge-value" style="color:rgba(255,255,255,.6);font-size:12px">Sin datos del mes</div>';
+    }
+    html += '</div>';
+    badgeEl.innerHTML = html;
+  }
+}
+
 function renderPlanPaso(){
   const s = PLAN_STATE;
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
+
+  // Encabezado unificado: descripción, etiquetas Gestión·Liceo, recuadro mes + nivel de logro
+  // Se rellena en cada render para que sea idéntico en las 5 pestañas.
+  _planRenderHeaderInfo();
 
   const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
