@@ -8431,7 +8431,13 @@ async function planSyncSupabase(){
   s._isInserting = true;
   try {
     if(s.microaccionId){
-      const { error } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
+      // FIX defensa-en-profundidad: el UPDATE filtra explícitamente por
+      // estado = 'BORRADOR'. Si por una race condition o bug futuro el
+      // planSyncSupabase llega hasta acá apuntando a un plan ACTIVA o
+      // COMPLETADA, el WHERE no matchea ninguna fila y la BD no se toca.
+      // Sin esto, un autosave podía convertir un plan ACTIVA en BORRADOR
+      // (perdiendo causas/pasos/asignaciones por estar PLAN_STATE parcial).
+      const { error } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId).eq('estado', 'BORRADOR');
       if(error) throw error;
     } else {
       const { data, error } = await sb.from('microacciones').insert(payload).select().single();
@@ -8455,8 +8461,8 @@ async function planSyncSupabase(){
             .limit(1);
           if(errSel || !existente || !existente.length) throw error; // re-tirar el original
           s.microaccionId = existente[0].id;
-          // Reintentar como UPDATE
-          const { error: errUpd } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId);
+          // Reintentar como UPDATE (con la misma protección estado=BORRADOR)
+          const { error: errUpd } = await sb.from('microacciones').update(payload).eq('id', s.microaccionId).eq('estado', 'BORRADOR');
           if(errUpd) throw errUpd;
           console.log('[planSync] Borrador recuperado:', s.microaccionId);
         } else {
