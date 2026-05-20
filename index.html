@@ -2221,7 +2221,6 @@ function renderAdminEstructura() {
     html += '</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
     html += '<button class="btn btn-primary btn-sm" style="background:var(--gold);border-color:var(--gold)" onclick="descargarBackup()">⬇ Descargar Backup</button>';
-    html += '<button class="btn btn-outline btn-sm" onclick="abrirVerificarBackup()" title="Inspecciona un archivo de backup sin modificar la base de datos">🔍 Verificar Backup</button>';
     html += '<button class="btn btn-primary btn-sm" style="background:#9B2335;border-color:#9B2335" onclick="abrirRestaurarBackup()">⬆ Restaurar Backup</button>';
     html += '</div></div></div>';
   }
@@ -3345,44 +3344,6 @@ function descargarBackup() {
 }
 
 // =================== RESTAURAR BACKUP ===================
-//
-// ⚠️ ATENCIÓN AL EQUIPO QUE MODIFIQUE EL BACKUP
-// ─────────────────────────────────────────────────────────
-// Este restaurador acepta cualquier versión 2.x (vía esVersionBackupSoportada).
-//
-// Si vas a cambiar la ESTRUCTURA del backup (no agregar tablas, sino mover
-// cosas de lugar — por ejemplo, sacar `colegios` del nivel raíz, o renombrar
-// `meta`), tienes que:
-//   1. Subir el major: 2.x → 3.0
-//   2. Actualizar esVersionBackupSoportada() para aceptar 3.x
-//   3. Adaptar analizarBackup() para leer la nueva estructura
-//   4. Correr una restauración de prueba antes de mergear
-//
-// AGREGAR TABLAS NUEVAS es seguro y NO requiere cambiar la versión major:
-//   - El restaurador detecta tablas desconocidas y avisa visiblemente al
-//     usuario ("Tabla X no reconocida, sus N registros no se restaurarán").
-//   - Las tablas conocidas se restauran normalmente.
-//   - Para soportar la tabla nueva, basta con agregarla a: `claves`,
-//     el array `tablas`, `dbData`, `ordenInsercion`, los remapeos de FKs
-//     y los reportes (filas en mostrarPreviewRestauracion y mostrarReporteRestauracion).
-//
-// El merge es siempre INSERT-ONLY: nunca sobrescribe ni elimina nada de la BD.
-// ─────────────────────────────────────────────────────────
-
-// Acepta cualquier versión 2.x ≥ 2.0. v1.x se considera obsoleta (formato distinto).
-// v3+ NO se acepta porque implica cambio estructural mayor — actualízame si pasa.
-function esVersionBackupSoportada(version) {
-  if(!version || typeof version !== 'string') return false;
-  const partes = version.split('.');
-  const major = parseInt(partes[0], 10);
-  const minor = parseInt(partes[1], 10);
-  if(isNaN(major) || isNaN(minor)) return false;
-  // Aceptamos 2.0, 2.1, 2.4.1, 2.5, 2.9, etc. Hasta 2.99.
-  if(major !== 2) return false;
-  if(minor < 0) return false;
-  return true;
-}
-
 function abrirRestaurarBackup() {
   if(SESSION.user?.rol !== 'superadmin'){ showToast('Solo superadmin puede restaurar backups'); return; }
   openModal('⬆ Restaurar Backup',
@@ -3431,8 +3392,8 @@ async function analizarBackup() {
     errEl.style.display='block';
     return;
   }
-  if(backup.meta.version && !esVersionBackupSoportada(backup.meta.version)) {
-    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Se aceptan versiones 2.x ≥ 2.0. Descarga un backup nuevo.';
+  if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
+    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1. Descarga un backup nuevo.';
     errEl.style.display='block';
     return;
   }
@@ -3456,164 +3417,12 @@ async function analizarBackup() {
 
   // Guardar para el siguiente paso
   window._backupRestaurar = datosColegio;
-  window._backupMetaFecha = backup.meta.fecha_backup ? new Date(backup.meta.fecha_backup).toLocaleString('es-CL') : '—';
-  window._backupMetaVersion = backup.meta.version || '?';
 
   // Calcular el diff por tabla
   const diff = calcularDiffRestauracion(datosColegio);
 
   // Mostrar pantalla de previsualización
   mostrarPreviewRestauracion(diff, datosColegio);
-}
-
-// =================== VERIFICAR BACKUP (solo lectura) ===================
-// Lee un archivo de backup y muestra qué contiene SIN tocar la base de datos.
-// Útil para confirmar que un archivo descargado tiene los datos esperados
-// antes de hacer cualquier restauración real.
-function abrirVerificarBackup() {
-  openModal('🔍 Verificar Backup',
-    '<div style="background:#E8F0FB;border:1px solid #1F4E79;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:#1F4E79;line-height:1.5">'+
-    '<div style="font-weight:600;margin-bottom:4px">ℹ Modo solo lectura</div>'+
-    'Esta acción inspecciona el archivo de backup y te muestra qué contiene. <strong>No modifica la base de datos.</strong> Úsala para confirmar que un backup tiene los datos esperados antes de restaurar.'+
-    '</div>'+
-    '<div class="form-group"><label class="form-label">Archivo de backup (.json)</label>'+
-    '<input type="file" id="verifyFile" accept=".json" class="form-input" style="padding:8px"></div>'+
-    '<div id="verifyError" style="font-size:12px;color:var(--red);display:none;margin-top:8px"></div>',
-    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
-     {label:'Inspeccionar archivo',cls:'btn-primary',action:'verificarBackup()'}]);
-}
-
-async function verificarBackup() {
-  const fileInput = document.getElementById('verifyFile');
-  const errEl = document.getElementById('verifyError');
-  errEl.style.display = 'none'; errEl.textContent = '';
-  if(!fileInput || !fileInput.files || !fileInput.files[0]){ errEl.textContent='Selecciona un archivo .json'; errEl.style.display='block'; return; }
-
-  const file = fileInput.files[0];
-  let backup;
-  try {
-    const text = await file.text();
-    backup = JSON.parse(text);
-  } catch(e) {
-    errEl.textContent='Error: el archivo no es un JSON válido. ('+e.message+')';
-    errEl.style.display='block';
-    return;
-  }
-
-  // Estructura mínima
-  if(!backup.meta || !backup.colegios) {
-    errEl.textContent='Estructura inválida: el archivo no parece un backup de Gestión Estratégica.';
-    errEl.style.display='block';
-    return;
-  }
-
-  const version = backup.meta.version || '?';
-  const fecha = backup.meta.fecha_backup ? new Date(backup.meta.fecha_backup).toLocaleString('es-CL') : '—';
-  const versionOk = esVersionBackupSoportada(version);
-  const tamanoKB = (file.size / 1024).toFixed(0);
-
-  // Buscar el colegio activo en el backup
-  let datosColegio = null;
-  let otrosColegios = [];
-  for(const cid in backup.colegios) {
-    const c = backup.colegios[cid];
-    if(c.colegio && c.colegio.rbd === DB.colegio.rbd) {
-      datosColegio = c;
-    } else if(c.colegio) {
-      otrosColegios.push({ nombre: c.colegio.nombre, rbd: c.colegio.rbd });
-    }
-  }
-
-  // Header con metadata
-  let html = '<div style="background:var(--surface2);border-radius:8px;padding:12px 14px;font-size:12px;margin-bottom:14px;line-height:1.7">';
-  html += '<div><strong>Archivo:</strong> '+file.name+' ('+tamanoKB+' KB)</div>';
-  html += '<div><strong>Versión:</strong> '+version+(versionOk?' <span style="color:var(--green)">✓ soportada</span>':' <span style="color:var(--red)">✗ no soportada</span>')+'</div>';
-  html += '<div><strong>Fecha del backup:</strong> '+fecha+'</div>';
-  html += '<div><strong>Total colegios en el archivo:</strong> '+Object.keys(backup.colegios).length+'</div>';
-  html += '</div>';
-
-  if(!datosColegio) {
-    html += '<div style="background:#FCEEED;border:1px solid var(--red);border-radius:8px;padding:12px 14px;font-size:13px;color:#7d1a2a;margin-bottom:14px">';
-    html += '<strong>⚠ El colegio actual (RBD '+DB.colegio.rbd+') NO está en este archivo.</strong>';
-    if(otrosColegios.length > 0) {
-      html += '<div style="margin-top:8px;font-size:12px">Colegios encontrados en el archivo:<ul style="margin:4px 0 0 18px">';
-      otrosColegios.forEach(function(c){ html += '<li>'+c.nombre+' (RBD '+c.rbd+')</li>'; });
-      html += '</ul></div>';
-    }
-    html += '</div>';
-  } else {
-    // Inventario del colegio actual
-    html += '<div style="background:#E8F5EE;border:1px solid var(--green);border-radius:8px;padding:12px 14px;font-size:13px;color:#155028;margin-bottom:14px">';
-    html += '<strong>✓ Colegio encontrado:</strong> '+datosColegio.colegio.nombre+' (RBD '+datosColegio.colegio.rbd+')';
-    html += '</div>';
-
-    const tablasMostrar = [
-      ['Cargos', 'cargos'],
-      ['Responsables', 'responsables'],
-      ['Áreas', 'areas'],
-      ['Objetivos', 'objetivos'],
-      ['Acciones', 'acciones'],
-      ['Asignaciones acción-responsable', 'accion_responsable'],
-      ['Seguimientos mensuales', 'seguimiento'],
-      ['Reuniones', 'reuniones'],
-      ['Participantes de reuniones', 'reunion_participantes'],
-      ['Evidencias', 'evidencias'],
-      ['Denuncias', 'denuncias'],
-      ['PEI institucional', 'colegio_pei'],
-      ['PME oficial', 'colegio_pme_oficial'],
-      ['Documentos institucionales', 'colegio_documentos'],
-      ['Planes de mejora (microacciones)', 'microacciones'],
-      ['Pasos de planes', 'microacciones_pasos'],
-      ['Acciones de denuncia', 'acciones_denuncia'],
-      ['Log de denuncia', 'log_denuncia'],
-      ['Mensajes de caso', 'mensajes_caso'],
-      ['Evidencias de denuncia', 'evidencias_denuncia'],
-      ['Planes del director', 'planes_director'],
-    ];
-
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
-    html += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">Registros</th></tr></thead><tbody>';
-    tablasMostrar.forEach(function(t){
-      const arr = datosColegio[t[1]] || [];
-      const n = Array.isArray(arr) ? arr.length : 0;
-      const color = n > 0 ? 'var(--green)' : 'var(--muted)';
-      html += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+t[0]+'</td>';
-      html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:'+color+';font-weight:'+(n>0?'600':'400')+'">'+n+'</td></tr>';
-    });
-    html += '</tbody></table>';
-
-    // Seguimientos por mes (especialmente útil para diagnosticar pérdida de datos)
-    const seg = datosColegio.seguimiento || [];
-    if(seg.length > 0) {
-      const porMes = {};
-      seg.forEach(function(s){ porMes[s.mes] = (porMes[s.mes]||0) + 1; });
-      const meses = Object.keys(porMes).sort();
-      html += '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">';
-      html += '<strong>Seguimientos por mes:</strong> ';
-      html += meses.map(function(m){ return m+' ('+porMes[m]+')'; }).join(' · ');
-      html += '</div>';
-    }
-
-    // Detectar tablas desconocidas para informar
-    const tablasConocidasSet = new Set(tablasMostrar.map(function(t){return t[1];}).concat(['colegio']));
-    const desconocidas = [];
-    Object.keys(datosColegio).forEach(function(k){
-      if(!tablasConocidasSet.has(k) && Array.isArray(datosColegio[k]) && datosColegio[k].length > 0) {
-        desconocidas.push({ nombre: k, registros: datosColegio[k].length });
-      }
-    });
-    if(desconocidas.length > 0) {
-      html += '<div style="background:#FFF4E5;border:1px solid #B8860B;border-radius:8px;padding:12px 14px;font-size:12px;color:#7A5A00">';
-      html += '<strong>⚠ Tablas no reconocidas:</strong><ul style="margin:4px 0 0 18px">';
-      desconocidas.forEach(function(d){ html += '<li><code>'+d.nombre+'</code>: '+d.registros+' registros</li>'; });
-      html += '</ul></div>';
-    }
-  }
-
-  document.getElementById('modalTitle').textContent = '🔍 Resultado de la verificación';
-  document.getElementById('modalBody').innerHTML = html;
-  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>';
-  document.getElementById('modal').style.maxWidth = '720px';
 }
 
 function calcularDiffRestauracion(datosBackup) {
@@ -3630,37 +3439,9 @@ function calcularDiffRestauracion(datosBackup) {
     reunion_participantes: function(b, db){ return db.find(x => x.reunion_id === b.reunion_id && x.nombre === b.nombre); },
     evidencias: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes && x.url === b.url); },
     denuncias: function(b, db){ return db.find(x => x.id === b.id); },
-    // === Tablas nuevas v2.4.1 ===
-    // PEI: solo 1 registro por colegio. Si ya existe uno, lo respetamos (no sobrescribimos).
-    colegio_pei: function(b, db){ return db.length > 0 ? db[0] : null; },
-    // PME oficial: clave compuesta por año + dimensión (un objetivo estratégico por dimensión por año)
-    colegio_pme_oficial: function(b, db){ return db.find(x => x.ano === b.ano && x.dimension === b.dimension); },
-    // Documentos institucionales: clave por tipo (PEI/PME/etc)
-    colegio_documentos: function(b, db){ return db.find(x => x.tipo === b.tipo); },
-    // Microacciones (planes de mejora): clave por accion_id + mes + version
-    microacciones: function(b, db){ return db.find(x => x.accion_id === b.accion_id && x.mes === b.mes && (x.version||1) === (b.version||1)); },
-    // Pasos de microacción: clave por microaccion_id + descripcion
-    microacciones_pasos: function(b, db){ return db.find(x => x.microaccion_id === b.microaccion_id && x.descripcion === b.descripcion); },
-    // Acciones de denuncia, log, mensajes, evidencias: por ID (vienen del propio backup)
-    acciones_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
-    log_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
-    mensajes_caso: function(b, db){ return db.find(x => x.id === b.id); },
-    evidencias_denuncia: function(b, db){ return db.find(x => x.id === b.id); },
-    // Planes director: por accion_id (un plan por acción)
-    planes_director: function(b, db){ return db.find(x => x.accion_id === b.accion_id); },
   };
 
-  // TABLAS CONOCIDAS por el restaurador. Si el backup trae una tabla que no está acá,
-  // se reporta como "desconocida" y se ignora con aviso visible (no se aborta).
-  const tablas = [
-    'cargos','responsables','areas','objetivos','acciones','accion_responsable',
-    'seguimiento','reuniones','reunion_participantes','evidencias','denuncias',
-    // Nuevas v2.4.1:
-    'colegio_pei','colegio_pme_oficial','colegio_documentos',
-    'microacciones','microacciones_pasos',
-    'acciones_denuncia','log_denuncia','mensajes_caso','evidencias_denuncia',
-    'planes_director'
-  ];
+  const tablas = ['cargos','responsables','areas','objetivos','acciones','accion_responsable','seguimiento','reuniones','reunion_participantes','evidencias','denuncias'];
   const resultado = {};
 
   // Datos actuales en BD para comparar
@@ -3676,20 +3457,6 @@ function calcularDiffRestauracion(datosBackup) {
     reunion_participantes: [],  // se calculará desde reuniones
     evidencias: [],  // no está en DB en memoria, lo asumimos vacío para preview
     denuncias: [],   // idem
-    // Nuevas v2.4.1: para el preview, asumimos vacío y dejamos que el insert lo decida.
-    // Si la tabla ya tiene datos en BD, el restaurador igual no sobrescribe porque
-    // el INSERT fallaría por unique/PK; pero para casi todos los casos del Carmela
-    // Carvajal el problema es que la tabla está vacía justamente por el bug.
-    colegio_pei: DB.colegio_pei ? [DB.colegio_pei] : [],
-    colegio_pme_oficial: DB.colegio_pme_oficial || [],
-    colegio_documentos: DB.colegio_documentos || [],
-    microacciones: DB.microacciones || [],
-    microacciones_pasos: DB.microacciones_pasos || [],
-    acciones_denuncia: [],
-    log_denuncia: [],
-    mensajes_caso: [],
-    evidencias_denuncia: [],
-    planes_director: DB.planes_director || [],
   };
   // Aplanar reunion_participantes de DB.reuniones
   (DB.reuniones || []).forEach(function(r){
@@ -3698,7 +3465,7 @@ function calcularDiffRestauracion(datosBackup) {
 
   tablas.forEach(function(tabla){
     const desdeBackup = datosBackup[tabla] || [];
-    const enDB = dbData[tabla] || [];
+    const enDB = dbData[tabla];
     const fnClave = claves[tabla];
     let nuevos = 0, existentes = 0;
     const itemsNuevos = [];
@@ -3713,27 +3480,12 @@ function calcularDiffRestauracion(datosBackup) {
     resultado[tabla] = { total: desdeBackup.length, nuevos: nuevos, existentes: existentes, itemsNuevos: itemsNuevos };
   });
 
-  // === Detectar tablas DESCONOCIDAS en el backup ===
-  // Si una versión futura (ej. v2.5) agrega tablas nuevas que este restaurador no conoce,
-  // las listamos para avisar al usuario en vez de fallar silenciosamente.
-  const tablasEsperadasMeta = new Set(['colegio']);  // 'colegio' es metadata, no se restaura
-  const tablasConocidas = new Set([...tablas, ...tablasEsperadasMeta]);
-  const tablasDesconocidas = [];
-  Object.keys(datosBackup).forEach(function(k){
-    if(!tablasConocidas.has(k) && Array.isArray(datosBackup[k]) && datosBackup[k].length > 0) {
-      tablasDesconocidas.push({ nombre: k, registros: datosBackup[k].length });
-    }
-  });
-  resultado.__tablasDesconocidas = tablasDesconocidas;
-
   return resultado;
 }
 
 function mostrarPreviewRestauracion(diff, datosColegio) {
-  // OJO: diff.__tablasDesconocidas no es una fila de stats; lo procesamos aparte.
-  const tablasConStats = Object.keys(diff).filter(function(k){ return k !== '__tablasDesconocidas'; });
-  const totalNuevos = tablasConStats.reduce(function(a, k){ return a + (diff[k].nuevos || 0); }, 0);
-  const totalExistentes = tablasConStats.reduce(function(a, k){ return a + (diff[k].existentes || 0); }, 0);
+  const totalNuevos = Object.values(diff).reduce(function(a, b){ return a + b.nuevos; }, 0);
+  const totalExistentes = Object.values(diff).reduce(function(a, b){ return a + b.existentes; }, 0);
 
   const filas = [
     ['Cargos', diff.cargos],
@@ -3747,24 +3499,12 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
     ['Participantes de reuniones', diff.reunion_participantes],
     ['Evidencias', diff.evidencias],
     ['Denuncias', diff.denuncias],
-    // Nuevas v2.4.1:
-    ['PEI institucional', diff.colegio_pei],
-    ['PME oficial', diff.colegio_pme_oficial],
-    ['Documentos institucionales', diff.colegio_documentos],
-    ['Planes de mejora (microacciones)', diff.microacciones],
-    ['Pasos de planes', diff.microacciones_pasos],
-    ['Acciones de denuncia', diff.acciones_denuncia],
-    ['Log de denuncia', diff.log_denuncia],
-    ['Mensajes de caso', diff.mensajes_caso],
-    ['Evidencias de denuncia', diff.evidencias_denuncia],
-    ['Planes del director', diff.planes_director],
   ];
 
   let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
   tablaHTML += '<thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Tabla</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border)">En backup</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--green)">Nuevos a agregar</th><th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Ya existen</th></tr></thead><tbody>';
   filas.forEach(function(f){
     const nombre = f[0], d = f[1];
-    if(!d) return;  // Si la tabla no vino en el diff (backup viejo sin esa key), saltar
     const colorNuevos = d.nuevos > 0 ? 'var(--green)' : 'var(--muted)';
     tablaHTML += '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">'+nombre+'</td>';
     tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee">'+d.total+'</td>';
@@ -3772,22 +3512,6 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
     tablaHTML += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #eee;color:var(--muted)">'+d.existentes+'</td></tr>';
   });
   tablaHTML += '</tbody></table>';
-
-  // === AVISO DE TABLAS DESCONOCIDAS ===
-  // Si el backup viene de una versión más nueva que este restaurador, lo decimos claro.
-  let avisoDesconocidas = '';
-  const tablasDesconocidas = diff.__tablasDesconocidas || [];
-  if(tablasDesconocidas.length > 0) {
-    avisoDesconocidas =
-      '<div style="background:#FFF4E5;border:1px solid #B8860B;border-radius:8px;padding:12px 14px;font-size:12px;color:#7A5A00;margin-bottom:14px">'+
-      '<div style="font-weight:600;margin-bottom:4px">⚠ Tablas no reconocidas en este backup</div>'+
-      '<div style="margin-bottom:6px">Este restaurador no conoce las siguientes tablas. <strong>Sus datos NO se restaurarán</strong> hasta que la plataforma se actualice:</div>'+
-      '<ul style="margin:4px 0 0 18px;padding:0">'+
-      tablasDesconocidas.map(function(t){ return '<li><code>'+t.nombre+'</code>: '+t.registros+' registros</li>'; }).join('')+
-      '</ul>'+
-      '<div style="margin-top:8px;font-size:11px">El resto de las tablas se restaurará normalmente. Reporta esto al equipo técnico.</div>'+
-      '</div>';
-  }
 
   let resumen;
   if(totalNuevos === 0) {
@@ -3806,8 +3530,8 @@ function mostrarPreviewRestauracion(diff, datosColegio) {
 
   document.getElementById('modalTitle').textContent = '⬆ Análisis del Backup';
   document.getElementById('modalBody').innerHTML =
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup del <strong>'+(datosColegio.colegio.nombre)+'</strong> · Fecha del backup: '+(window._backupMetaFecha || '—')+(window._backupMetaVersion ? ' · Versión: '+window._backupMetaVersion : '')+'</div>'+
-    avisoDesconocidas + resumen + tablaHTML + confirmacionHTML;
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup del <strong>'+(datosColegio.colegio.nombre)+'</strong> · Fecha del backup: '+(window._backupMetaFecha || '—')+'</div>'+
+    resumen + tablaHTML + confirmacionHTML;
 
   const acciones = totalNuevos > 0
     ? '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>' +
@@ -3852,17 +3576,6 @@ async function ejecutarRestauracion() {
     'seguimiento',     // depende de acciones
     'evidencias',      // depende de acciones
     'denuncias',       // sin dependencias
-    // === Nuevas v2.4.1 ===
-    'colegio_pei',           // sin dependencias (solo colegio_id)
-    'colegio_pme_oficial',   // sin dependencias (solo colegio_id)
-    'colegio_documentos',    // sin dependencias (solo colegio_id)
-    'microacciones',         // depende de acciones (FK accion_id)
-    'microacciones_pasos',   // depende de microacciones
-    'acciones_denuncia',     // depende de denuncias
-    'log_denuncia',          // depende de denuncias
-    'mensajes_caso',         // depende de denuncias
-    'evidencias_denuncia',   // depende de denuncias
-    'planes_director',       // depende de acciones
   ];
 
   const reporte = { agregados: 0, errores: [], porTabla: {} };
@@ -3903,28 +3616,6 @@ async function ejecutarRestauracion() {
           payload.accion_id = idMaps.acciones[payload.accion_id];
         }
         if(tabla === 'evidencias' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
-          payload.accion_id = idMaps.acciones[payload.accion_id];
-        }
-        // === Remapeo FKs tablas v2.4.1 ===
-        if(tabla === 'microacciones' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
-          payload.accion_id = idMaps.acciones[payload.accion_id];
-        }
-        if(tabla === 'microacciones_pasos' && idMaps.microacciones && idMaps.microacciones[payload.microaccion_id]) {
-          payload.microaccion_id = idMaps.microacciones[payload.microaccion_id];
-        }
-        if(tabla === 'acciones_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
-          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
-        }
-        if(tabla === 'log_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
-          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
-        }
-        if(tabla === 'mensajes_caso' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
-          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
-        }
-        if(tabla === 'evidencias_denuncia' && idMaps.denuncias && idMaps.denuncias[payload.denuncia_id]) {
-          payload.denuncia_id = idMaps.denuncias[payload.denuncia_id];
-        }
-        if(tabla === 'planes_director' && idMaps.acciones && idMaps.acciones[payload.accion_id]) {
           payload.accion_id = idMaps.acciones[payload.accion_id];
         }
         // Para tablas que tienen ID, conservamos el ID original si no choca; si hay choque, dejamos que la BD genere uno nuevo
@@ -3973,17 +3664,6 @@ function mostrarReporteRestauracion(reporte) {
     ['Participantes de reuniones', reporte.porTabla.reunion_participantes || 0],
     ['Evidencias', reporte.porTabla.evidencias || 0],
     ['Denuncias', reporte.porTabla.denuncias || 0],
-    // Nuevas v2.4.1:
-    ['PEI institucional', reporte.porTabla.colegio_pei || 0],
-    ['PME oficial', reporte.porTabla.colegio_pme_oficial || 0],
-    ['Documentos institucionales', reporte.porTabla.colegio_documentos || 0],
-    ['Planes de mejora (microacciones)', reporte.porTabla.microacciones || 0],
-    ['Pasos de planes', reporte.porTabla.microacciones_pasos || 0],
-    ['Acciones de denuncia', reporte.porTabla.acciones_denuncia || 0],
-    ['Log de denuncia', reporte.porTabla.log_denuncia || 0],
-    ['Mensajes de caso', reporte.porTabla.mensajes_caso || 0],
-    ['Evidencias de denuncia', reporte.porTabla.evidencias_denuncia || 0],
-    ['Planes del director', reporte.porTabla.planes_director || 0],
   ];
 
   let tablaHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">';
@@ -7178,22 +6858,9 @@ const PLAN_CSS = `
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
 .plan-header{background:var(--accent);color:#fff;padding:16px 24px;
-  display:flex;align-items:flex-start;gap:16px;flex-wrap:nowrap}
-.plan-header-main{flex:1;min-width:0}
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400}
 .plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
-.plan-header-desc{font-size:13px;color:rgba(255,255,255,.85);line-height:1.5;margin-top:6px;max-width:760px}
-.plan-header-desc:empty{display:none}
-.plan-header-tags{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:500;margin-top:8px}
-.plan-header-tags:empty{display:none}
-.plan-header-badge{flex-shrink:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
-  border-radius:8px;padding:10px 14px;min-width:160px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:8px}
-.plan-header-badge:empty{display:none}
-.plan-badge-row .plan-badge-label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:500;margin-bottom:2px}
-.plan-badge-row .plan-badge-value{font-size:14px;font-weight:500;color:#fff}
-.plan-badge-row .plan-badge-pct{display:flex;align-items:baseline;gap:6px}
-.plan-badge-row .plan-badge-pct-num{font-size:20px;font-weight:500;line-height:1}
-.plan-badge-pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:999px;font-weight:500}
 .plan-close{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
   color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;
   display:flex;align-items:center;justify-content:center}
@@ -7715,10 +7382,6 @@ const PLAN_CSS = `
 }
 .marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn{
   color:#7A5A18;
-}
-/* Excepción: el botón activo mantiene texto blanco para conservar contraste sobre el fondo dorado */
-.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn.activa{
-  color:#fff;
 }
 
 /* Línea con el sujeto extraído ("El equipo técnico-pedagógico y los docentes:") */
@@ -8991,13 +8654,10 @@ function asegurarDrawer(){
   dw.id='planDrawer'; dw.className='plan-drawer';
   dw.innerHTML = `
     <div class="plan-header">
-      <div class="plan-header-main">
+      <div>
         <h2 id="planTitle">Plan de mejora</h2>
-        <div class="plan-header-desc" id="planHeaderDesc"></div>
-        <div class="plan-header-tags" id="planHeaderTags"></div>
         <div class="plan-sub" id="planSubtitle"></div>
       </div>
-      <div class="plan-header-badge" id="planHeaderBadge"></div>
       <button class="plan-close" onclick="cerrarPlan()">×</button>
     </div>
     <div class="plan-progress" id="planProgress"></div>
@@ -9008,76 +8668,10 @@ function asegurarDrawer(){
 }
 
 /* ====================== ROUTER PASOS ====================== */
-/* Encabezado unificado del drawer del plan.
- * Rellena descripción, etiquetas (Gestión · Liceo) y recuadro (mes actual + nivel de logro).
- * Se llama en cada renderPlanPaso() para que el encabezado sea idéntico en las 5 pestañas. */
-function _planRenderHeaderInfo(){
-  const s = PLAN_STATE;
-  const accion = s.accion || {};
-
-  // Descripción de la acción
-  const descEl = document.getElementById('planHeaderDesc');
-  if(descEl) descEl.textContent = accion.descripcion || '';
-
-  // Etiquetas: ÁREA/DIMENSIÓN · COLEGIO
-  const tagsEl = document.getElementById('planHeaderTags');
-  if(tagsEl){
-    const partes = [];
-    const areaNombre = accion.area_nombre || accion.dimension || s.areaNombre || '';
-    if(areaNombre) partes.push(areaNombre.toUpperCase());
-    const cole = (DB && DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
-    if(cole) partes.push(cole.toUpperCase());
-    tagsEl.textContent = partes.join(' · ');
-  }
-
-  // Recuadro derecho: mes actual del sistema + nivel de logro
-  const badgeEl = document.getElementById('planHeaderBadge');
-  if(badgeEl){
-    // Mes actual del sistema (formato YYYY-MM para coincidir con la BD)
-    const ahora = new Date();
-    const mesActualISO = ahora.getFullYear() + '-' + String(ahora.getMonth()+1).padStart(2,'0');
-    const mesActualLabel = (typeof fmtMes==='function') ? fmtMes(mesActualISO) : mesActualISO;
-
-    // Porcentaje de logro: PLAN_STATE.pct si existe, si no recalcular para el mes actual
-    let pct = (typeof s.pct === 'number') ? s.pct : null;
-    if(pct === null && accion.id && typeof DB!=='undefined' && DB.seguimiento){
-      const segs = DB.seguimiento.filter(x => x.accion_id===accion.id && x.mes===mesActualISO && !x.pendiente && x.porcentaje!=null);
-      if(segs.length){
-        pct = Math.round(segs.reduce((a,x)=>a+parseFloat(x.porcentaje),0)/segs.length);
-      }
-    }
-
-    // Clasificación oficial (Inicial/Básico/En Desarrollo/Satisfactorio/Consolidado)
-    const nivel = (typeof nivelLogro==='function' && pct!==null) ? nivelLogro(pct) : null;
-
-    let html = '';
-    html += '<div class="plan-badge-row">';
-    html +=   '<div class="plan-badge-label">Mes evaluado</div>';
-    html +=   '<div class="plan-badge-value">'+mesActualLabel+'</div>';
-    html += '</div>';
-    html += '<div class="plan-badge-row">';
-    html +=   '<div class="plan-badge-label">Nivel de logro</div>';
-    if(pct!==null && nivel){
-      html += '<div class="plan-badge-pct">';
-      html +=   '<span class="plan-badge-pct-num">'+pct+'%</span>';
-      html +=   '<span class="plan-badge-pill" style="background:'+nivel.bg+';color:'+nivel.color+'">'+nivel.nombre+'</span>';
-      html += '</div>';
-    } else {
-      html += '<div class="plan-badge-value" style="color:rgba(255,255,255,.6);font-size:12px">Sin datos del mes</div>';
-    }
-    html += '</div>';
-    badgeEl.innerHTML = html;
-  }
-}
-
 function renderPlanPaso(){
   const s = PLAN_STATE;
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
-
-  // Encabezado unificado: descripción, etiquetas Gestión·Liceo, recuadro mes + nivel de logro
-  // Se rellena en cada render para que sea idéntico en las 5 pestañas.
-  _planRenderHeaderInfo();
 
   const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
@@ -12469,12 +12063,20 @@ function _areaBadge(area){
   return `<span style="background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;border:1px solid ${c.borde}33">${escapeHtmlPlan(area.nombre)}</span>`;
 }
 
-/* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
+/* % cumplimiento del plan = promedio del porcentaje_avance de cada paso.
+ * Antes contábamos solo pasos COMPLETADO (estado===COMPLETADO), lo que dejaba
+ * el plan en 0% mientras los sliders mostraban 50%, 30%, etc. Esta versión
+ * usa la misma lógica que _planActualizarProgresoGlobalUI y la vista activa
+ * del plan: promedia porcentaje_avance (0..100). Pasos con estado COMPLETADO
+ * cuentan como 100 aunque no tengan porcentaje_avance guardado. */
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
-  return Math.round(completos / pasos.length * 100);
+  const suma = pasos.reduce((acc, p) => {
+    if(p.estado === 'COMPLETADO') return acc + 100;
+    return acc + (Number(p.porcentaje_avance) || 0);
+  }, 0);
+  return Math.round(suma / pasos.length);
 }
 
 /* Etiqueta de estado con color */
