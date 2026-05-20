@@ -4063,24 +4063,45 @@ function generarRecomendaciones(data) {
 function renderResumenEjecutivo() {
   const data = calcularDatosResumen();
   const colegio = DB.colegio.nombre;
-  const secs = obtenerSeccionesNarrativa(data);
-  const recs = generarRecomendaciones(data);
   const av = data.avanceGlobal;
 
+  // ── Nivel de logro PME (5 niveles del sistema EID chileno) ──
+  // Mantenemos consistencia con el módulo de planes (nivelLogro()).
+  let nivelLabel, nivelColor, nivelBg;
+  if(av === null)       { nivelLabel = 'Sin datos';     nivelColor = '#7A7670'; nivelBg = '#F4F2EE'; }
+  else if(av >= 90)     { nivelLabel = 'Cultura institucional'; nivelColor = '#2E7D52'; nivelBg = '#E8F5EE'; }
+  else if(av >= 71)     { nivelLabel = 'Análisis y mejora';     nivelColor = '#2E7D52'; nivelBg = '#E8F5EE'; }
+  else if(av >= 51)     { nivelLabel = 'Articulación institucional'; nivelColor = '#9C7918'; nivelBg = '#FDF6E3'; }
+  else if(av >= 31)     { nivelLabel = 'Estandarización inicial';    nivelColor = '#9C7918'; nivelBg = '#FDF6E3'; }
+  else                   { nivelLabel = 'Inicial';        nivelColor = '#9B2335'; nivelBg = '#FCEEED'; }
+
+  // ── Período legible ──
+  let periodoTxt;
+  if(data.alcance === 'mes') {
+    periodoTxt = data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado';
+  } else {
+    if(data.mesesEval.length) {
+      const primero = data.mesesEval[0], ultimo = data.mesesEval[data.mesesEval.length-1];
+      periodoTxt = primero === ultimo ? fmtMes(primero) : 'acumulado ' + fmtMes(primero,true) + '–' + fmtMes(ultimo,true);
+    } else {
+      periodoTxt = 'sin datos registrados';
+    }
+  }
+
+  // ── HEADER ──
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
-  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+'</div></div>';
+  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+' · '+periodoTxt+'</div></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver a Informes</button>';
-  html += '<button class="btn btn-export btn-sm" style="background:#1F4E79" onclick="descargarResumenWord()">📄 Word</button>';
-  html += '<button class="btn btn-export btn-sm" style="background:#9B2335" onclick="descargarResumenPDF()">🖨 PDF</button>';
+  html += '<button class="btn btn-export btn-sm" style="background:#1F4E79" onclick="descargarResumenWord()">Word</button>';
+  html += '<button class="btn btn-export btn-sm" style="background:#9B2335" onclick="descargarResumenPDF()">PDF</button>';
   html += '</div></div></div>';
 
-  // Selector de alcance
+  // ── SELECTOR DE ALCANCE (sin botón IA todavía - eso es Fase 2) ──
   html += '<div class="card" style="margin-bottom:16px;padding:14px 18px"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">';
   html += '<div style="font-size:13px;font-weight:600">Alcance:</div>';
   html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="alcance" value="mes"'+(_resumenAlcance==='mes'?' checked':'')+' onchange="cambiarAlcanceResumen(\'mes\')"> Mes filtrado'+(filterMes?' ('+fmtMes(filterMes)+')':'')+'</label>';
   html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="alcance" value="acumulado"'+(_resumenAlcance==='acumulado'?' checked':'')+' onchange="cambiarAlcanceResumen(\'acumulado\')"> Acumulado del año</label>';
-  html += '<button class="btn btn-primary btn-sm" style="margin-left:auto;background:#5B3FB5;border-color:#5B3FB5" onclick="generarResumenIA()" id="btnIA" title="Generar narrativa enriquecida con IA">✨ Enriquecer con IA</button>';
   html += '</div>';
   if(data.alcance === 'mes' && !filterMes) {
     html += '<div style="font-size:12px;color:var(--yellow);margin-top:8px">⚠ No has seleccionado un mes en el filtro lateral. Selecciona uno o cambia a "Acumulado".</div>';
@@ -4090,90 +4111,329 @@ function renderResumenEjecutivo() {
   }
   html += '</div>';
 
-  // Resumen narrativo dividido en secciones
-  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
-  if(secs.visionGeneral) {
-    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Visión general</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.visionGeneral+'</div></div>';
-  }
-  if(secs.analisisAreas) {
-    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Análisis por área</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.analisisAreas+'</div></div>';
-  }
-  if(secs.fortalezasDebilidades) {
-    html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Fortalezas y debilidades</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.fortalezasDebilidades+'</div></div>';
-  }
-  if(secs.prospectiva) {
-    html += '<div style="margin-bottom:0"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Mirada prospectiva</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.prospectiva+'</div></div>';
-  }
-  if(!_resumenNarrativaIA) {
-    html += '<div style="font-size:11px;color:var(--muted);margin-top:14px;font-style:italic;border-top:1px solid var(--border);padding-top:10px">Narrativa generada automáticamente. Usa el botón "✨ Enriquecer con IA" para obtener un análisis más detallado.</div>';
-  }
+  // ── HERO: indicador grande de avance con nivel cualitativo ──
+  html += '<div class="card" style="margin-bottom:16px;padding:24px 28px;border-left:5px solid '+nivelColor+'">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap">';
+  html += '<div style="flex:1;min-width:240px">';
+  html += '<div style="font-size:10px;letter-spacing:1.5pt;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Lectura del PME · '+periodoTxt+'</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:22px;color:var(--accent);line-height:1.15">'+colegio+'</div>';
+  html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">'+(DB.colegio.rbd?'RBD '+DB.colegio.rbd:'')+'</div>';
+  html += '</div>';
+  html += '<div style="text-align:right;min-width:140px">';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:48px;color:'+nivelColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div>';
+  html += '<div style="font-size:11px;color:'+nivelColor+';text-transform:uppercase;letter-spacing:.5pt;font-weight:600;margin-top:4px">Nivel '+nivelLabel+'</div>';
+  html += '</div></div></div>';
+
+  // ── MARCO INSTITUCIONAL: indicador de documentos PEI / PME 2025 / Fase 2026 ──
+  // Lee la cache local _DOC_CACHE si existe (poblada por el módulo Documentos);
+  // si no está disponible aún, dispara la carga async y muestra estado neutro.
+  html += '<div id="resumenMarcoInst" class="card" style="margin-bottom:16px;padding:14px 18px;background:#F9F8F6;border-left:3px solid var(--accent)">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Marco institucional · contexto del análisis</div>';
+  html += '<div id="resumenMarcoInstBody" style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px">';
+  html += '<span style="color:var(--muted);font-style:italic">Cargando documentos institucionales…</span>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5">El análisis se enmarca en el Proyecto Educativo Institucional, el Análisis PME del Mineduc y la Fase Estratégica vigente. <a href="javascript:showPanel(\'admin-documentos\')" style="color:var(--accent);text-decoration:underline">Gestionar documentos</a></div>';
+  html += '</div>';
+  // Trigger async de carga de documentos
+  setTimeout(_resumenCargarMarcoInstitucional, 0);
+
+  // ── LECTURA DEL SEGUIMIENTO PME (narrativa curada, en lenguaje del PME) ──
+  const lectura = _resumenLecturaPME(data, nivelLabel);
+  html += '<div class="card" style="margin-bottom:16px;padding:18px 22px">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Lectura del seguimiento del PME</div>';
+  html += '<div style="font-size:14px;line-height:1.7;color:var(--text)">'+lectura+'</div>';
   html += '</div>';
 
-  // Indicadores clave
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">';
-  const avColor = av === null ? 'var(--muted)' : (av >= 90 ? 'var(--green)' : av >= 70 ? 'var(--yellow)' : 'var(--red)');
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Avance global</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:'+avColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟢 Fortalezas</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--green);line-height:1">'+data.distribucion.verde+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones ≥ 90%</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟡 En proceso</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--yellow);line-height:1">'+data.distribucion.amarillo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones 70-89%</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🔴 Debilidades</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--red);line-height:1">'+data.distribucion.rojo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones &lt; 70%</div></div>';
-  html += '</div>';
-
-  // Avance por área
-  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
-  html += '<table class="accion-table"><thead><tr><th>Área</th><th style="text-align:center">% Avance</th><th style="text-align:center">Estado</th><th style="text-align:center">Acciones evaluadas</th></tr></thead><tbody>';
-  data.areas.forEach(function(area){
-    const est = area.promedio === null ? 'sin_datos' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
-    const estLabel = area.promedio === null ? 'Sin datos' : (area.promedio >= 90 ? 'Excelente' : area.promedio >= 70 ? 'En proceso' : 'Crítico');
-    html += '<tr><td style="font-weight:500">'+area.nombre+'</td>';
-    html += '<td style="text-align:center;font-weight:600">'+(area.promedio!==null?area.promedio+'%':'—')+'</td>';
-    html += '<td style="text-align:center"><span class="seguimiento-pill '+est+'">'+estLabel+'</span></td>';
-    html += '<td style="text-align:center;color:var(--muted)">'+area.registros+' / '+area.totalAcciones+'</td></tr>';
+  // ── AVANCE POR DIMENSIÓN PME (barras horizontales) ──
+  html += '<div class="card" style="margin-bottom:16px;padding:18px 22px">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:14px">Avance por dimensión del PME</div>';
+  // Ordenamos las áreas por avance descendente para que se lea como ranking
+  const areasOrdRanking = data.areas.slice().sort(function(a,b){
+    if(a.promedio === null && b.promedio === null) return 0;
+    if(a.promedio === null) return 1;
+    if(b.promedio === null) return -1;
+    return b.promedio - a.promedio;
   });
-  html += '</tbody></table></div>';
-
-  // Fortalezas
-  if(data.fortalezas.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
-    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
-    data.fortalezas.slice(0,10).forEach(function(f){
-      html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+f.area+'</span></li>';
-    });
-    html += '</ul>';
-    if(data.fortalezas.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.fortalezas.length-10)+' más</div>';
+  areasOrdRanking.forEach(function(area){
+    const pct = area.promedio;
+    let barColor, labelEst;
+    if(pct === null)      { barColor = '#D3D1C7'; labelEst = 'Sin datos'; }
+    else if(pct >= 71)    { barColor = '#2E7D52'; labelEst = pct + '% · Avance satisfactorio'; }
+    else if(pct >= 51)    { barColor = '#9C7918'; labelEst = pct + '% · En desarrollo'; }
+    else if(pct >= 31)    { barColor = '#9C7918'; labelEst = pct + '% · Estandarización'; }
+    else                   { barColor = '#9B2335'; labelEst = pct + '% · Crítico'; }
+    const labelColor = pct === null ? 'var(--muted)' : barColor;
+    html += '<div style="margin-bottom:14px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">';
+    html += '<span style="font-size:13px;color:var(--text);font-weight:500">'+area.nombre+'</span>';
+    html += '<span style="font-size:11px;color:'+labelColor+';font-weight:500">'+labelEst+'</span>';
     html += '</div>';
-  }
+    html += '<div style="height:10px;background:#F4F2EE;border-radius:2px;overflow:hidden">';
+    if(pct !== null) html += '<div style="width:'+pct+'%;height:100%;background:'+barColor+'"></div>';
+    html += '</div></div>';
+  });
+  html += '</div>';
 
-  // Debilidades
-  if(data.debilidades.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
-    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
-    data.debilidades.slice(0,10).forEach(function(d){
-      html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+d.area+'</span></li>';
+  // ── TRES COLUMNAS: LO QUE FUNCIONA / REQUIERE ACCIÓN / SIN REGISTRO ──
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px">';
+
+  // Lo que funciona (acciones >= 70% — top 3)
+  const funcionando = (data.fortalezas.concat(data.enProceso)).filter(function(a){return a.promedio >= 70;}).slice(0,3);
+  html += '<div class="card" style="padding:14px 16px;border-left:4px solid var(--green)">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Lo que funciona</div>';
+  if(!funcionando.length) {
+    html += '<div style="font-size:11px;color:var(--muted);font-style:italic;line-height:1.5">No hay acciones sobre el 70% en este período.</div>';
+  } else {
+    funcionando.forEach(function(a){
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;line-height:1.4">';
+      html += '<span style="color:var(--text);flex:1">'+a.accion+'</span>';
+      html += '<span style="color:var(--green);font-weight:500">'+a.promedio+'%</span>';
+      html += '</div>';
     });
-    html += '</ul>';
-    if(data.debilidades.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.debilidades.length-10)+' más</div>';
-    html += '</div>';
   }
+  html += '</div>';
 
-  // Sin registro
-  if(data.sinRegistro.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
-    html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--muted)">';
-    data.sinRegistro.slice(0,10).forEach(function(s){
-      html += '<li>'+s.accion+' <span style="font-size:11px">— '+s.area+'</span></li>';
+  // Requiere acción (debilidades — top 3, priorizando las que tienen comentario)
+  const conComentario = data.debilidades.filter(function(a){return a.comentarios && a.comentarios.length;});
+  const sinComentario = data.debilidades.filter(function(a){return !a.comentarios || !a.comentarios.length;});
+  const requierenAccion = conComentario.concat(sinComentario).slice(0,3);
+  html += '<div class="card" style="padding:14px 16px;border-left:4px solid var(--red)">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Requiere acción</div>';
+  if(!requierenAccion.length) {
+    html += '<div style="font-size:11px;color:var(--muted);font-style:italic;line-height:1.5">Sin acciones bajo umbral en el período.</div>';
+  } else {
+    requierenAccion.forEach(function(a){
+      const tieneComm = a.comentarios && a.comentarios.length;
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;line-height:1.4">';
+      html += '<span style="color:var(--text);flex:1">'+a.accion+(tieneComm?' <span title="Con comentario registrado" style="color:var(--accent)">·</span>':'')+'</span>';
+      html += '<span style="color:var(--red);font-weight:500">'+a.promedio+'%</span>';
+      html += '</div>';
     });
-    html += '</ul>';
-    if(data.sinRegistro.length > 10) html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">+'+(data.sinRegistro.length-10)+' más</div>';
-    html += '</div>';
   }
+  html += '</div>';
 
-  // Recomendaciones
-  html += '<div class="card" style="margin-bottom:16px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
-  html += '<ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.8">';
-  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
-  html += '</ol></div>';
+  // Sin registro (top 3)
+  html += '<div class="card" style="padding:14px 16px;border-left:4px solid var(--muted)">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Sin registro</div>';
+  if(!data.sinRegistro.length) {
+    html += '<div style="font-size:11px;color:var(--muted);font-style:italic;line-height:1.5">Todas las acciones aplicables tienen registro.</div>';
+  } else {
+    data.sinRegistro.slice(0,3).forEach(function(s){
+      html += '<div style="padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;line-height:1.4;color:var(--text)">'+s.accion+'</div>';
+    });
+    if(data.sinRegistro.length > 3) {
+      html += '<div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:right">+'+(data.sinRegistro.length-3)+' más</div>';
+    }
+  }
+  html += '</div>';
+  html += '</div>';
+
+  // ── PLANES DE MEJORA ACTIVOS ──
+  const planesAct = (DB.microacciones || []).filter(function(m){ return m.estado === 'ACTIVA'; });
+  // Calcular avance promedio de planes
+  let avancePromedioPlanes = null;
+  if(planesAct.length){
+    const cumpls = planesAct.map(function(m){ return (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null; }).filter(function(v){ return v !== null; });
+    if(cumpls.length) avancePromedioPlanes = Math.round(cumpls.reduce(function(s,x){return s+x;},0) / cumpls.length);
+  }
+  // Ordenar por urgencia (vencidos primero)
+  const planesOrd = planesAct.slice().sort(function(a,b){
+    const da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
+    const db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
+    if(da === null && db === null) return 0;
+    if(da === null) return 1;
+    if(db === null) return -1;
+    return da - db;
+  });
+  const planesAMostrar = planesOrd.slice(0, 4);
+
+  html += '<div class="card" style="margin-bottom:16px;padding:18px 22px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;flex-wrap:wrap;gap:8px">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt">Planes de mejora activos</div>';
+  if(planesAct.length){
+    html += '<div style="font-size:12px;color:var(--accent);font-weight:500">'+planesAct.length+' plan(es)'+(avancePromedioPlanes!==null?' · '+avancePromedioPlanes+'% avance promedio':'')+'</div>';
+  }
+  html += '</div>';
+  if(!planesAct.length){
+    html += '<div style="font-size:12px;color:var(--muted);font-style:italic">No hay planes de mejora activos en la cartera del colegio. <a href="javascript:showPanel(\'mis-planes\')" style="color:var(--accent)">Ver Mis Planes</a></div>';
+  } else {
+    planesAMostrar.forEach(function(m){
+      const accion = (DB.acciones || []).find(function(a){return a.id === m.accion_id;});
+      const accionNombre = accion ? accion.nombre : '(plan)';
+      const area = (typeof _areaDeAccion === 'function') ? _areaDeAccion(m.accion_id) : null;
+      const areaNombre = area ? area.nombre : '';
+      const cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
+      const dias = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+      let estPlazo = '';
+      let colorCumpl = cumpl === null ? 'var(--muted)' : (cumpl >= 70 ? 'var(--green)' : cumpl >= 40 ? '#9C7918' : 'var(--red)');
+      if(dias !== null && dias < 0) estPlazo = ' · <span style="color:var(--red)">vencido</span>';
+      else if(dias !== null && dias <= 7) estPlazo = ' · <span style="color:#9C7918">vence en '+dias+'d</span>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dotted var(--border);font-size:12px">';
+      html += '<span style="color:var(--text);flex:1">'+accionNombre+(areaNombre?' <span style="color:var(--muted);font-size:11px">· '+areaNombre+'</span>':'')+estPlazo+'</span>';
+      html += '<span style="color:'+colorCumpl+';font-weight:500;white-space:nowrap">'+(cumpl!==null?cumpl+'%':'—')+'</span>';
+      html += '</div>';
+    });
+    if(planesAct.length > 4){
+      html += '<div style="font-size:11px;color:var(--muted);font-style:italic;text-align:right;margin-top:8px">+'+(planesAct.length-4)+' planes activos más · <a href="javascript:showPanel(\'mis-planes\')" style="color:var(--accent)">Ver todos</a></div>';
+    }
+  }
+  html += '</div>';
+
+  // ── COMPROMISOS PARA EL PRÓXIMO PERÍODO ──
+  // Generación curada por reglas — no narrativa robótica.
+  const compromisos = _resumenCompromisos(data, planesAct);
+  html += '<div class="card" style="margin-bottom:16px;padding:18px 22px;background:#1E3A2F;color:#fff;border:none">';
+  html += '<div style="font-size:10px;font-weight:600;color:#C5A572;text-transform:uppercase;letter-spacing:.5pt;margin-bottom:12px">Compromisos para el próximo período</div>';
+  compromisos.forEach(function(c){
+    html += '<div style="font-size:12px;line-height:1.6;color:#F4F2EE;padding-left:16px;position:relative;margin-bottom:8px">';
+    html += '<span style="position:absolute;left:0;color:#C5A572">▸</span>'+c;
+    html += '</div>';
+  });
+  html += '</div>';
 
   return html;
+}
+
+/* Construye una narrativa curada (no robótica) en lenguaje PME.
+ * Recibe los datos del seguimiento y el nivel cualitativo ya calculado.
+ * Frases concretas: "concentra el menor cumplimiento", "x acciones bajo umbral",
+ * "y planes activos en cartera". No usa "el establecimiento muestra" etc. */
+function _resumenLecturaPME(data, nivelLabel){
+  const colegio = DB.colegio.nombre;
+  const av = data.avanceGlobal;
+  let txt = '';
+
+  if(av === null){
+    return 'El establecimiento <strong>'+colegio+'</strong> no presenta registros de seguimiento en el período evaluado, lo que impide construir una lectura del avance del PME. La prioridad inmediata es retomar el registro sistemático de cada acción.';
+  }
+
+  // 1. Estado general en lenguaje PME
+  txt += '<strong>'+colegio+'</strong> se encuentra en el nivel <strong>'+nivelLabel+'</strong> de implementación del PME, con un avance del <strong>'+av+'%</strong>';
+
+  // 2. Mejor y peor dimensión
+  const areasConDato = data.areas.filter(function(a){return a.promedio !== null;}).sort(function(a,b){return b.promedio-a.promedio;});
+  if(areasConDato.length >= 2){
+    const mejor = areasConDato[0];
+    const peor = areasConDato[areasConDato.length-1];
+    if(mejor.id !== peor.id){
+      txt += '. La dimensión de <strong>'+peor.nombre+' concentra el menor cumplimiento</strong> ('+peor.promedio+'%)';
+      if(mejor.promedio >= 70){
+        txt += ', mientras que <strong>'+mejor.nombre+'</strong> muestra avances destacables ('+mejor.promedio+'%)';
+      } else {
+        txt += ', y <strong>'+mejor.nombre+'</strong> lidera con '+mejor.promedio+'%';
+      }
+    }
+  } else if(areasConDato.length === 1){
+    txt += '. Solo cuenta con datos en la dimensión '+areasConDato[0].nombre+' ('+areasConDato[0].promedio+'%)';
+  }
+
+  // 3. Distribución de acciones
+  const totalAcciones = data.acciones.length;
+  const partes = [];
+  if(data.distribucion.verde > 0) partes.push(data.distribucion.verde+' sobre el 90%');
+  if(data.distribucion.rojo > 0) partes.push(data.distribucion.rojo+' bajo el 70%');
+  if(data.sinRegistro.length > 0) partes.push(data.sinRegistro.length+' sin registro');
+  if(partes.length){
+    txt += '. De '+totalAcciones+' acciones evaluadas, '+partes.join(', ');
+  }
+
+  // 4. Planes activos
+  const planesAct = (DB.microacciones || []).filter(function(m){return m.estado === 'ACTIVA';});
+  if(planesAct.length){
+    const vencidos = planesAct.filter(function(m){
+      const d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+      return d !== null && d < 0;
+    }).length;
+    txt += '. Hay '+planesAct.length+' planes de mejora activos en cartera';
+    if(vencidos > 0) txt += ', '+vencidos+' de ellos vencidos';
+  }
+  txt += '.';
+
+  return txt;
+}
+
+/* Genera compromisos concretos para el próximo período en lugar de
+ * recomendaciones genéricas. Reglas que priorizan acciones específicas. */
+function _resumenCompromisos(data, planesActivos){
+  const c = [];
+
+  // 1. Si hay áreas en rojo, convocar al equipo responsable
+  const areasRojas = data.areas.filter(function(a){return a.promedio !== null && a.promedio < 50;}).sort(function(a,b){return a.promedio-b.promedio;});
+  if(areasRojas.length){
+    const areaPrincipal = areasRojas[0];
+    const accionesArea = data.debilidades.filter(function(d){return d.area === areaPrincipal.nombre;}).slice(0,3);
+    if(accionesArea.length){
+      c.push('Convocar al equipo responsable de <strong>'+areaPrincipal.nombre+'</strong> para revisar las '+accionesArea.length+' acciones críticas antes del cierre del próximo mes.');
+    }
+  }
+
+  // 2. Planes vencidos
+  const vencidos = planesActivos.filter(function(m){
+    const d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+    return d !== null && d < 0;
+  });
+  if(vencidos.length){
+    c.push('Revisar los <strong>'+vencidos.length+' plan(es) de mejora vencido(s)</strong> con sus responsables: ajustar plazos o confirmar cierre con evidencia.');
+  }
+
+  // 3. Acciones sin registro
+  if(data.sinRegistro.length){
+    c.push('Completar el registro de las <strong>'+data.sinRegistro.length+' acciones sin datos</strong> para tener una visión completa del PME.');
+  }
+
+  // 4. Marco institucional: si faltan documentos
+  const docs = _DOC_CACHE || [];
+  const tiposCargados = new Set(docs.filter(function(d){return d.estado === 'LISTO';}).map(function(d){return d.tipo;}));
+  const faltantes = ['PEI','PME_2025','FASE_2026'].filter(function(t){return !tiposCargados.has(t);});
+  if(faltantes.length){
+    const nombres = { 'PEI':'PEI', 'PME_2025':'Análisis PME 2025', 'FASE_2026':'Fase Estratégica 2026' };
+    c.push('Completar la carga de <strong>'+faltantes.map(function(t){return nombres[t];}).join(', ')+'</strong> en el módulo Documentos para enriquecer el análisis institucional.');
+  }
+
+  // 5. Si va muy bien, documentar prácticas
+  if(data.avanceGlobal !== null && data.avanceGlobal >= 90){
+    c.push('Documentar las prácticas exitosas de las acciones destacadas para sistematizarlas en el plan del próximo ciclo.');
+  }
+
+  // 6. Si no hay nada, mantener el rumbo
+  if(!c.length){
+    c.push('Mantener el ritmo de seguimiento y consolidar las prácticas que están funcionando.');
+  }
+
+  return c.slice(0, 4); // máximo 4 compromisos para no saturar
+}
+
+/* Carga el estado de los 3 documentos institucionales y pinta el indicador
+ * dentro del card #resumenMarcoInst. Llamada async tras el render principal. */
+async function _resumenCargarMarcoInstitucional(){
+  const cont = document.getElementById('resumenMarcoInstBody');
+  if(!cont) return;
+  try {
+    const docs = (typeof _docCargarLista === 'function') ? await _docCargarLista(false) : [];
+    const tipos = [
+      { tipo:'PEI',      label:'PEI',                      bg:'#E8F5EE', okColor:'#1E3A2F', missColor:'#9B2335' },
+      { tipo:'PME_2025', label:'Análisis PME 2025',        bg:'#E6F1FB', okColor:'#0C447C', missColor:'#9B2335' },
+      { tipo:'FASE_2026',label:'Fase Estratégica 2026',    bg:'#FAEEDA', okColor:'#854F0B', missColor:'#9B2335' }
+    ];
+    let html = '';
+    tipos.forEach(function(t){
+      const doc = docs.find(function(d){return d.tipo === t.tipo;});
+      const ok = doc && doc.estado === 'LISTO';
+      const color = ok ? t.okColor : t.missColor;
+      const icono = ok ? '✓' : '✗';
+      const bg = ok ? t.bg : '#FCEEED';
+      html += '<div style="display:flex;align-items:center;gap:6px;background:'+bg+';padding:5px 11px;border-radius:4px;font-size:11px">';
+      html += '<span style="color:'+color+';font-weight:600">'+icono+'</span>';
+      html += '<span style="color:'+color+'">'+t.label+(ok?'':' pendiente')+'</span>';
+      html += '</div>';
+    });
+    cont.innerHTML = html;
+    // Si cambió el estado de docs, regenerar compromisos del recuadro verde
+    // (los compromisos pueden incluir "cargar documento X"). Solo si estaba en panel.
+    // Lo dejamos para el próximo render natural — no forzamos re-render acá.
+  } catch(e){
+    cont.innerHTML = '<span style="color:var(--muted);font-style:italic">No se pudo cargar el estado de documentos institucionales.</span>';
+  }
 }
 
 function cambiarAlcanceResumen(alc) {
@@ -4211,10 +4471,19 @@ async function generarResumenIA() {
 
 function descargarResumenPDF() {
   const data = calcularDatosResumen();
-  const secs = obtenerSeccionesNarrativa(data);
-  const recs = generarRecomendaciones(data);
-  const colegio = DB.colegio.nombre;
+  // Nivel de logro PME (consistente con render en pantalla)
   const av = data.avanceGlobal;
+  let nivelLabel;
+  if(av === null)       nivelLabel = 'Sin datos';
+  else if(av >= 90)     nivelLabel = 'Cultura institucional';
+  else if(av >= 71)     nivelLabel = 'Análisis y mejora';
+  else if(av >= 51)     nivelLabel = 'Articulación institucional';
+  else if(av >= 31)     nivelLabel = 'Estandarización inicial';
+  else                  nivelLabel = 'Inicial';
+  const lectura = _resumenLecturaPME(data, nivelLabel);
+  const planesActPDF = (DB.microacciones || []).filter(function(m){return m.estado === 'ACTIVA';});
+  const compromisos = _resumenCompromisos(data, planesActPDF);
+  const colegio = DB.colegio.nombre;
   const fechaHoy = new Date().toLocaleDateString('es-CL');
   const periodoTxt = data.alcance === 'mes'
     ? (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado')
@@ -4227,12 +4496,9 @@ function descargarResumenPDF() {
   // Portada
   html += '<div class="cover"><div class="logo-r">Gestión Estratégica · Resumen Ejecutivo</div><div class="colegio-r">'+colegio+'</div><div class="rtitulo">Análisis de Avance</div><div class="meta-row"><div>📆 '+periodoTxt+'</div><div>📅 '+fechaHoy+'</div></div></div>';
 
-  // Resumen Narrativo (con secciones)
-  html += '<div class="section"><div class="section-title">Resumen Narrativo</div>';
-  if(secs.visionGeneral) html += '<div class="subsection"><div class="subsection-title">Visión general</div><div class="subsection-body">'+secs.visionGeneral+'</div></div>';
-  if(secs.analisisAreas) html += '<div class="subsection"><div class="subsection-title">Análisis por área</div><div class="subsection-body">'+secs.analisisAreas+'</div></div>';
-  if(secs.fortalezasDebilidades) html += '<div class="subsection"><div class="subsection-title">Fortalezas y debilidades</div><div class="subsection-body">'+secs.fortalezasDebilidades+'</div></div>';
-  if(secs.prospectiva) html += '<div class="subsection"><div class="subsection-title">Mirada prospectiva</div><div class="subsection-body">'+secs.prospectiva+'</div></div>';
+  // Lectura del seguimiento PME (párrafo curado, no narrativa robótica)
+  html += '<div class="section"><div class="section-title">Lectura del seguimiento del PME</div>';
+  html += '<div style="font-size:12px;line-height:1.75;color:#1A1916">'+lectura+'</div>';
   html += '</div>';
 
   // KPIs
@@ -4274,9 +4540,9 @@ function descargarResumenPDF() {
     html += '</ul></div>';
   }
 
-  // Recomendaciones
-  html += '<div class="section"><div class="section-title" style="color:#C18B2A">Recomendaciones</div><div class="recs"><ol>';
-  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
+  // Compromisos para el próximo período
+  html += '<div class="section"><div class="section-title" style="color:#C18B2A">Compromisos para el próximo período</div><div class="recs"><ol>';
+  compromisos.forEach(function(c){ html += '<li>'+c+'</li>'; });
   html += '</ol></div></div>';
 
   html += '</div></body></html>';
@@ -4286,10 +4552,18 @@ function descargarResumenPDF() {
 
 function descargarResumenWord() {
   const data = calcularDatosResumen();
-  const secs = obtenerSeccionesNarrativa(data);
-  const recs = generarRecomendaciones(data);
-  const colegio = DB.colegio.nombre;
   const av = data.avanceGlobal;
+  let nivelLabel;
+  if(av === null)       nivelLabel = 'Sin datos';
+  else if(av >= 90)     nivelLabel = 'Cultura institucional';
+  else if(av >= 71)     nivelLabel = 'Análisis y mejora';
+  else if(av >= 51)     nivelLabel = 'Articulación institucional';
+  else if(av >= 31)     nivelLabel = 'Estandarización inicial';
+  else                  nivelLabel = 'Inicial';
+  const lectura = _resumenLecturaPME(data, nivelLabel);
+  const planesActW = (DB.microacciones || []).filter(function(m){return m.estado === 'ACTIVA';});
+  const compromisos = _resumenCompromisos(data, planesActW);
+  const colegio = DB.colegio.nombre;
   const fechaHoy = new Date().toLocaleDateString('es-CL');
   const periodoTxt = data.alcance === 'mes'
     ? (data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado')
@@ -4303,12 +4577,10 @@ function descargarResumenWord() {
   html += '<h1>Resumen Ejecutivo</h1>';
   html += '<div class="meta"><strong>Establecimiento:</strong> '+colegio+' &nbsp;|&nbsp; <strong>Período:</strong> '+periodoTxt+' &nbsp;|&nbsp; <strong>Fecha:</strong> '+fechaHoy+'</div>';
 
-  // Resumen Narrativo (con secciones)
-  html += '<h2>Resumen Narrativo</h2>';
-  if(secs.visionGeneral) html += '<h3>Visión general</h3><div class="subseccion">'+secs.visionGeneral+'</div>';
-  if(secs.analisisAreas) html += '<h3>Análisis por área</h3><div class="subseccion">'+secs.analisisAreas+'</div>';
-  if(secs.fortalezasDebilidades) html += '<h3>Fortalezas y debilidades</h3><div class="subseccion">'+secs.fortalezasDebilidades+'</div>';
-  if(secs.prospectiva) html += '<h3>Mirada prospectiva</h3><div class="subseccion">'+secs.prospectiva+'</div>';
+  // Lectura del seguimiento PME (párrafo único, curado)
+  html += '<h2>Lectura del seguimiento del PME</h2>';
+  html += '<div style="font-size:11pt;line-height:1.75">'+lectura+'</div>';
+  html += '<div style="font-size:9pt;color:#7A7670;font-style:italic;margin-top:6pt"><strong>Nivel de logro:</strong> '+nivelLabel+'</div>';
 
   const avC = av === null ? 'muted' : (av >= 90 ? 'verde' : av >= 70 ? 'amarillo' : 'rojo');
   html += '<h2>Indicadores Clave</h2><div>';
@@ -4342,8 +4614,8 @@ function descargarResumenWord() {
     html += '</ul>';
   }
 
-  html += '<h2 style="color:#C18B2A">Recomendaciones</h2><div class="recs"><ol>';
-  recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
+  html += '<h2 style="color:#C18B2A">Compromisos para el próximo período</h2><div class="recs"><ol>';
+  compromisos.forEach(function(c){ html += '<li>'+c+'</li>'; });
   html += '</ol></div>';
 
   html += '</body></html>';
@@ -5241,227 +5513,34 @@ function generarPDFReunion() {
     else                          { _nivelLabelPDF='Inicial';       _nivelColorPDF='#9B2335'; }
   }
   // ============================================================
-  // PORTADA EJECUTIVA — Resumen para equipos de gestión
+  // PORTADA DEL ACTA — Sobria, propia de un registro de sesión
   // ============================================================
-  // Estructura en 3 bloques:
-  //   1. FOTO: 4 tarjetas con números grandes (logro, evaluadas, planes, vencidos)
-  //   2. COLUMNAS: Fortalezas / Focos críticos / Planes vigentes
-  //   3. PRÓXIMOS PASOS: frases automáticas según los datos
-  // Pensada para que en 30 segundos el equipo entienda el estado.
+  // Solo identifica la reunión: colegio, título, fecha, meses evaluados,
+  // consultor y participantes. Los análisis institucionales (logro
+  // ponderado, fortalezas/críticos, planes con detalle pedagógico) viven
+  // en el Resumen Ejecutivo. Este informe es el acta de la sesión.
   // ============================================================
-
-  // --- Cálculo de datos para el resumen ---
-  var totalAccionesEval = accionesConSeg.length;
-  var accionesConDato = accionesConSeg.filter(function(it){
-    return it.seg && (it.seg.porcentaje != null || it.seg.pendiente);
-  }).length;
-  var accionesSinDato = totalAccionesEval - accionesConDato;
-
-  // Planes activos del colegio (estado ACTIVA)
-  var planesActivos = (DB.microacciones || []).filter(function(m){
-    return m.estado === 'ACTIVA';
-  });
-  var planesVencidos = planesActivos.filter(function(m){
-    var d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
-    return d !== null && d < 0;
-  });
-  var planesProximos = planesActivos.filter(function(m){
-    var d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
-    return d !== null && d >= 0 && d <= 7;
-  });
-
-  // Top fortalezas: acciones con mejor %, mínimo 70%
-  var fortalezas = accionesConSeg
-    .filter(function(it){ return it.seg && it.seg.porcentaje != null && it.seg.porcentaje >= 70; })
-    .sort(function(a,b){ return b.seg.porcentaje - a.seg.porcentaje; })
-    .slice(0, 3);
-
-  // Focos críticos: combinación — primero los con comentario (ordenados por % ascendente),
-  // completar con peores % sin comentario hasta llegar a 3.
-  var conComentario = accionesConSeg
-    .filter(function(it){ return it.seg && it.seg.comentario && it.seg.comentario.trim(); })
-    .sort(function(a,b){
-      var pa = (a.seg && a.seg.porcentaje != null) ? a.seg.porcentaje : 999;
-      var pb = (b.seg && b.seg.porcentaje != null) ? b.seg.porcentaje : 999;
-      return pa - pb;
-    });
-  var focosCriticos = conComentario.slice(0, 3);
-  if(focosCriticos.length < 3){
-    var idsYa = new Set(focosCriticos.map(function(it){ return it.ac.id + '|' + it.mes; }));
-    var peoresPct = accionesConSeg
-      .filter(function(it){
-        if(!it.seg || it.seg.porcentaje == null) return false;
-        if(it.seg.porcentaje >= 70) return false; // ya están en fortalezas, no son críticos
-        return !idsYa.has(it.ac.id + '|' + it.mes);
-      })
-      .sort(function(a,b){ return a.seg.porcentaje - b.seg.porcentaje; })
-      .slice(0, 3 - focosCriticos.length);
-    focosCriticos = focosCriticos.concat(peoresPct);
-  }
-
-  // Planes vigentes: hasta 3, ordenados por urgencia (vencidos primero)
-  var planesAMostrar = planesActivos.slice().sort(function(a,b){
-    var da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
-    var db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
-    if(da === null && db === null) return 0;
-    if(da === null) return 1;
-    if(db === null) return -1;
-    return da - db;
-  }).slice(0, 3);
-
-  // --- Próximos pasos: reglas automáticas ---
-  var proximosPasos = [];
-  if(accionesSinDato > 0){
-    proximosPasos.push('Quedan <strong>'+accionesSinDato+' acciones sin evaluación</strong> en el período. Completar el registro antes de la próxima reunión.');
-  }
-  if(planesVencidos.length > 0){
-    var nombresVenc = planesVencidos.slice(0,2).map(function(m){
-      var ac = (DB.acciones||[]).find(function(a){ return a.id === m.accion_id; });
-      return ac ? ac.nombre : '(sin nombre)';
-    }).join(', ');
-    var extraVenc = planesVencidos.length > 2 ? ' y '+(planesVencidos.length-2)+' más' : '';
-    proximosPasos.push('<strong>'+planesVencidos.length+' plan(es) vencido(s)</strong>: '+nombresVenc+extraVenc+'. Revisar avances o ajustar plazos.');
-  }
-  if(planesProximos.length > 0){
-    proximosPasos.push('<strong>'+planesProximos.length+' plan(es) vence(n) en los próximos 7 días</strong>. Confirmar cierre con responsables.');
-  }
-  if(focosCriticos.length > 0 && proximosPasos.length < 4){
-    proximosPasos.push('Profundizar en los focos críticos identificados — revisar causas y compromisos en la próxima sesión.');
-  }
-  if(!proximosPasos.length){
-    proximosPasos.push('Período sin pendientes críticos. Mantener el ritmo de seguimiento y consolidar las prácticas que están funcionando.');
-  }
-
-  // --- Helper local para render de items en columnas ---
-  function _miniItem(nombre, valor, valorColor){
-    return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px dotted #E4E0D8;font-size:10px">' +
-           '<span style="color:#1A1916;flex:1;line-height:1.3">'+nombre+'</span>' +
-           '<span style="color:'+(valorColor||'#1A1916')+';font-weight:600;white-space:nowrap">'+valor+'</span>' +
-           '</div>';
-  }
-
-  // ============================================================
-  // RENDER DE LA PORTADA EJECUTIVA
-  // ============================================================
-  html+='<div class="cover" style="padding:30px 20px 24px;border-bottom:3px solid #1E3A2F;margin-bottom:24px">';
+  html+='<div class="cover">';
   html+='<div class="logo-r">Gestión Estratégica &mdash; Informe de Reunión</div>';
-  html+='<div class="colegio-r" style="font-size:24px;margin-bottom:4px">'+DB.colegio.nombre+'</div>';
-  html+='<div class="rtitulo" style="font-size:16px;margin-bottom:14px">'+reunion.titulo+'</div>';
-  html+='<div class="meta-row" style="margin-bottom:0">';
+  html+='<div class="colegio-r">'+DB.colegio.nombre+'</div>';
+  html+='<div class="rtitulo">'+reunion.titulo+'</div>';
+  html+='<div class="meta-row">';
   html+='<div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div>';
-  html+='<div class="meta-item"><strong>Mes(es):</strong> '+(mesesLabel||'—')+'</div>';
+  html+='<div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
   if(reunion.consultor_nombre) html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
+  if(reunion.consultor_correo) html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
   html+='</div>';
   if(partes.length){
-    html+='<div class="participantes-r" style="margin-top:10px">';
-    partes.forEach(function(p){ html+='<div class="participante-r">'+p.nombre+'</div>'; });
+    html+='<div class="participantes-r">';
+    partes.forEach(function(p){ html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>'; });
     html+='</div>';
   }
   html+='</div>';
 
-  // --- BLOQUE 1: FOTO (4 tarjetas con números grandes) ---
-  html+='<div style="margin-bottom:24px">';
-  html+='<div class="section-sub" style="text-align:center;margin-bottom:12px">Estado del Período</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">';
-
-  // Tarjeta 1: % logro ponderado
-  var pctLogroTxt = _pctGlobalPDF !== null ? _pctGlobalPDF+'%' : '—';
-  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+_nivelColorPDF+'">';
-  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+_nivelColorPDF+';line-height:1">'+pctLogroTxt+'</div>';
-  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Logro ponderado</div>';
-  html+='<div style="font-size:10px;font-weight:600;color:'+_nivelColorPDF+';margin-top:2px">'+_nivelLabelPDF+'</div>';
-  html+='</div>';
-
-  // Tarjeta 2: Acciones evaluadas
-  var pctEval = totalAccionesEval > 0 ? Math.round(accionesConDato/totalAccionesEval*100) : 0;
-  var colorEval = pctEval >= 80 ? '#2E7D52' : pctEval >= 50 ? '#B8860B' : '#9B2335';
-  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+colorEval+'">';
-  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+colorEval+';line-height:1">'+accionesConDato+'<span style="font-size:14px;color:#7A7670">/'+totalAccionesEval+'</span></div>';
-  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Acciones evaluadas</div>';
-  html+='<div style="font-size:10px;font-weight:600;color:'+colorEval+';margin-top:2px">'+(accionesSinDato > 0 ? accionesSinDato+' pendientes' : 'Completo')+'</div>';
-  html+='</div>';
-
-  // Tarjeta 3: Planes activos
-  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid #1F5278">';
-  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:#1F5278;line-height:1">'+planesActivos.length+'</div>';
-  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Planes activos</div>';
-  html+='<div style="font-size:10px;font-weight:600;color:#1F5278;margin-top:2px">En cartera</div>';
-  html+='</div>';
-
-  // Tarjeta 4: Planes vencidos / por vencer
-  var alerta = planesVencidos.length + planesProximos.length;
-  var colorAlerta = planesVencidos.length > 0 ? '#9B2335' : planesProximos.length > 0 ? '#B8860B' : '#2E7D52';
-  var labelAlerta = planesVencidos.length > 0 ? planesVencidos.length+' vencido(s)' : planesProximos.length > 0 ? 'Por vencer ≤7d' : 'Sin urgencias';
-  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+colorAlerta+'">';
-  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+colorAlerta+';line-height:1">'+alerta+'</div>';
-  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Atención inmediata</div>';
-  html+='<div style="font-size:10px;font-weight:600;color:'+colorAlerta+';margin-top:2px">'+labelAlerta+'</div>';
-  html+='</div>';
-
-  html+='</div></div>';
-
-  // --- BLOQUE 2: COLUMNAS (Fortalezas / Focos críticos / Planes) ---
-  html+='<div style="margin-bottom:24px">';
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">';
-
-  // Columna 1: Fortalezas
-  html+='<div style="background:#F4F8F5;border-left:3px solid #2E7D52;border-radius:4px;padding:12px">';
-  html+='<div style="font-size:10px;font-weight:700;color:#2E7D52;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">✓ Fortalezas</div>';
-  if(!fortalezas.length){
-    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin acciones sobre 70% en el período.</div>';
-  } else {
-    fortalezas.forEach(function(it){
-      html+=_miniItem(it.ac.nombre, it.seg.porcentaje+'%', '#2E7D52');
-    });
-  }
-  html+='</div>';
-
-  // Columna 2: Focos críticos
-  html+='<div style="background:#FCF4F3;border-left:3px solid #9B2335;border-radius:4px;padding:12px">';
-  html+='<div style="font-size:10px;font-weight:700;color:#9B2335;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">⚠ Focos Críticos</div>';
-  if(!focosCriticos.length){
-    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin focos críticos identificados.</div>';
-  } else {
-    focosCriticos.forEach(function(it){
-      var pct = (it.seg && it.seg.porcentaje != null) ? it.seg.porcentaje+'%' : 'Pendiente';
-      var tieneComm = it.seg && it.seg.comentario && it.seg.comentario.trim();
-      var marca = tieneComm ? ' 💬' : '';
-      html+=_miniItem(it.ac.nombre+marca, pct, '#9B2335');
-    });
-  }
-  html+='</div>';
-
-  // Columna 3: Planes vigentes
-  html+='<div style="background:#F2F5F8;border-left:3px solid #1F5278;border-radius:4px;padding:12px">';
-  html+='<div style="font-size:10px;font-weight:700;color:#1F5278;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">📋 Planes Vigentes</div>';
-  if(!planesAMostrar.length){
-    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin planes activos en cartera.</div>';
-  } else {
-    planesAMostrar.forEach(function(m){
-      var ac = (DB.acciones||[]).find(function(a){ return a.id === m.accion_id; });
-      var nom = ac ? ac.nombre : '(sin nombre)';
-      var cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
-      var valTxt = cumpl !== null ? cumpl+'%' : '—';
-      var colorVal = cumpl === null ? '#7A7670' : cumpl >= 70 ? '#2E7D52' : cumpl >= 40 ? '#B8860B' : '#9B2335';
-      html+=_miniItem(nom, valTxt, colorVal);
-    });
-    if(planesActivos.length > 3){
-      html+='<div style="font-size:9px;color:#7A7670;font-style:italic;margin-top:6px;text-align:right">+ '+(planesActivos.length-3)+' más en el detalle</div>';
-    }
-  }
-  html+='</div>';
-
-  html+='</div></div>';
-
-  // --- BLOQUE 3: PRÓXIMOS PASOS ---
-  html+='<div style="background:#1E3A2F;color:#fff;border-radius:6px;padding:14px 18px;margin-bottom:28px">';
-  html+='<div style="font-size:10px;font-weight:700;color:#C5A572;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">→ Próximos Pasos</div>';
-  html+='<ul style="margin:0;padding-left:18px;list-style:none">';
-  proximosPasos.forEach(function(p){
-    html+='<li style="font-size:11px;line-height:1.55;color:#F4F2EE;margin-bottom:6px;position:relative;padding-left:14px">';
-    html+='<span style="position:absolute;left:0;color:#C5A572">▸</span>'+p+'</li>';
-  });
-  html+='</ul>';
+  // Aviso al inicio: este es un acta; los análisis viven en el Resumen Ejecutivo
+  html+='<div style="background:#F9F8F6;border-left:3px solid #1E3A2F;padding:10px 14px;margin-bottom:24px;font-size:11px;color:#5F5E5A;line-height:1.55">';
+  html+='<strong style="color:#1E3A2F">Este documento es el acta de la sesión.</strong> Registra los comentarios y datos evaluados durante la reunión. ';
+  html+='Para la lectura institucional del PME — avance acumulado, planes de mejora con detalle pedagógico, conexión con PEI, Análisis PME y Fase Estratégica — consulta el <strong>Resumen Ejecutivo</strong> en el módulo Informes.';
   html+='</div>';
 
   // COMENTARIOS GENERALES
@@ -5539,14 +5618,8 @@ function generarPDFReunion() {
   } else {html+='<p style="color:#7A7670;font-style:italic">No hay acciones con seguimiento para los meses evaluados.</p>';}
   html+='</div>';
 
-  // RESUMEN MENSUAL
-  html+='<div class="section"><div class="section-title">Resumen Mensual por Area</div>';
-  html+='<table><thead><tr><th>Area</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
-  DB.areas.forEach(function(area){html+='<tr><td style="font-weight:500">'+area.nombre+'</td>';mesesAll.forEach(function(m){var v=calcArea(area.id,m),e=getEstado(v);html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%':'-')+'</span></td>';});html+='</tr>';});
-  html+='</tbody></table>';
-  html+='<table><thead><tr><th>Accion</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
-  DB.areas.forEach(function(area){DB.objetivos.filter(function(o){return o.area_id===area.id;}).forEach(function(obj){DB.acciones.filter(function(a){return a.objetivo_id===obj.id;}).forEach(function(ac){html+='<tr><td style="font-weight:500">'+ac.nombre+'</td>';mesesAll.forEach(function(m){var v=calcAccion(ac.id,m),e=getEstado(v),s=DB.seguimiento.find(function(x){return x.accion_id===ac.id&&x.mes===m;});var p=s&&s.pendiente;html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%'+(p?' P':''):'-')+'</span></td>';});html+='</tr>';});});});
-  html+='</tbody></table></div>';
+  // [Resumen Mensual por Área eliminado: pertenece al Resumen Ejecutivo,
+  //  no al acta de la sesión.]
 
   // METAS POR EVALUAR
   html+='<div class="section"><div class="section-title">Metas por Evaluar</div>';
@@ -5560,213 +5633,25 @@ function generarPDFReunion() {
   });
   html+='</tbody></table></div>';
 
-  // PLANES DE MEJORA GENERADOS — TARJETAS PEDAGÓGICAS
-  // Una tarjeta por plan ACTIVA. Cabecera oscura con acción + área + % global
-  // + plazo. Strip de stats. Bloques por alternativa (línea estratégica) con
-  // badge del factor/causa atacada y pasos numerados (responsable, plazo,
-  // esfuerzo, barra de avance individual).
-  var planesInforme = (DB.microacciones || []).filter(function(m){
-    return m.estado === 'ACTIVA';
-  });
-  // Ordenar por urgencia: primero vencidos, luego próximos a vencer, luego el resto.
-  planesInforme.sort(function(a,b){
-    var da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
-    var db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
-    if(da === null && db === null) return 0;
-    if(da === null) return 1;
-    if(db === null) return -1;
-    return da - db;
-  });
+  // [Detalle pedagógico de planes eliminado del informe de reunión.
+  //  Vive en el Resumen Ejecutivo, donde corresponde a la lectura
+  //  institucional acumulada — no al acta de una sesión puntual.]
 
-  html+='<div class="section"><div class="section-title">Planes de Mejora Generados</div>';
-  html+='<div class="section-sub">'+planesInforme.length+' plan(es) activo(s) en cartera del colegio · detalle pedagógico</div>';
-
-  if(!planesInforme.length){
-    html+='<p style="color:#7A7670;font-style:italic;font-size:11px">No hay planes de mejora activos en la cartera del colegio.</p>';
-  } else {
-
-    // Helper local: colorear badge del factor según grupo de causa
-    // (estructural / relacional / brechas / núcleo)
-    function _colorFactor(focoTexto){
-      var f = (focoTexto || '').toLowerCase();
-      // Análisis IA / brechas
-      if(f.indexOf('brecha') >= 0 || f.indexOf('ia') >= 0) {
-        return { bg:'#EEEDFE', fg:'#3C3489' };
-      }
-      // Núcleo / ámbito
-      if(f.indexOf('núcleo') >= 0 || f.indexOf('nucleo') >= 0 || f.indexOf('ámbito') >= 0 || f.indexOf('ambito') >= 0) {
-        return { bg:'#E1F5EE', fg:'#085041' };
-      }
-      // Relacional (liderazgo, clima, comunicación, cultura, participación, compromiso, etc.)
-      var relacional = ['liderazgo','cultura','resistencia','comunicación','comunicacion','clima','participación','participacion','compromiso','vinculación','vinculacion','familia'];
-      if(relacional.some(function(t){ return f.indexOf(t) >= 0; })) {
-        return { bg:'#FBEAF0', fg:'#72243E' };
-      }
-      // Estructural por defecto (tiempo, recursos, competencias, datos, etc.)
-      return { bg:'#FDF6E3', fg:'#854F0B' };
-    }
-
-    function _colorAvance(pct){
-      if(pct >= 70) return '#2E7D52';
-      if(pct >= 40) return '#9C7918';
-      return '#9B2335';
-    }
-
-    function _esfuerzoColor(e){
-      if(e === 'BAJO')  return '#2E7D52';
-      if(e === 'ALTO')  return '#9B2335';
-      return '#9C7918';
-    }
-    function _esfuerzoLabel(e){
-      if(e === 'BAJO')  return 'Bajo';
-      if(e === 'ALTO')  return 'Alto';
-      return 'Medio';
-    }
-
-    planesInforme.forEach(function(m){
-      var accion = (DB.acciones || []).find(function(a){ return a.id === m.accion_id; });
-      var accionNombre = accion ? accion.nombre : '(acción eliminada)';
-      var area = (typeof _areaDeAccion === 'function') ? _areaDeAccion(m.accion_id) : null;
-      var areaNombre = area ? area.nombre : '—';
-
-      var cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
-      var cumplTxt = cumpl !== null ? cumpl+'%' : '—';
-
-      // Plazo en la cabecera
-      var plazoTxt = 'Sin plazo';
-      if(m.fecha_objetivo){
-        var dias = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
-        var fechaFmt = new Date(m.fecha_objetivo).toLocaleDateString('es-CL', {day:'numeric', month:'short'});
-        if(dias === null) plazoTxt = fechaFmt;
-        else if(dias < 0) plazoTxt = fechaFmt+' · vencido '+Math.abs(dias)+'d';
-        else if(dias === 0) plazoTxt = fechaFmt+' · vence hoy';
-        else plazoTxt = fechaFmt+' · vence en '+dias+'d';
-      }
-
-      // Recuperar los pasos del plan y agruparlos por línea (alternativa)
-      var pasosPlan = (DB.pasos || []).filter(function(p){ return p.microaccion_id === m.id; });
-
-      // Mapa lineaTitulo → { titulo, foco, pasos[] }
-      var lineasMap = {};
-      pasosPlan.forEach(function(p){
-        var key = p.linea_titulo || 'Sin línea';
-        if(!lineasMap[key]) lineasMap[key] = {
-          titulo: p.linea_titulo || 'Línea',
-          foco: p.linea_foco || '',
-          pasos: []
-        };
-        lineasMap[key].pasos.push(p);
-      });
-      var lineas = Object.values(lineasMap);
-
-      // Stats del strip
-      var totalAlt = lineas.length;
-      var totalPasos = pasosPlan.length;
-      var respUnicos = Array.from(new Set(pasosPlan.map(function(p){ return p.responsable; }).filter(function(r){ return r && r.trim(); })));
-      var respStripTxt = respUnicos.length === 0 ? 'Sin asignar' : respUnicos.slice(0,3).join(', ') + (respUnicos.length>3 ? ' +'+(respUnicos.length-3) : '');
-
-      // ─── INICIO TARJETA ───
-      html+='<div style="border:1px solid #E4E0D8;border-radius:6px;overflow:hidden;background:#fff;margin-bottom:18px;page-break-inside:avoid">';
-
-      // Cabecera oscura del plan
-      html+='<div style="background:#1E3A2F;color:#fff;padding:14px 18px">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">';
-      html+='<div style="flex:1;min-width:200px">';
-      html+='<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">';
-      html+='<span style="background:#C5A572;color:#1E3A2F;font-size:9px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.5pt">'+areaNombre+'</span>';
-      html+='<span style="background:#fff;color:#1E3A2F;font-size:9px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.5pt">Activa</span>';
-      html+='</div>';
-      html+='<div style="font-family:\'DM Serif Display\',serif;font-size:16px;line-height:1.2">'+accionNombre+'</div>';
-      html+='<div style="font-size:10px;color:#C5A572;margin-top:4px">Mes: '+(m.mes ? fmtMes(m.mes) : '—')+' · '+plazoTxt+'</div>';
-      html+='</div>';
-      html+='<div style="text-align:right;min-width:90px">';
-      html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:#fff;line-height:1">'+cumplTxt+'</div>';
-      html+='<div style="font-size:9px;color:#C5A572;text-transform:uppercase;letter-spacing:.5pt">Avance global</div>';
-      html+='</div>';
-      html+='</div></div>';
-
-      // Strip de stats
-      html+='<div style="padding:10px 18px;background:#F9F8F6;border-bottom:1px solid #E4E0D8;display:flex;gap:20px;flex-wrap:wrap;font-size:10px">';
-      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Alternativas</span> <strong style="color:#1A1916;margin-left:4px">'+totalAlt+'</strong></div>';
-      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Pasos</span> <strong style="color:#1A1916;margin-left:4px">'+totalPasos+'</strong></div>';
-      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Responsables</span> <strong style="color:#1A1916;margin-left:4px">'+respStripTxt+'</strong></div>';
-      html+='</div>';
-
-      // Si no hay pasos: nota explícita
-      if(!pasosPlan.length){
-        html+='<div style="padding:18px;font-size:11px;color:#7A7670;font-style:italic;text-align:center">Plan activado sin pasos detallados aún.</div>';
-        html+='</div>'; // cierra tarjeta
-        return;
-      }
-
-      // Recuperar descripciones cortas desde propuestas_llm (si están guardadas)
-      var propuestasLLM = Array.isArray(m.propuestas_llm) ? m.propuestas_llm : [];
-      function _descLineaDesdePropuesta(tit){
-        var p = propuestasLLM.find(function(pl){ return pl.titulo === tit; });
-        return p && p.descripcion_corta ? p.descripcion_corta : '';
-      }
-      function _causaLineaDesdePropuesta(tit){
-        var p = propuestasLLM.find(function(pl){ return pl.titulo === tit; });
-        return p && (p.causa_atacada || p.foco) ? (p.causa_atacada || p.foco) : '';
-      }
-
-      // Bloques por alternativa
-      lineas.forEach(function(linea, idx){
-        var esUltima = (idx === lineas.length - 1);
-        var factor = linea.foco || _causaLineaDesdePropuesta(linea.titulo) || '';
-        // Limpiar prefijos "FOCO EN " / "Foco en " del factor
-        factor = factor.replace(/^foco en\s+/i, '').replace(/^núcleo[·:]?\s*/i, '').replace(/^nucleo[·:]?\s*/i, '');
-        if(!factor) factor = 'Sin factor especificado';
-
-        var descCorta = _descLineaDesdePropuesta(linea.titulo);
-        var col = _colorFactor(linea.foco || factor);
-
-        html+='<div style="padding:14px 18px'+(esUltima?'':';border-bottom:1px dashed #E4E0D8')+'">';
-
-        // Cabecera de la alternativa
-        html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
-        html+='<span style="font-size:9px;font-weight:700;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt">Alternativa '+(idx+1)+'</span>';
-        html+='<span style="font-size:10px;padding:2px 9px;border-radius:20px;background:'+col.bg+';color:'+col.fg+';font-weight:600">Factor: '+factor+'</span>';
-        html+='</div>';
-        html+='<div style="font-family:\'DM Serif Display\',serif;font-size:13px;color:#1E3A2F;margin-bottom:4px">'+linea.titulo+'</div>';
-        if(descCorta){
-          html+='<div style="font-size:11px;color:#5F5E5A;line-height:1.5;margin-bottom:10px">'+descCorta+'</div>';
-        }
-
-        // Pasos numerados
-        linea.pasos.forEach(function(paso, pi){
-          var pct = paso.estado === 'COMPLETADO' ? 100 : (Number(paso.porcentaje_avance) || 0);
-          var colorPct = _colorAvance(pct);
-          var responsable = paso.responsable && paso.responsable.trim() ? paso.responsable : 'Sin asignar';
-          var plazoDias = paso.plazo_dias || 14;
-          var esfuerzo = paso.esfuerzo || 'MEDIO';
-          var esUltimoPaso = (pi === linea.pasos.length - 1);
-
-          html+='<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:#F4F8F5;border-left:3px solid #2E7D52;border-radius:0 4px 4px 0'+(esUltimoPaso?'':';margin-bottom:6px')+'">';
-          html+='<div style="font-family:\'DM Serif Display\',serif;font-size:17px;color:#2E7D52;line-height:1;min-width:18px">'+(pi+1)+'</div>';
-          html+='<div style="flex:1">';
-          html+='<div style="font-size:11px;color:#1A1916;line-height:1.45;margin-bottom:6px">'+(paso.descripcion || '')+'</div>';
-          html+='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:#7A7670;margin-bottom:6px">';
-          html+='<span>👤 '+responsable+'</span>';
-          html+='<span>📅 '+plazoDias+'d</span>';
-          html+='<span style="color:'+_esfuerzoColor(esfuerzo)+'">Esfuerzo: '+_esfuerzoLabel(esfuerzo)+'</span>';
-          html+='</div>';
-          html+='<div style="display:flex;align-items:center;gap:8px">';
-          html+='<div style="flex:1;height:5px;background:#E4E0D8;border-radius:3px;overflow:hidden;max-width:180px">';
-          html+='<div style="width:'+pct+'%;height:100%;background:'+colorPct+'"></div>';
-          html+='</div>';
-          html+='<span style="font-size:10px;font-weight:600;color:'+colorPct+'">'+pct+'%</span>';
-          html+='</div>';
-          html+='</div></div>';
-        });
-
-        html+='</div>'; // cierre alternativa
-      });
-
-      html+='</div>'; // cierre tarjeta del plan
-    });
-  }
-  html+='</div>';
+  // CIERRE DEL ACTA — Cross-reference al Resumen Ejecutivo
+  // Explicita dónde encontrar el análisis institucional completo.
+  html+='<div class="section" style="page-break-inside:avoid">';
+  html+='<div class="section-title">Para profundizar</div>';
+  html+='<div style="background:#F9F8F6;border-left:3px solid #1E3A2F;padding:14px 18px;line-height:1.7;font-size:11px;color:#1A1916">';
+  html+='<div style="font-size:10px;font-weight:600;color:#1E3A2F;text-transform:uppercase;letter-spacing:.5pt;margin-bottom:8px">Más información en el Resumen Ejecutivo</div>';
+  html+='Este informe es el <strong>acta de la sesión</strong>. Si necesitas profundizar en cómo va el colegio con su PME, consulta el <strong>Resumen Ejecutivo</strong> en el módulo Informes. Allí encontrarás:';
+  html+='<ul style="margin:8px 0 0;padding-left:20px;color:#5F5E5A">';
+  html+='<li style="margin-bottom:4px">Lectura institucional del PME enmarcada en <strong>PEI · Análisis PME · Fase Estratégica</strong> del colegio</li>';
+  html+='<li style="margin-bottom:4px"><strong>Nivel de logro</strong> según los 5 niveles oficiales del sistema (Inicial → Cultura institucional)</li>';
+  html+='<li style="margin-bottom:4px">Avance <strong>acumulado del año</strong>, no solo del mes evaluado en esta sesión</li>';
+  html+='<li style="margin-bottom:4px">Detalle pedagógico de los <strong>planes de mejora activos</strong> — alternativas, factores, pasos, responsables, plazos y avance individual</li>';
+  html+='<li style="margin-bottom:0"><strong>Compromisos para el próximo período</strong> con foco en planes vencidos y acciones críticas</li>';
+  html+='</ul>';
+  html+='</div></div>';
 
   html+='</div></body></html>';
   W.document.write(html);W.document.close();
