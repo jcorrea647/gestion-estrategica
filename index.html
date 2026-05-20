@@ -5240,21 +5240,228 @@ function generarPDFReunion() {
     else if(_pctGlobalPDF >= 25) { _nivelLabelPDF='Básico';        _nivelColorPDF='#A85416'; }
     else                          { _nivelLabelPDF='Inicial';       _nivelColorPDF='#9B2335'; }
   }
-  html+='<div class="cover"><div class="logo-r">Gestión Estratégica &mdash; Informe de Reunion</div>';
-  html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
-  // Línea de % global ponderado en la portada
-  if(_pctGlobalPDF !== null){
-    html+='<div style="margin:18px auto 24px;text-align:center">';
-    html+='<div style="font-size:9px;letter-spacing:1.5pt;text-transform:uppercase;color:#7A7670;margin-bottom:4px">% Logro ponderado</div>';
-    html+='<div style="font-family:\'DM Serif Display\',serif;font-size:34px;color:'+_nivelColorPDF+';line-height:1">'+_pctGlobalPDF+'%</div>';
-    html+='<div style="font-size:11px;font-weight:600;color:'+_nivelColorPDF+';margin-top:4px;letter-spacing:.5pt">'+_nivelLabelPDF+'</div>';
+  // ============================================================
+  // PORTADA EJECUTIVA — Resumen para equipos de gestión
+  // ============================================================
+  // Estructura en 3 bloques:
+  //   1. FOTO: 4 tarjetas con números grandes (logro, evaluadas, planes, vencidos)
+  //   2. COLUMNAS: Fortalezas / Focos críticos / Planes vigentes
+  //   3. PRÓXIMOS PASOS: frases automáticas según los datos
+  // Pensada para que en 30 segundos el equipo entienda el estado.
+  // ============================================================
+
+  // --- Cálculo de datos para el resumen ---
+  var totalAccionesEval = accionesConSeg.length;
+  var accionesConDato = accionesConSeg.filter(function(it){
+    return it.seg && (it.seg.porcentaje != null || it.seg.pendiente);
+  }).length;
+  var accionesSinDato = totalAccionesEval - accionesConDato;
+
+  // Planes activos del colegio (estado ACTIVA)
+  var planesActivos = (DB.microacciones || []).filter(function(m){
+    return m.estado === 'ACTIVA';
+  });
+  var planesVencidos = planesActivos.filter(function(m){
+    var d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+    return d !== null && d < 0;
+  });
+  var planesProximos = planesActivos.filter(function(m){
+    var d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+    return d !== null && d >= 0 && d <= 7;
+  });
+
+  // Top fortalezas: acciones con mejor %, mínimo 70%
+  var fortalezas = accionesConSeg
+    .filter(function(it){ return it.seg && it.seg.porcentaje != null && it.seg.porcentaje >= 70; })
+    .sort(function(a,b){ return b.seg.porcentaje - a.seg.porcentaje; })
+    .slice(0, 3);
+
+  // Focos críticos: combinación — primero los con comentario (ordenados por % ascendente),
+  // completar con peores % sin comentario hasta llegar a 3.
+  var conComentario = accionesConSeg
+    .filter(function(it){ return it.seg && it.seg.comentario && it.seg.comentario.trim(); })
+    .sort(function(a,b){
+      var pa = (a.seg && a.seg.porcentaje != null) ? a.seg.porcentaje : 999;
+      var pb = (b.seg && b.seg.porcentaje != null) ? b.seg.porcentaje : 999;
+      return pa - pb;
+    });
+  var focosCriticos = conComentario.slice(0, 3);
+  if(focosCriticos.length < 3){
+    var idsYa = new Set(focosCriticos.map(function(it){ return it.ac.id + '|' + it.mes; }));
+    var peoresPct = accionesConSeg
+      .filter(function(it){
+        if(!it.seg || it.seg.porcentaje == null) return false;
+        if(it.seg.porcentaje >= 70) return false; // ya están en fortalezas, no son críticos
+        return !idsYa.has(it.ac.id + '|' + it.mes);
+      })
+      .sort(function(a,b){ return a.seg.porcentaje - b.seg.porcentaje; })
+      .slice(0, 3 - focosCriticos.length);
+    focosCriticos = focosCriticos.concat(peoresPct);
+  }
+
+  // Planes vigentes: hasta 3, ordenados por urgencia (vencidos primero)
+  var planesAMostrar = planesActivos.slice().sort(function(a,b){
+    var da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
+    var db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
+    if(da === null && db === null) return 0;
+    if(da === null) return 1;
+    if(db === null) return -1;
+    return da - db;
+  }).slice(0, 3);
+
+  // --- Próximos pasos: reglas automáticas ---
+  var proximosPasos = [];
+  if(accionesSinDato > 0){
+    proximosPasos.push('Quedan <strong>'+accionesSinDato+' acciones sin evaluación</strong> en el período. Completar el registro antes de la próxima reunión.');
+  }
+  if(planesVencidos.length > 0){
+    var nombresVenc = planesVencidos.slice(0,2).map(function(m){
+      var ac = (DB.acciones||[]).find(function(a){ return a.id === m.accion_id; });
+      return ac ? ac.nombre : '(sin nombre)';
+    }).join(', ');
+    var extraVenc = planesVencidos.length > 2 ? ' y '+(planesVencidos.length-2)+' más' : '';
+    proximosPasos.push('<strong>'+planesVencidos.length+' plan(es) vencido(s)</strong>: '+nombresVenc+extraVenc+'. Revisar avances o ajustar plazos.');
+  }
+  if(planesProximos.length > 0){
+    proximosPasos.push('<strong>'+planesProximos.length+' plan(es) vence(n) en los próximos 7 días</strong>. Confirmar cierre con responsables.');
+  }
+  if(focosCriticos.length > 0 && proximosPasos.length < 4){
+    proximosPasos.push('Profundizar en los focos críticos identificados — revisar causas y compromisos en la próxima sesión.');
+  }
+  if(!proximosPasos.length){
+    proximosPasos.push('Período sin pendientes críticos. Mantener el ritmo de seguimiento y consolidar las prácticas que están funcionando.');
+  }
+
+  // --- Helper local para render de items en columnas ---
+  function _miniItem(nombre, valor, valorColor){
+    return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px dotted #E4E0D8;font-size:10px">' +
+           '<span style="color:#1A1916;flex:1;line-height:1.3">'+nombre+'</span>' +
+           '<span style="color:'+(valorColor||'#1A1916')+';font-weight:600;white-space:nowrap">'+valor+'</span>' +
+           '</div>';
+  }
+
+  // ============================================================
+  // RENDER DE LA PORTADA EJECUTIVA
+  // ============================================================
+  html+='<div class="cover" style="padding:30px 20px 24px;border-bottom:3px solid #1E3A2F;margin-bottom:24px">';
+  html+='<div class="logo-r">Gestión Estratégica &mdash; Informe de Reunión</div>';
+  html+='<div class="colegio-r" style="font-size:24px;margin-bottom:4px">'+DB.colegio.nombre+'</div>';
+  html+='<div class="rtitulo" style="font-size:16px;margin-bottom:14px">'+reunion.titulo+'</div>';
+  html+='<div class="meta-row" style="margin-bottom:0">';
+  html+='<div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div>';
+  html+='<div class="meta-item"><strong>Mes(es):</strong> '+(mesesLabel||'—')+'</div>';
+  if(reunion.consultor_nombre) html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
+  html+='</div>';
+  if(partes.length){
+    html+='<div class="participantes-r" style="margin-top:10px">';
+    partes.forEach(function(p){ html+='<div class="participante-r">'+p.nombre+'</div>'; });
     html+='</div>';
   }
-  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
-  if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
-  if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
   html+='</div>';
-  if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
+
+  // --- BLOQUE 1: FOTO (4 tarjetas con números grandes) ---
+  html+='<div style="margin-bottom:24px">';
+  html+='<div class="section-sub" style="text-align:center;margin-bottom:12px">Estado del Período</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">';
+
+  // Tarjeta 1: % logro ponderado
+  var pctLogroTxt = _pctGlobalPDF !== null ? _pctGlobalPDF+'%' : '—';
+  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+_nivelColorPDF+'">';
+  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+_nivelColorPDF+';line-height:1">'+pctLogroTxt+'</div>';
+  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Logro ponderado</div>';
+  html+='<div style="font-size:10px;font-weight:600;color:'+_nivelColorPDF+';margin-top:2px">'+_nivelLabelPDF+'</div>';
+  html+='</div>';
+
+  // Tarjeta 2: Acciones evaluadas
+  var pctEval = totalAccionesEval > 0 ? Math.round(accionesConDato/totalAccionesEval*100) : 0;
+  var colorEval = pctEval >= 80 ? '#2E7D52' : pctEval >= 50 ? '#B8860B' : '#9B2335';
+  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+colorEval+'">';
+  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+colorEval+';line-height:1">'+accionesConDato+'<span style="font-size:14px;color:#7A7670">/'+totalAccionesEval+'</span></div>';
+  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Acciones evaluadas</div>';
+  html+='<div style="font-size:10px;font-weight:600;color:'+colorEval+';margin-top:2px">'+(accionesSinDato > 0 ? accionesSinDato+' pendientes' : 'Completo')+'</div>';
+  html+='</div>';
+
+  // Tarjeta 3: Planes activos
+  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid #1F5278">';
+  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:#1F5278;line-height:1">'+planesActivos.length+'</div>';
+  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Planes activos</div>';
+  html+='<div style="font-size:10px;font-weight:600;color:#1F5278;margin-top:2px">En cartera</div>';
+  html+='</div>';
+
+  // Tarjeta 4: Planes vencidos / por vencer
+  var alerta = planesVencidos.length + planesProximos.length;
+  var colorAlerta = planesVencidos.length > 0 ? '#9B2335' : planesProximos.length > 0 ? '#B8860B' : '#2E7D52';
+  var labelAlerta = planesVencidos.length > 0 ? planesVencidos.length+' vencido(s)' : planesProximos.length > 0 ? 'Por vencer ≤7d' : 'Sin urgencias';
+  html+='<div style="border:1px solid #E4E0D8;border-radius:6px;padding:14px 10px;text-align:center;border-top:3px solid '+colorAlerta+'">';
+  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+colorAlerta+';line-height:1">'+alerta+'</div>';
+  html+='<div style="font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt;margin-top:6px">Atención inmediata</div>';
+  html+='<div style="font-size:10px;font-weight:600;color:'+colorAlerta+';margin-top:2px">'+labelAlerta+'</div>';
+  html+='</div>';
+
+  html+='</div></div>';
+
+  // --- BLOQUE 2: COLUMNAS (Fortalezas / Focos críticos / Planes) ---
+  html+='<div style="margin-bottom:24px">';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">';
+
+  // Columna 1: Fortalezas
+  html+='<div style="background:#F4F8F5;border-left:3px solid #2E7D52;border-radius:4px;padding:12px">';
+  html+='<div style="font-size:10px;font-weight:700;color:#2E7D52;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">✓ Fortalezas</div>';
+  if(!fortalezas.length){
+    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin acciones sobre 70% en el período.</div>';
+  } else {
+    fortalezas.forEach(function(it){
+      html+=_miniItem(it.ac.nombre, it.seg.porcentaje+'%', '#2E7D52');
+    });
+  }
+  html+='</div>';
+
+  // Columna 2: Focos críticos
+  html+='<div style="background:#FCF4F3;border-left:3px solid #9B2335;border-radius:4px;padding:12px">';
+  html+='<div style="font-size:10px;font-weight:700;color:#9B2335;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">⚠ Focos Críticos</div>';
+  if(!focosCriticos.length){
+    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin focos críticos identificados.</div>';
+  } else {
+    focosCriticos.forEach(function(it){
+      var pct = (it.seg && it.seg.porcentaje != null) ? it.seg.porcentaje+'%' : 'Pendiente';
+      var tieneComm = it.seg && it.seg.comentario && it.seg.comentario.trim();
+      var marca = tieneComm ? ' 💬' : '';
+      html+=_miniItem(it.ac.nombre+marca, pct, '#9B2335');
+    });
+  }
+  html+='</div>';
+
+  // Columna 3: Planes vigentes
+  html+='<div style="background:#F2F5F8;border-left:3px solid #1F5278;border-radius:4px;padding:12px">';
+  html+='<div style="font-size:10px;font-weight:700;color:#1F5278;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">📋 Planes Vigentes</div>';
+  if(!planesAMostrar.length){
+    html+='<div style="font-size:10px;color:#7A7670;font-style:italic">Sin planes activos en cartera.</div>';
+  } else {
+    planesAMostrar.forEach(function(m){
+      var ac = (DB.acciones||[]).find(function(a){ return a.id === m.accion_id; });
+      var nom = ac ? ac.nombre : '(sin nombre)';
+      var cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
+      var valTxt = cumpl !== null ? cumpl+'%' : '—';
+      var colorVal = cumpl === null ? '#7A7670' : cumpl >= 70 ? '#2E7D52' : cumpl >= 40 ? '#B8860B' : '#9B2335';
+      html+=_miniItem(nom, valTxt, colorVal);
+    });
+    if(planesActivos.length > 3){
+      html+='<div style="font-size:9px;color:#7A7670;font-style:italic;margin-top:6px;text-align:right">+ '+(planesActivos.length-3)+' más en el detalle</div>';
+    }
+  }
+  html+='</div>';
+
+  html+='</div></div>';
+
+  // --- BLOQUE 3: PRÓXIMOS PASOS ---
+  html+='<div style="background:#1E3A2F;color:#fff;border-radius:6px;padding:14px 18px;margin-bottom:28px">';
+  html+='<div style="font-size:10px;font-weight:700;color:#C5A572;text-transform:uppercase;letter-spacing:.6pt;margin-bottom:10px">→ Próximos Pasos</div>';
+  html+='<ul style="margin:0;padding-left:18px;list-style:none">';
+  proximosPasos.forEach(function(p){
+    html+='<li style="font-size:11px;line-height:1.55;color:#F4F2EE;margin-bottom:6px;position:relative;padding-left:14px">';
+    html+='<span style="position:absolute;left:0;color:#C5A572">▸</span>'+p+'</li>';
+  });
+  html+='</ul>';
   html+='</div>';
 
   // COMENTARIOS GENERALES
@@ -5352,6 +5559,86 @@ function generarPDFReunion() {
     html+='<td style="text-align:center">'+(isPend?'<span class="badge pendiente">Pendiente '+pct+'%</span>':pct!==null&&pct!==undefined?'<span class="badge '+getEstado(pct)+'">'+pct+'%</span>':'<span class="badge sin_datos">Por evaluar</span>')+'</td></tr>';
   });
   html+='</tbody></table></div>';
+
+  // PLANES DE MEJORA GENERADOS
+  // Lista TODOS los planes en estado ACTIVA del colegio, con un resumen:
+  // nombre de la acción + área + % cumplimiento + responsable + plazo.
+  // Excluye BORRADOR (no son compromisos) y COMPLETADA (cerradas).
+  var planesInforme = (DB.microacciones || []).filter(function(m){
+    return m.estado === 'ACTIVA';
+  });
+  // Ordenar por urgencia: primero vencidos, luego próximos a vencer, luego el resto.
+  planesInforme.sort(function(a,b){
+    var da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
+    var db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
+    if(da === null && db === null) return 0;
+    if(da === null) return 1;
+    if(db === null) return -1;
+    return da - db;
+  });
+
+  html+='<div class="section"><div class="section-title">Planes de Mejora Generados</div>';
+  html+='<div class="section-sub">'+planesInforme.length+' plan(es) activo(s) en cartera del colegio</div>';
+
+  if(!planesInforme.length){
+    html+='<p style="color:#7A7670;font-style:italic;font-size:11px">No hay planes de mejora activos en la cartera del colegio.</p>';
+  } else {
+    html+='<table><thead><tr>';
+    html+='<th>Acción PME</th>';
+    html+='<th>Área</th>';
+    html+='<th>Mes</th>';
+    html+='<th style="text-align:center">% Cumplim.</th>';
+    html+='<th>Responsable</th>';
+    html+='<th>Plazo</th>';
+    html+='</tr></thead><tbody>';
+
+    planesInforme.forEach(function(m){
+      var accion = (DB.acciones || []).find(function(a){ return a.id === m.accion_id; });
+      var accionNombre = accion ? accion.nombre : '(acción eliminada)';
+      var area = (typeof _areaDeAccion === 'function') ? _areaDeAccion(m.accion_id) : null;
+      var areaNombre = area ? area.nombre : '—';
+
+      var cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
+      var cumplCell;
+      if(cumpl === null){
+        cumplCell = '<span class="sin_datos" style="font-size:10px">Sin pasos</span>';
+      } else {
+        var colorClass = cumpl >= 70 ? 'verde' : cumpl >= 40 ? 'amarillo' : 'rojo';
+        cumplCell = '<span class="badge '+colorClass+'">'+cumpl+'%</span>';
+      }
+
+      var resp = m.acuerdo_quien || m.acuerdo_co || '<span style="color:#7A7670">Sin asignar</span>';
+
+      // Plazo: mostrar fecha + días restantes con semáforo textual
+      var plazoCell = '<span style="color:#7A7670">Sin plazo</span>';
+      if(m.fecha_objetivo){
+        var dias = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+        var fechaFmt = new Date(m.fecha_objetivo).toLocaleDateString('es-CL', {day:'numeric', month:'short'});
+        if(dias === null){
+          plazoCell = fechaFmt;
+        } else if(dias < 0){
+          plazoCell = '<span class="rojo">'+fechaFmt+' · vencido '+Math.abs(dias)+'d</span>';
+        } else if(dias <= 7){
+          plazoCell = '<span class="amarillo">'+fechaFmt+' · '+dias+'d</span>';
+        } else {
+          plazoCell = fechaFmt+' · '+dias+'d';
+        }
+      }
+
+      html+='<tr>';
+      html+='<td style="font-weight:500">'+accionNombre+'</td>';
+      html+='<td style="color:#7A7670;font-size:10px">'+areaNombre+'</td>';
+      html+='<td style="font-size:10px">'+(m.mes ? fmtMes(m.mes, true) : '—')+'</td>';
+      html+='<td style="text-align:center">'+cumplCell+'</td>';
+      html+='<td style="font-size:10px">'+resp+'</td>';
+      html+='<td style="font-size:10px">'+plazoCell+'</td>';
+      html+='</tr>';
+    });
+
+    html+='</tbody></table>';
+  }
+  html+='</div>';
+
   html+='</div></body></html>';
   W.document.write(html);W.document.close();
   showToast('Informe generado. Usa Imprimir para guardar como PDF.');
