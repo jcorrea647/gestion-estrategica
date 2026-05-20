@@ -5560,10 +5560,11 @@ function generarPDFReunion() {
   });
   html+='</tbody></table></div>';
 
-  // PLANES DE MEJORA GENERADOS
-  // Lista TODOS los planes en estado ACTIVA del colegio, con un resumen:
-  // nombre de la acción + área + % cumplimiento + responsable + plazo.
-  // Excluye BORRADOR (no son compromisos) y COMPLETADA (cerradas).
+  // PLANES DE MEJORA GENERADOS — TARJETAS PEDAGÓGICAS
+  // Una tarjeta por plan ACTIVA. Cabecera oscura con acción + área + % global
+  // + plazo. Strip de stats. Bloques por alternativa (línea estratégica) con
+  // badge del factor/causa atacada y pasos numerados (responsable, plazo,
+  // esfuerzo, barra de avance individual).
   var planesInforme = (DB.microacciones || []).filter(function(m){
     return m.estado === 'ACTIVA';
   });
@@ -5578,19 +5579,49 @@ function generarPDFReunion() {
   });
 
   html+='<div class="section"><div class="section-title">Planes de Mejora Generados</div>';
-  html+='<div class="section-sub">'+planesInforme.length+' plan(es) activo(s) en cartera del colegio</div>';
+  html+='<div class="section-sub">'+planesInforme.length+' plan(es) activo(s) en cartera del colegio · detalle pedagógico</div>';
 
   if(!planesInforme.length){
     html+='<p style="color:#7A7670;font-style:italic;font-size:11px">No hay planes de mejora activos en la cartera del colegio.</p>';
   } else {
-    html+='<table><thead><tr>';
-    html+='<th>Acción PME</th>';
-    html+='<th>Área</th>';
-    html+='<th>Mes</th>';
-    html+='<th style="text-align:center">% Cumplim.</th>';
-    html+='<th>Responsable</th>';
-    html+='<th>Plazo</th>';
-    html+='</tr></thead><tbody>';
+
+    // Helper local: colorear badge del factor según grupo de causa
+    // (estructural / relacional / brechas / núcleo)
+    function _colorFactor(focoTexto){
+      var f = (focoTexto || '').toLowerCase();
+      // Análisis IA / brechas
+      if(f.indexOf('brecha') >= 0 || f.indexOf('ia') >= 0) {
+        return { bg:'#EEEDFE', fg:'#3C3489' };
+      }
+      // Núcleo / ámbito
+      if(f.indexOf('núcleo') >= 0 || f.indexOf('nucleo') >= 0 || f.indexOf('ámbito') >= 0 || f.indexOf('ambito') >= 0) {
+        return { bg:'#E1F5EE', fg:'#085041' };
+      }
+      // Relacional (liderazgo, clima, comunicación, cultura, participación, compromiso, etc.)
+      var relacional = ['liderazgo','cultura','resistencia','comunicación','comunicacion','clima','participación','participacion','compromiso','vinculación','vinculacion','familia'];
+      if(relacional.some(function(t){ return f.indexOf(t) >= 0; })) {
+        return { bg:'#FBEAF0', fg:'#72243E' };
+      }
+      // Estructural por defecto (tiempo, recursos, competencias, datos, etc.)
+      return { bg:'#FDF6E3', fg:'#854F0B' };
+    }
+
+    function _colorAvance(pct){
+      if(pct >= 70) return '#2E7D52';
+      if(pct >= 40) return '#9C7918';
+      return '#9B2335';
+    }
+
+    function _esfuerzoColor(e){
+      if(e === 'BAJO')  return '#2E7D52';
+      if(e === 'ALTO')  return '#9B2335';
+      return '#9C7918';
+    }
+    function _esfuerzoLabel(e){
+      if(e === 'BAJO')  return 'Bajo';
+      if(e === 'ALTO')  return 'Alto';
+      return 'Medio';
+    }
 
     planesInforme.forEach(function(m){
       var accion = (DB.acciones || []).find(function(a){ return a.id === m.accion_id; });
@@ -5599,43 +5630,141 @@ function generarPDFReunion() {
       var areaNombre = area ? area.nombre : '—';
 
       var cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
-      var cumplCell;
-      if(cumpl === null){
-        cumplCell = '<span class="sin_datos" style="font-size:10px">Sin pasos</span>';
-      } else {
-        var colorClass = cumpl >= 70 ? 'verde' : cumpl >= 40 ? 'amarillo' : 'rojo';
-        cumplCell = '<span class="badge '+colorClass+'">'+cumpl+'%</span>';
-      }
+      var cumplTxt = cumpl !== null ? cumpl+'%' : '—';
 
-      var resp = m.acuerdo_quien || m.acuerdo_co || '<span style="color:#7A7670">Sin asignar</span>';
-
-      // Plazo: mostrar fecha + días restantes con semáforo textual
-      var plazoCell = '<span style="color:#7A7670">Sin plazo</span>';
+      // Plazo en la cabecera
+      var plazoTxt = 'Sin plazo';
       if(m.fecha_objetivo){
         var dias = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
         var fechaFmt = new Date(m.fecha_objetivo).toLocaleDateString('es-CL', {day:'numeric', month:'short'});
-        if(dias === null){
-          plazoCell = fechaFmt;
-        } else if(dias < 0){
-          plazoCell = '<span class="rojo">'+fechaFmt+' · vencido '+Math.abs(dias)+'d</span>';
-        } else if(dias <= 7){
-          plazoCell = '<span class="amarillo">'+fechaFmt+' · '+dias+'d</span>';
-        } else {
-          plazoCell = fechaFmt+' · '+dias+'d';
-        }
+        if(dias === null) plazoTxt = fechaFmt;
+        else if(dias < 0) plazoTxt = fechaFmt+' · vencido '+Math.abs(dias)+'d';
+        else if(dias === 0) plazoTxt = fechaFmt+' · vence hoy';
+        else plazoTxt = fechaFmt+' · vence en '+dias+'d';
       }
 
-      html+='<tr>';
-      html+='<td style="font-weight:500">'+accionNombre+'</td>';
-      html+='<td style="color:#7A7670;font-size:10px">'+areaNombre+'</td>';
-      html+='<td style="font-size:10px">'+(m.mes ? fmtMes(m.mes, true) : '—')+'</td>';
-      html+='<td style="text-align:center">'+cumplCell+'</td>';
-      html+='<td style="font-size:10px">'+resp+'</td>';
-      html+='<td style="font-size:10px">'+plazoCell+'</td>';
-      html+='</tr>';
-    });
+      // Recuperar los pasos del plan y agruparlos por línea (alternativa)
+      var pasosPlan = (DB.pasos || []).filter(function(p){ return p.microaccion_id === m.id; });
 
-    html+='</tbody></table>';
+      // Mapa lineaTitulo → { titulo, foco, pasos[] }
+      var lineasMap = {};
+      pasosPlan.forEach(function(p){
+        var key = p.linea_titulo || 'Sin línea';
+        if(!lineasMap[key]) lineasMap[key] = {
+          titulo: p.linea_titulo || 'Línea',
+          foco: p.linea_foco || '',
+          pasos: []
+        };
+        lineasMap[key].pasos.push(p);
+      });
+      var lineas = Object.values(lineasMap);
+
+      // Stats del strip
+      var totalAlt = lineas.length;
+      var totalPasos = pasosPlan.length;
+      var respUnicos = Array.from(new Set(pasosPlan.map(function(p){ return p.responsable; }).filter(function(r){ return r && r.trim(); })));
+      var respStripTxt = respUnicos.length === 0 ? 'Sin asignar' : respUnicos.slice(0,3).join(', ') + (respUnicos.length>3 ? ' +'+(respUnicos.length-3) : '');
+
+      // ─── INICIO TARJETA ───
+      html+='<div style="border:1px solid #E4E0D8;border-radius:6px;overflow:hidden;background:#fff;margin-bottom:18px;page-break-inside:avoid">';
+
+      // Cabecera oscura del plan
+      html+='<div style="background:#1E3A2F;color:#fff;padding:14px 18px">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">';
+      html+='<div style="flex:1;min-width:200px">';
+      html+='<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">';
+      html+='<span style="background:#C5A572;color:#1E3A2F;font-size:9px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.5pt">'+areaNombre+'</span>';
+      html+='<span style="background:#fff;color:#1E3A2F;font-size:9px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.5pt">Activa</span>';
+      html+='</div>';
+      html+='<div style="font-family:\'DM Serif Display\',serif;font-size:16px;line-height:1.2">'+accionNombre+'</div>';
+      html+='<div style="font-size:10px;color:#C5A572;margin-top:4px">Mes: '+(m.mes ? fmtMes(m.mes) : '—')+' · '+plazoTxt+'</div>';
+      html+='</div>';
+      html+='<div style="text-align:right;min-width:90px">';
+      html+='<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:#fff;line-height:1">'+cumplTxt+'</div>';
+      html+='<div style="font-size:9px;color:#C5A572;text-transform:uppercase;letter-spacing:.5pt">Avance global</div>';
+      html+='</div>';
+      html+='</div></div>';
+
+      // Strip de stats
+      html+='<div style="padding:10px 18px;background:#F9F8F6;border-bottom:1px solid #E4E0D8;display:flex;gap:20px;flex-wrap:wrap;font-size:10px">';
+      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Alternativas</span> <strong style="color:#1A1916;margin-left:4px">'+totalAlt+'</strong></div>';
+      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Pasos</span> <strong style="color:#1A1916;margin-left:4px">'+totalPasos+'</strong></div>';
+      html+='<div><span style="color:#7A7670;text-transform:uppercase;letter-spacing:.4pt">Responsables</span> <strong style="color:#1A1916;margin-left:4px">'+respStripTxt+'</strong></div>';
+      html+='</div>';
+
+      // Si no hay pasos: nota explícita
+      if(!pasosPlan.length){
+        html+='<div style="padding:18px;font-size:11px;color:#7A7670;font-style:italic;text-align:center">Plan activado sin pasos detallados aún.</div>';
+        html+='</div>'; // cierra tarjeta
+        return;
+      }
+
+      // Recuperar descripciones cortas desde propuestas_llm (si están guardadas)
+      var propuestasLLM = Array.isArray(m.propuestas_llm) ? m.propuestas_llm : [];
+      function _descLineaDesdePropuesta(tit){
+        var p = propuestasLLM.find(function(pl){ return pl.titulo === tit; });
+        return p && p.descripcion_corta ? p.descripcion_corta : '';
+      }
+      function _causaLineaDesdePropuesta(tit){
+        var p = propuestasLLM.find(function(pl){ return pl.titulo === tit; });
+        return p && (p.causa_atacada || p.foco) ? (p.causa_atacada || p.foco) : '';
+      }
+
+      // Bloques por alternativa
+      lineas.forEach(function(linea, idx){
+        var esUltima = (idx === lineas.length - 1);
+        var factor = linea.foco || _causaLineaDesdePropuesta(linea.titulo) || '';
+        // Limpiar prefijos "FOCO EN " / "Foco en " del factor
+        factor = factor.replace(/^foco en\s+/i, '').replace(/^núcleo[·:]?\s*/i, '').replace(/^nucleo[·:]?\s*/i, '');
+        if(!factor) factor = 'Sin factor especificado';
+
+        var descCorta = _descLineaDesdePropuesta(linea.titulo);
+        var col = _colorFactor(linea.foco || factor);
+
+        html+='<div style="padding:14px 18px'+(esUltima?'':';border-bottom:1px dashed #E4E0D8')+'">';
+
+        // Cabecera de la alternativa
+        html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
+        html+='<span style="font-size:9px;font-weight:700;color:#7A7670;text-transform:uppercase;letter-spacing:.5pt">Alternativa '+(idx+1)+'</span>';
+        html+='<span style="font-size:10px;padding:2px 9px;border-radius:20px;background:'+col.bg+';color:'+col.fg+';font-weight:600">Factor: '+factor+'</span>';
+        html+='</div>';
+        html+='<div style="font-family:\'DM Serif Display\',serif;font-size:13px;color:#1E3A2F;margin-bottom:4px">'+linea.titulo+'</div>';
+        if(descCorta){
+          html+='<div style="font-size:11px;color:#5F5E5A;line-height:1.5;margin-bottom:10px">'+descCorta+'</div>';
+        }
+
+        // Pasos numerados
+        linea.pasos.forEach(function(paso, pi){
+          var pct = paso.estado === 'COMPLETADO' ? 100 : (Number(paso.porcentaje_avance) || 0);
+          var colorPct = _colorAvance(pct);
+          var responsable = paso.responsable && paso.responsable.trim() ? paso.responsable : 'Sin asignar';
+          var plazoDias = paso.plazo_dias || 14;
+          var esfuerzo = paso.esfuerzo || 'MEDIO';
+          var esUltimoPaso = (pi === linea.pasos.length - 1);
+
+          html+='<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:#F4F8F5;border-left:3px solid #2E7D52;border-radius:0 4px 4px 0'+(esUltimoPaso?'':';margin-bottom:6px')+'">';
+          html+='<div style="font-family:\'DM Serif Display\',serif;font-size:17px;color:#2E7D52;line-height:1;min-width:18px">'+(pi+1)+'</div>';
+          html+='<div style="flex:1">';
+          html+='<div style="font-size:11px;color:#1A1916;line-height:1.45;margin-bottom:6px">'+(paso.descripcion || '')+'</div>';
+          html+='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:#7A7670;margin-bottom:6px">';
+          html+='<span>👤 '+responsable+'</span>';
+          html+='<span>📅 '+plazoDias+'d</span>';
+          html+='<span style="color:'+_esfuerzoColor(esfuerzo)+'">Esfuerzo: '+_esfuerzoLabel(esfuerzo)+'</span>';
+          html+='</div>';
+          html+='<div style="display:flex;align-items:center;gap:8px">';
+          html+='<div style="flex:1;height:5px;background:#E4E0D8;border-radius:3px;overflow:hidden;max-width:180px">';
+          html+='<div style="width:'+pct+'%;height:100%;background:'+colorPct+'"></div>';
+          html+='</div>';
+          html+='<span style="font-size:10px;font-weight:600;color:'+colorPct+'">'+pct+'%</span>';
+          html+='</div>';
+          html+='</div></div>';
+        });
+
+        html+='</div>'; // cierre alternativa
+      });
+
+      html+='</div>'; // cierre tarjeta del plan
+    });
   }
   html+='</div>';
 
