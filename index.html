@@ -7420,9 +7420,16 @@ const PLAN_CSS = `
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
 .plan-header{background:var(--accent);color:#fff;padding:16px 24px;
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+  display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0;gap:16px;flex-wrap:wrap}
 .plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400}
 .plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.plan-header .plan-accion-desc{font-size:12.5px;color:rgba(255,255,255,.78);margin-top:8px;line-height:1.5;max-width:100%}
+.plan-header-stats{display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+.plan-stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:6px 10px;min-width:72px}
+.plan-stat-lbl{font-size:9px;color:rgba(255,255,255,.7);letter-spacing:.7px;text-transform:uppercase;margin-bottom:1px;font-weight:600}
+.plan-stat-val{font-size:15px;font-weight:600;color:#fff}
+.plan-stat-val.sm{font-size:12.5px;font-weight:500}
+.plan-stat-val.sin-dato{color:rgba(255,255,255,.45);font-weight:400}
 .plan-close{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
   color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;
   display:flex;align-items:center;justify-content:center}
@@ -7944,6 +7951,10 @@ const PLAN_CSS = `
 }
 .marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn{
   color:#7A5A18;
+}
+/* Pero el botón ACTIVO siempre va con texto blanco, sobreescribiendo el wrapper */
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn.activa{
+  color:#fff;
 }
 
 /* Línea con el sujeto extraído ("El equipo técnico-pedagógico y los docentes:") */
@@ -9096,12 +9107,12 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">🔁</div>
         <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px">Continuar de ${escapeHtmlPlan(mesAnteriorLabel)}</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Mismas causales, mismos pasos, mismas asignaciones (con aviso para confirmar).
+          Mismos factores, mismos pasos, mismas asignaciones (con aviso para confirmar).
           Sumás un mes más a la estrategia que ya venías trabajando.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
           <div>📋 ${numPasos} paso(s) ya definidos</div>
-          <div style="margin-top:3px">🎯 Causales: ${escapeHtmlPlan(causasNombres)}</div>
+          <div style="margin-top:3px">🎯 Factores: ${escapeHtmlPlan(causasNombres)}</div>
         </div>
         <div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
           Recomendado si la realidad no cambió
@@ -9113,7 +9124,7 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">✏</div>
         <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Empezar plan nuevo</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Partís desde la versión institucional. Volves a diagnosticar causales
+          Partís desde la versión institucional. Volves a diagnosticar factores
           y construir el plan según lo que está pasando hoy.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
@@ -9121,7 +9132,7 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
           <div style="margin-top:3px">🔄 Diagnóstico fresco</div>
         </div>
         <div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
-          Si las causas cambiaron
+          Si los factores cambiaron
         </div>
       </button>
     </div>
@@ -9216,11 +9227,13 @@ function asegurarDrawer(){
   dw.id='planDrawer'; dw.className='plan-drawer';
   dw.innerHTML = `
     <div class="plan-header">
-      <div>
+      <div style="flex:1;min-width:240px">
         <h2 id="planTitle">Plan de mejora</h2>
         <div class="plan-sub" id="planSubtitle"></div>
+        <div class="plan-accion-desc" id="planAccionDesc" style="display:none"></div>
       </div>
-      <button class="plan-close" onclick="cerrarPlan()">×</button>
+      <div class="plan-header-stats" id="planHeaderStats"></div>
+      <button class="plan-close" onclick="cerrarPlan()" style="align-self:flex-start">×</button>
     </div>
     <div class="plan-progress" id="planProgress"></div>
     <div class="plan-body" id="planBody"></div>
@@ -9235,7 +9248,43 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
+  // Descripción de la acción debajo del subtítulo (si existe)
+  const descEl = document.getElementById('planAccionDesc');
+  if(descEl){
+    const desc = s.accion?.descripcion || '';
+    if(desc){
+      descEl.textContent = desc;
+      descEl.style.display = '';
+    } else {
+      descEl.style.display = 'none';
+    }
+  }
+
+  // Stats de cabecera: Mes evaluado · % logro · Nivel
+  const statsEl = document.getElementById('planHeaderStats');
+  if(statsEl){
+    const pct = s.pct;
+    const tienePct = pct !== null && pct !== undefined && pct !== '' && !isNaN(pct);
+    const nv = tienePct ? nivelLogro(pct) : null;
+    const pctTxt = tienePct ? Math.round(Number(pct)) + '%' : '—';
+    const nivelTxt = nv ? nv.nombre : '—';
+    const nivelClass = nv ? '' : ' sin-dato';
+    statsEl.innerHTML =
+      '<div class="plan-stat">'+
+        '<div class="plan-stat-lbl">Mes</div>'+
+        '<div class="plan-stat-val sm">'+fmtMes(s.mes)+'</div>'+
+      '</div>'+
+      '<div class="plan-stat">'+
+        '<div class="plan-stat-lbl">% logro</div>'+
+        '<div class="plan-stat-val'+(tienePct?'':' sin-dato')+'">'+pctTxt+'</div>'+
+      '</div>'+
+      '<div class="plan-stat">'+
+        '<div class="plan-stat-lbl">Nivel</div>'+
+        '<div class="plan-stat-val sm'+nivelClass+'">'+nivelTxt+'</div>'+
+      '</div>';
+  }
+
+  const PASO_LABELS = ['','Marco','Brechas','Factores','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
   for(let i=1;i<=5;i++){
@@ -9501,7 +9550,7 @@ async function renderPaso1Contexto(){
       return `<span${tip} style="display:inline-block;font-size:13px;padding:5px 11px;border-radius:14px;background:#EFEEEA;color:#444441;border:1px solid #DDD9CF;margin:0 0 6px 6px">${escapeHtmlPlan(etiq)}</span>`;
     }).join('');
     const causalesBloque = causalesPills
-      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Causales asociadas</div>${causalesPills}</div>`
+      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Factores asociados</div>${causalesPills}</div>`
       : '<div></div>';
     const sep = i < bullets.length - 1 ? 'border-bottom:1px solid rgba(0,0,0,0.06);' : '';
     return `
@@ -9572,7 +9621,7 @@ async function renderPaso1Contexto(){
           frase = nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1];
         }
         const cantidad = nombres.length;
-        cierre = 'Las ' + cantidad + ' causales más recurrentes por tanto son ' + frase + '.';
+        cierre = 'Los ' + cantidad + ' factores más recurrentes por tanto son ' + frase + '.';
         console.log('[resumen] frase de cierre generada por el frontend:', cierre);
       }
     }
@@ -9610,7 +9659,7 @@ async function renderPaso1Contexto(){
           ${resumenHtml}
           <ul style="list-style:none;padding:0;margin:0">${bulletsHtml}</ul>
           <div style="font-size:13px;line-height:1.65;color:#5F5E5A;font-style:italic;border-top:1px solid rgba(0,0,0,0.08);padding-top:14px;margin-top:16px">
-            Para esto te invitamos al siguiente paso, donde podrás identificar las causales de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
+            Para esto te invitamos al siguiente paso, donde podrás identificar los factores de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
           </div>
           ${fuenteTag}
         </div>
@@ -9693,23 +9742,23 @@ function renderPaso2Diagnostico(){
   const hayCausalesIA = (s.causas || []).some(c => c._sugeridaPorIA === true);
   const bannerIA = hayCausalesIA
     ? `<div style="background:#E8F5EE;border-left:3px solid #2E7D52;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px">
-         <strong>Causas sugeridas por el análisis IA</strong> <span style="background:#1E3A2F;color:#fff;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;margin-left:4px">IA</span><br>
-         <span style="color:var(--muted)">Basadas en las brechas detectadas para tu colegio. Pasa el cursor por cada causal para ver el razonamiento. Puedes confirmarlas, desmarcarlas o agregar otras según tu criterio.</span>
+         <strong>Factores sugeridos por el análisis IA</strong> <span style="background:#1E3A2F;color:#fff;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;margin-left:4px">IA</span><br>
+         <span style="color:var(--muted)">Basados en las brechas detectadas para tu colegio. Pasa el cursor por cada factor para ver el razonamiento. Puedes confirmarlos, desmarcarlos o agregar otros según tu criterio.</span>
        </div>`
     : '';
 
   document.getElementById('planBody').innerHTML = `
     <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
-    <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
+    <p class="lead">Marca hasta 3 factores en orden de importancia. Si tu caso no encaja, agrega factores propios en Otros.</p>
     ${bannerIA}
-    ${grupoHtml('Causas estructurales y técnicas', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
-    ${grupoHtml('Causas relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
+    ${grupoHtml('Factores estructurales y técnicos', CAUSAS_TAXONOMIA.estructurales, 'ESTRUCTURAL')}
+    ${grupoHtml('Factores relacionales y culturales', CAUSAS_TAXONOMIA.relacionales, 'RELACIONAL')}
     <div class="plan-otros-box">
-      <h4>Otros — causas propias del contexto</h4>
-      <div class="plan-otros-sub">Adicionales a las 3 ranqueadas. Aportan contexto al sistema.</div>
+      <h4>Otros — factores propios del contexto</h4>
+      <div class="plan-otros-sub">Adicionales a los 3 ranqueados. Aportan contexto al sistema.</div>
       ${otrosHtml}
       <div class="plan-otros-add">
-        <input type="text" id="planOtroInput" placeholder="Escribe otra causa..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
+        <input type="text" id="planOtroInput" placeholder="Escribe otro factor..." onkeydown="if(event.key==='Enter')planAgregarOtro()">
         <button onclick="planAgregarOtro()">+ Agregar</button>
       </div>
     </div>
@@ -9722,7 +9771,7 @@ function renderPaso2Diagnostico(){
 
   const cnt = s.causas.length;
   document.getElementById('planFooter').innerHTML = `
-    <span class="info">Paso 3 de 7 · ${cnt} de 3 causas ranqueadas${s.causasOtros.length?' · '+s.causasOtros.length+' propias':''}</span>
+    <span class="info">Paso 3 de 7 · ${cnt} de 3 factores ranqueados${s.causasOtros.length?' · '+s.causasOtros.length+' propios':''}</span>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
       <button class="plan-btn-next" onclick="planGenerarPropuestas()" ${cnt===0&&s.causasOtros.length===0?'disabled':''}>Generar plan personalizado →</button>
@@ -9737,7 +9786,7 @@ function planToggleCausa(codigo, etiqueta, grupo){
     // Al agregar manualmente, NO marcar como sugerida por IA.
     s.causas.push({codigo,etiqueta,grupo});
   }
-  else { showToast('Máximo 3 causas ranqueadas. Usa Otros para más.'); return; }
+  else { showToast('Máximo 3 factores ranqueados. Usa Otros para más.'); return; }
   planMarcarCambio();
   renderPlanPaso();
 }
@@ -9886,7 +9935,7 @@ async function planGenerarPropuestas(){
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
       <p>Construyendo plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo factores curados · Nivel actual · Trayectoria de mejora</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
@@ -9898,7 +9947,7 @@ async function planGenerarPropuestas(){
       const causasAUsar = (s.causas||[]).length > 0 ? s.causas : [];
 
       if(causasAUsar.length === 0){
-        showToast('Selecciona al menos una causa en el Paso 3');
+        showToast('Selecciona al menos un factor en el Paso 3');
         s.paso = 3; renderPlanPaso(); return;
       }
 
@@ -12167,7 +12216,7 @@ function renderPlanResumenPedagogico(){
           Por qué este plan
         </div>
         <div style="font-size:15px;color:var(--text);line-height:1.6;margin-bottom:14px">
-          Identificamos las siguientes causas que explican por qué esta acción no se había logrado:
+          Identificamos los siguientes factores que explican por qué esta acción no se había logrado:
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           ${todasCausas.map(c => `<span style="background:var(--bg-soft,#f8f9fa);color:var(--text);font-size:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--border-light,#e8e8e8)">${escapeHtmlPlan(c)}</span>`).join('')}
@@ -12386,7 +12435,7 @@ async function planCerrarMicroaccion(){
 async function planNext(){
   const s = PLAN_STATE;
   if(s.paso===3 && s.banda!=='CONSOLIDACION' && s.causas.length===0 && s.causasOtros.length===0){
-    showToast('Selecciona al menos una causa o agrega un Otro');
+    showToast('Selecciona al menos un factor o agrega un Otro');
     return;
   }
   if(s.paso===3 && s.banda==='CONSOLIDACION' && s.consolidacionModos.length===0){
@@ -12413,7 +12462,7 @@ async function planIrAPaso(paso){
 
   // Validación: no saltar de paso 3 sin causas si van hacia adelante
   if(paso > 3 && (s.causas||[]).length === 0 && (s.causasOtros||[]).length === 0 && s.banda !== 'CONSOLIDACION'){
-    showToast('Selecciona al menos una causa antes de continuar');
+    showToast('Selecciona al menos un factor antes de continuar');
     return;
   }
 
