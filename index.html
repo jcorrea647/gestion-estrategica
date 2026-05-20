@@ -5490,7 +5490,7 @@ function generarPDFReunion() {
 
   var W=window.open('','_blank');
   if(!W){showToast('Permite ventanas emergentes para generar el PDF');return;}
-  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:60px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:40px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:24px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:28px;color:#1E3A2F;margin-bottom:8px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:20px;color:#2D5A42;margin-bottom:24px}.cover .meta-row{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px}.cover .meta-item{font-size:11px;color:#7A7670}.cover .meta-item strong{color:#1A1916}.section{margin-bottom:32px}.section-title{font-family:"DM Serif Display",serif;font-size:16px;color:#1E3A2F;border-bottom:2px solid #E4E0D8;padding-bottom:6px;margin-bottom:14px}.section-sub{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.verde{color:#2E7D52;font-weight:600}.amarillo{color:#B8860B;font-weight:600}.rojo{color:#9B2335;font-weight:600}.sin_datos{color:#7A7670}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.pendiente{background:#FDF6E3;color:#C4962A}.comentario-box{font-size:10px;background:#F9F8F6;padding:6px 10px;border-left:3px solid #2D5A42;border-radius:3px;margin-top:4px;white-space:pre-wrap}.com-card{background:#F9F8F6;border-left:4px solid #2D5A42;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid}.com-card .com-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;flex-wrap:wrap}.com-card .com-acc{font-weight:600;font-size:12px;color:#1E3A2F}.com-card .com-meta{font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5px}.com-card .com-text{font-size:11px;line-height:1.6;color:#1A1916;white-space:pre-wrap}.participantes-r{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center}.participante-r{background:#F4F2EE;border:1px solid #E4E0D8;border-radius:16px;padding:3px 12px;font-size:10px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
+  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap");*{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;color:#1A1916;font-size:11px;line-height:1.6}.page{max-width:800px;margin:0 auto;padding:40px}@media print{.page{padding:20px;max-width:100%}.no-print{display:none}}.cover{text-align:center;padding:60px 40px;border-bottom:3px solid #1E3A2F;margin-bottom:40px}.cover .logo-r{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#7A7670;margin-bottom:24px}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:28px;color:#1E3A2F;margin-bottom:8px}.cover .rtitulo{font-family:"DM Serif Display",serif;font-size:20px;color:#2D5A42;margin-bottom:24px}.cover .meta-row{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px}.cover .meta-item{font-size:11px;color:#7A7670}.cover .meta-item strong{color:#1A1916}.section{margin-bottom:38px;page-break-inside:avoid}.section-title{font-family:"DM Serif Display",serif;font-size:22px;color:#1E3A2F;border-top:3px solid #1E3A2F;border-bottom:1px solid #E4E0D8;padding:14px 0 8px;margin-bottom:16px;display:flex;align-items:baseline;gap:14px}.section-num{font-family:"DM Serif Display",serif;font-size:14px;color:#C5A572;letter-spacing:1.5px;font-weight:normal}.section-sub{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:#7A7670;margin-bottom:14px;margin-top:-10px}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px}th{background:#1E3A2F;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:9px;letter-spacing:.5px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #E4E0D8;vertical-align:top}tr:nth-child(even) td{background:#F9F8F6}.verde{color:#2E7D52;font-weight:600}.amarillo{color:#B8860B;font-weight:600}.rojo{color:#9B2335;font-weight:600}.sin_datos{color:#7A7670}.badge{display:inline-block;border-radius:12px;padding:1px 8px;font-size:9px;font-weight:600}.badge.verde{background:#E8F5EE;color:#2E7D52}.badge.amarillo{background:#FDF6E3;color:#B8860B}.badge.rojo{background:#FCEEED;color:#9B2335}.badge.pendiente{background:#FDF6E3;color:#C4962A}.comentario-box{font-size:10px;background:#F9F8F6;padding:6px 10px;border-left:3px solid #2D5A42;border-radius:3px;margin-top:4px;white-space:pre-wrap}.com-card{background:#F9F8F6;border-left:4px solid #2D5A42;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid}.com-card .com-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;flex-wrap:wrap}.com-card .com-acc{font-weight:600;font-size:12px;color:#1E3A2F}.com-card .com-meta{font-size:9px;color:#7A7670;text-transform:uppercase;letter-spacing:.5px}.com-card .com-text{font-size:11px;line-height:1.6;color:#1A1916;white-space:pre-wrap}.participantes-r{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center}.participante-r{background:#F4F2EE;border:1px solid #E4E0D8;border-radius:16px;padding:3px 12px;font-size:10px}.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2)}.print-btn:hover{background:#2D5A42}';
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+reunion.titulo+'</title><style>'+pdfCSS+'</style></head><body>';
   html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
 
@@ -5537,13 +5537,87 @@ function generarPDFReunion() {
   }
   html+='</div>';
 
+  // ============================================================
+  // INTRODUCCIÓN NARRATIVA — Contexto de la sesión
+  // ============================================================
+  // Construye un párrafo que explique a grandes rasgos qué se hizo y qué
+  // se evaluó en esta reunión: meses cubiertos, cantidad de acciones
+  // revisadas, áreas con datos, comentarios registrados, planes activos.
+  // Es la entrada al documento — orienta a quien lo abra meses después.
+  // ============================================================
+  var introTotal = accionesConSeg.length;
+  var introConDato = accionesConSeg.filter(function(it){ return it.seg && (it.seg.porcentaje != null); }).length;
+  var introConComm = accionesConSeg.filter(function(it){ return it.seg && it.seg.comentario && it.seg.comentario.trim(); }).length;
+  var introPendientes = accionesConSeg.filter(function(it){ return it.seg && it.seg.pendiente; }).length;
+
+  // Áreas con datos en el período
+  var areasConDatoIntro = {};
+  accionesConSeg.forEach(function(it){
+    if(it.seg && it.seg.porcentaje != null){
+      var ar = (typeof _areaDeAccion === 'function') ? _areaDeAccion(it.ac.id) : null;
+      if(ar) areasConDatoIntro[ar.nombre] = true;
+    }
+  });
+  var areasIntroLista = Object.keys(areasConDatoIntro);
+
+  var planesActivosIntro = (DB.microacciones || []).filter(function(m){ return m.estado === 'ACTIVA'; }).length;
+
+  // Construcción del párrafo
+  // Calcular promedio de avance del período evaluado para incluirlo en la síntesis
+  var introSumPct = 0, introNumPct = 0;
+  accionesConSeg.forEach(function(it){
+    if(it.seg && it.seg.porcentaje != null){
+      introSumPct += Number(it.seg.porcentaje) || 0;
+      introNumPct += 1;
+    }
+  });
+  var introPromedio = introNumPct > 0 ? Math.round(introSumPct / introNumPct) : null;
+
+  var intro = '';
+  intro += 'Esta sesión, realizada el <strong>'+reunion.fecha+'</strong>, reunió al equipo del <strong>'+DB.colegio.nombre+'</strong> para revisar el avance del Plan de Mejoramiento Educativo correspondiente al período de <strong>'+(mesesLabel||'sin meses definidos')+'</strong>';
+  if(reunion.consultor_nombre){ intro += ', con acompañamiento de '+reunion.consultor_nombre; }
+  intro += '. ';
+
+  if(introTotal > 0){
+    intro += 'Durante el encuentro se evaluaron <strong>'+introTotal+' acciones</strong>';
+    if(areasIntroLista.length === 1){
+      intro += ' del área de <strong>'+areasIntroLista[0]+'</strong>';
+    } else if(areasIntroLista.length > 1){
+      intro += ' distribuidas en las áreas de <strong>'+areasIntroLista.join(', ')+'</strong>';
+    }
+    intro += ', registrando dato cuantitativo en '+introConDato+' de ellas';
+    if(introPendientes > 0){ intro += ' y dejando '+introPendientes+' como pendiente de evaluación'; }
+    intro += '. ';
+    if(introPromedio !== null){
+      var nivelTxt = introPromedio >= 90 ? 'logrado' : introPromedio >= 70 ? 'en proceso satisfactorio' : introPromedio >= 40 ? 'en proceso con brechas' : 'crítico';
+      intro += 'El <strong>promedio de avance del período es '+introPromedio+'%</strong>, lo que ubica al período en un nivel <strong>'+nivelTxt+'</strong>. ';
+    }
+  }
+
+  if(introConComm > 0){
+    intro += 'Adicionalmente, el equipo levantó <strong>'+introConComm+' comentarios cualitativos</strong> que profundizan en el contexto de la ejecución y las razones detrás de los avances o brechas identificadas. ';
+  }
+
+  if(planesActivosIntro > 0){
+    intro += 'A la fecha, el colegio mantiene <strong>'+planesActivosIntro+' microplan(es) de mejora activos</strong> en cartera, cuyo detalle operativo —alternativas, responsables, plazos y avance— se desarrolla al final de este documento. ';
+  }
+
+  intro += '<br><br><span style="font-size:11px;color:#5F5E5A">El presente informe se estructura en seis secciones: comentarios generales de la sesión, comentarios registrados por acción, detalle por acción del/los mes(es), resumen mensual por área, metas por evaluar próximamente, y los microplanes vigentes.</span>';
+
+  html+='<div style="background:#F9F8F6;border-left:4px solid #2D5A42;padding:18px 22px;margin-bottom:32px;border-radius:0 4px 4px 0;page-break-inside:avoid">';
+  html+='<div style="font-family:\'DM Serif Display\',serif;font-size:14px;color:#1E3A2F;margin-bottom:10px">Síntesis de la sesión</div>';
+  html+='<div style="font-size:12px;line-height:1.75;color:#1A1916">'+intro+'</div>';
+  html+='</div>';
+
   // COMENTARIOS GENERALES
-  html+='<div class="section"><div class="section-title">Comentarios Generales</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">1</span>Comentarios Generales</div>';
+  html+='<div class="section-sub">Notas y observaciones registradas en la sesión</div>';
   html+=reunion.comentarios_generales?'<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>':'<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
   html+='</div>';
 
   // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario)
-  html+='<div class="section"><div class="section-title">Comentarios Registrados</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">2</span>Comentarios Registrados</div>';
+  html+='<div class="section-sub">Texto literal de lo conversado por cada acción evaluada</div>';
   if(soloComentarios.length){
     // Agrupar por mes
     var porMes = {};
@@ -5582,7 +5656,7 @@ function generarPDFReunion() {
   html+='</div>';
 
   // TABLA DETALLE POR ACCION (todas, con o sin comentario)
-  html+='<div class="section"><div class="section-title">Detalle por Acción</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">3</span>Detalle por Acción</div>';
   if(accionesConSeg.length){
     var grupo = '';
     mesesReunion.forEach(function(m){
@@ -5614,7 +5688,8 @@ function generarPDFReunion() {
 
   // RESUMEN MENSUAL POR ÁREA — Análisis detallado de cómo se desempeñó cada dimensión PME
   // y cada acción dentro del/los mes(es) evaluado(s) en esta reunión.
-  html+='<div class="section"><div class="section-title">Resumen Mensual por Área</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">4</span>Resumen Mensual por Área</div>';
+  html+='<div class="section-sub">Avance de cada dimensión PME y cada acción en el/los mes(es) evaluado(s)</div>';
   html+='<table><thead><tr><th>Área</th>'+mesesAll.map(function(m){return '<th style="text-align:center">'+fmtMes(m,true)+'</th>';}).join('')+'</tr></thead><tbody>';
   DB.areas.forEach(function(area){html+='<tr><td style="font-weight:500">'+area.nombre+'</td>';mesesAll.forEach(function(m){var v=calcArea(area.id,m),e=getEstado(v);html+='<td style="text-align:center"><span class="'+(e==='sin_datos'?'sin_datos':e)+'">'+(v!==null?v+'%':'-')+'</span></td>';});html+='</tr>';});
   html+='</tbody></table>';
@@ -5623,7 +5698,8 @@ function generarPDFReunion() {
   html+='</tbody></table></div>';
 
   // METAS POR EVALUAR
-  html+='<div class="section"><div class="section-title">Metas por Evaluar</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">5</span>Metas por Evaluar</div>';
+  html+='<div class="section-sub">Acciones programadas para los próximos meses · qué viene en las siguientes sesiones</div>';
   html+='<table><thead><tr><th>Accion</th><th>Descripcion</th><th>Area</th><th>Meses de evaluacion</th><th style="text-align:center">Estado</th></tr></thead><tbody>';
   metasPorEvaluar.forEach(function(item){
     var ac=item.ac,seg=item.seg,area=item.area,pm=item.pm;
@@ -5653,7 +5729,7 @@ function generarPDFReunion() {
     return da - db;
   });
 
-  html+='<div class="section"><div class="section-title">Microplanes de Mejora</div>';
+  html+='<div class="section"><div class="section-title"><span class="section-num">6</span>Microplanes de Mejora</div>';
   html+='<div class="section-sub">'+planesInforme.length+' plan(es) activo(s) en cartera del colegio · detalle operativo</div>';
 
   if(!planesInforme.length){
