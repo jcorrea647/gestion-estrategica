@@ -3628,8 +3628,13 @@ async function ejecutarRestauracion() {
         }
         // Para tablas que tienen ID, conservamos el ID original si no choca; si hay choque, dejamos que la BD genere uno nuevo
         const idOriginal = payload.id;
-        // Quitar id para que la BD genere uno nuevo (más seguro para evitar choques)
-        if('id' in payload && tabla !== 'accion_responsable') {
+        // Quitar id para que la BD genere uno nuevo (más seguro para evitar choques).
+        // Excepciones:
+        //   - 'accion_responsable': sin columna id propia (tabla pivote).
+        //   - 'denuncias': la columna id es text (ej. "Caso_001_..."), no uuid,
+        //     y no tiene default — el id que viene en el backup ES el id correcto.
+        const tablasConservanId = ['accion_responsable', 'denuncias'];
+        if('id' in payload && !tablasConservanId.includes(tabla)) {
           delete payload.id;
         }
 
