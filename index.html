@@ -3392,10 +3392,18 @@ async function analizarBackup() {
     errEl.style.display='block';
     return;
   }
-  if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
-    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1. Descarga un backup nuevo.';
-    errEl.style.display='block';
-    return;
+  // Versiones soportadas: cualquier 2.x (2.0, 2.1, 2.4, 2.4.1, etc.)
+  // El merge es aditivo (solo agrega lo que no existe), así que campos nuevos en
+  // versiones futuras son inofensivos: si la tabla destino no los tiene, Supabase
+  // los ignora; si los tiene, los rellena con el valor del backup.
+  if(backup.meta.version) {
+    const v = String(backup.meta.version);
+    const major = v.split('.')[0];
+    if(major !== '2') {
+      errEl.textContent='Versión de backup no soportada: '+v+'. Esperado 2.x. Descarga un backup nuevo.';
+      errEl.style.display='block';
+      return;
+    }
   }
 
   // Buscar el colegio activo en el backup por RBD
