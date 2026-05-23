@@ -12873,8 +12873,8 @@ function _areaBadge(area){
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
-  return Math.round(completos / pasos.length * 100);
+ const suma = pasos.reduce((acc,p) => acc + (p.estado === 'COMPLETADO' ? 100 : (Number(p.porcentaje_avance)||0)), 0);
+return Math.round(suma / pasos.length);
 }
 
 /* Etiqueta de estado con color */
