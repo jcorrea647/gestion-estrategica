@@ -8799,7 +8799,7 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
+  const PASO_LABELS = ['','Marco','Brechas','Factores','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
   for(let i=1;i<=5;i++){
@@ -9084,7 +9084,7 @@ async function renderPaso1Contexto(){
       return `<span${tip} style="display:inline-block;font-size:13px;padding:5px 11px;border-radius:14px;background:#EFEEEA;color:#444441;border:1px solid #DDD9CF;margin:0 0 6px 6px">${escapeHtmlPlan(etiq)}</span>`;
     }).join('');
     const causalesBloque = causalesPills
-      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Causales asociadas</div>${causalesPills}</div>`
+      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Factores asociados</div>${causalesPills}</div>`
       : '<div></div>';
     const sep = i < bullets.length - 1 ? 'border-bottom:1px solid rgba(0,0,0,0.06);' : '';
     return `
@@ -9155,7 +9155,7 @@ async function renderPaso1Contexto(){
           frase = nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1];
         }
         const cantidad = nombres.length;
-        cierre = 'Las ' + cantidad + ' causales más recurrentes por tanto son ' + frase + '.';
+        cierre = 'Los ' + cantidad + ' factores más recurrentes por tanto son ' + frase + '.';
         console.log('[resumen] frase de cierre generada por el frontend:', cierre);
       }
     }
@@ -9194,7 +9194,7 @@ async function renderPaso1Contexto(){
           ${resumenHtml}
           <ul style="list-style:none;padding:0;margin:0">${bulletsHtml}</ul>
           <div style="font-size:13px;line-height:1.65;color:#5F5E5A;font-style:italic;border-top:1px solid rgba(0,0,0,0.08);padding-top:14px;margin-top:16px">
-            Para esto te invitamos al siguiente paso, donde podrás identificar las causales de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
+            Para esto te invitamos al siguiente paso, donde podrás identificar los factores de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
           </div>
           ${fuenteTag}
         </div>
