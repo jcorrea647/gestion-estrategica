@@ -12604,6 +12604,7 @@ async function renderMisPlanes(){
             <option value="urgencia"${f.orden==='urgencia'?' selected':''}>Urgencia (vencidos primero)</option>
             <option value="cumplimiento"${f.orden==='cumplimiento'?' selected':''}>Cumplimiento (más bajo primero)</option>
             <option value="reciente"${f.orden==='reciente'?' selected':''}>Mes (más reciente primero)</option>
+            <option value="area"${f.orden==='area'?' selected':''}>Por área (agrupado)</option>
           </select>
         </div>
         ${(f.area||f.mes||f.estado||f.responsable)?`
@@ -12624,12 +12625,12 @@ async function renderMisPlanes(){
         </div>
       </div>`;
   } else {
-    html += '<div class="card" style="padding:0;overflow:hidden">';
-    html += '<div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">';
-    html += '<div>Acción</div><div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Próximo plazo</div><div></div>';
-    html += '</div>';
-
-    lista.forEach(m => {
+    // Helper inline: HTML de una fila de plan. Se usa tanto en el render plano
+    // (urgencia/cumplimiento/reciente) como en el agrupado por área.
+    // El parámetro `incluirAreaBadge` controla si se muestra el badge del área
+    // dentro de la fila — en modo agrupado lo omitimos porque el encabezado
+    // de la sección ya identifica el área.
+    const _filaPlanHTML = (m, incluirAreaBadge) => {
       const accion = (DB.acciones||[]).find(a => a.id === m.accion_id);
       const accionNombre = accion?.nombre || '(acción eliminada)';
       const cumpl = _cumplimientoPlan(m.id);
@@ -12640,9 +12641,9 @@ async function renderMisPlanes(){
       const respDisplay = respText
         ? escapeHtmlPlan(respText)
         : '<span style="color:var(--muted)">Sin asignar</span>';
-      const areaPlan = _areaDeAccion(m.accion_id);
+      const areaPlan = incluirAreaBadge ? _areaDeAccion(m.accion_id) : null;
 
-      html += `
+      return `
         <div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-light,#f0f0f0);align-items:center;cursor:pointer;transition:background .12s"
              onmouseover="this.style.background='var(--bg-soft,#f8f9fa)'"
              onmouseout="this.style.background=''"
@@ -12658,8 +12659,84 @@ async function renderMisPlanes(){
           <div>${_plazoBadge(m.fecha_objetivo)}</div>
           <div style="text-align:right;color:var(--muted);font-size:14px">›</div>
         </div>`;
-    });
-    html += '</div>';
+    };
+
+    // Encabezado común de columnas (acción / mes / estado / cumplimiento / plazo)
+    const _encabezadoColumnasHTML = () =>
+      '<div style="display:grid;grid-template-columns:2.2fr 0.7fr 0.8fr 1fr 1fr 0.5fr;gap:12px;padding:12px 16px;background:var(--bg-soft,#f8f9fa);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">'
+      + '<div>Acción</div><div>Mes</div><div>Estado</div><div>Cumplimiento</div><div>Próximo plazo</div><div></div>'
+      + '</div>';
+
+    if(f.orden === 'area'){
+      // Modo agrupado: una "card" por área con su encabezado grande, contador y
+      // promedio de cumplimiento. Dentro de cada área, las acciones van
+      // alfabéticas por nombre. El badge de área se omite dentro de cada fila
+      // porque ya está en el encabezado de la sección.
+      const grupos = new Map();
+      lista.forEach(m => {
+        const area = _areaDeAccion(m.accion_id);
+        const key = area ? area.id : '__sin_area__';
+        if(!grupos.has(key)) grupos.set(key, { area: area, items: [] });
+        grupos.get(key).items.push(m);
+      });
+
+      // Ordenar grupos por area.orden (mismo criterio que areasUnicas), con los
+      // sin área al final.
+      const gruposOrdenados = Array.from(grupos.values()).sort((g1, g2) => {
+        if(!g1.area) return 1;
+        if(!g2.area) return -1;
+        return (g1.area.orden ?? 999) - (g2.area.orden ?? 999)
+          || (g1.area.nombre||'').localeCompare(g2.area.nombre||'');
+      });
+
+      gruposOrdenados.forEach(g => {
+        // Items alfabéticos por nombre de acción
+        g.items.sort((a, b) => {
+          const na = ((DB.acciones||[]).find(x => x.id === a.accion_id)?.nombre || '').toLowerCase();
+          const nb = ((DB.acciones||[]).find(x => x.id === b.accion_id)?.nombre || '').toLowerCase();
+          return na.localeCompare(nb);
+        });
+
+        const areaNombre = g.area?.nombre || 'Sin área';
+        const c = _colorDeArea(g.area);
+        // Cumplimiento promedio del grupo (solo con valores no-null)
+        const cumplValores = g.items.map(m => _cumplimientoPlan(m.id)).filter(v => v !== null);
+        const cumplProm = cumplValores.length
+          ? Math.round(cumplValores.reduce((a,b)=>a+b,0) / cumplValores.length)
+          : null;
+        const cumplTxt = cumplProm !== null
+          ? ` · cumplimiento promedio ${cumplProm}%`
+          : '';
+        const nItems = g.items.length;
+        const itemsLabel = nItems === 1 ? '1 acción' : (nItems + ' acciones');
+
+        html += `<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">`;
+        // Encabezado de área — fondo neutro (gris claro), tipografía oscura.
+        // El cuadrado de la inicial es lo único coloreado, usa el color
+        // distintivo del área (c.fg) para que se identifique visualmente
+        // sin invadir el resto del encabezado.
+        html += `
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#F1EFE8;border-bottom:1px solid var(--border)">
+            <div style="width:32px;height:32px;background:${c.fg};border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0">
+              ${escapeHtmlPlan(areaNombre.charAt(0).toUpperCase())}
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:#2C2C2A;text-transform:uppercase;letter-spacing:.04em">${escapeHtmlPlan(areaNombre)}</div>
+              <div style="font-size:11px;color:#5F5E5A;margin-top:1px">${itemsLabel}${cumplTxt}</div>
+            </div>
+            <div style="font-size:22px;font-weight:700;color:#2C2C2A;line-height:1">${nItems}</div>
+          </div>`;
+        html += _encabezadoColumnasHTML();
+        g.items.forEach(m => { html += _filaPlanHTML(m, false); });
+        html += `</div>`;
+      });
+    } else {
+      // Modo plano: encabezado de columnas + filas en una sola card
+      html += '<div class="card" style="padding:0;overflow:hidden">';
+      html += _encabezadoColumnasHTML();
+      lista.forEach(m => { html += _filaPlanHTML(m, true); });
+      html += '</div>';
+    }
   }
 
   main.innerHTML = html;
