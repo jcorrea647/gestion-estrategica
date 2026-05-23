@@ -8660,12 +8660,12 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">🔁</div>
         <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px">Continuar de ${escapeHtmlPlan(mesAnteriorLabel)}</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Mismas causales, mismos pasos, mismas asignaciones (con aviso para confirmar).
+          Mismos factores, mismos pasos, mismas asignaciones (con aviso para confirmar).
           Sumás un mes más a la estrategia que ya venías trabajando.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
           <div>📋 ${numPasos} paso(s) ya definidos</div>
-          <div style="margin-top:3px">🎯 Causales: ${escapeHtmlPlan(causasNombres)}</div>
+          <div style="margin-top:3px">🎯 Factores: ${escapeHtmlPlan(causasNombres)}</div>
         </div>
         <div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
           Recomendado si la realidad no cambió
@@ -8677,7 +8677,7 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">✏</div>
         <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Empezar plan nuevo</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Partís desde la versión institucional. Volves a diagnosticar causales
+          Partís desde la versión institucional. Volves a diagnosticar factores
           y construir el plan según lo que está pasando hoy.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
@@ -9587,7 +9587,7 @@ async function planGenerarPropuestas(){
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
       <p>Construyendo plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo factores curados · Nivel actual · Trayectoria de mejora</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
@@ -13540,7 +13540,7 @@ function _mapaRenderNiveles(accionNombre, porNivel){
     const { unidades } = _mapaContarUnidades(sec);
     const desglose = [
       nAmbitos ? (nAmbitos + ' ámbito' + (nAmbitos>1?'s':'')) : null,
-      nCausales ? (nCausales + ' causal' + (nCausales>1?'es':'')) : null
+      nCausales ? (nCausales + ' factor' + (nCausales>1?'es':'')) : null
     ].filter(Boolean).join(' · ');
 
     html += `
