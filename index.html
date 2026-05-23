@@ -6857,17 +6857,19 @@ const PLAN_CSS = `
 .plan-drawer.show{display:flex;transform:translateY(0);opacity:1}
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
-.plan-header{background:var(--accent);color:#fff;padding:16px 24px;
+.plan-header{background:var(--accent);color:#fff;padding:14px 24px;
   display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-shrink:0}
 .plan-header-info{flex:1;min-width:0}
-.plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400}
-.plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
-.plan-header-desc{font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.78);margin-top:8px;
+.plan-header-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400;flex:1;min-width:0}
+.plan-header-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);white-space:nowrap}
+.plan-header-desc{font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.78);margin-top:6px;
   max-width:780px;display:none}
 .plan-header-desc.show{display:block}
-.plan-header-meta{display:none;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.plan-header-meta{display:none;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .plan-header-meta.show{display:flex}
-.plan-header-meta-pct{font-family:'DM Serif Display',serif;font-size:20px;font-weight:400;color:#fff;line-height:1}
+.plan-header-meta-pct{font-family:'DM Serif Display',serif;font-size:18px;font-weight:400;color:#fff;line-height:1}
 .plan-header-meta-pct-label{font-size:9.5px;font-weight:600;letter-spacing:1px;
   text-transform:uppercase;color:rgba(255,255,255,.55);margin-right:6px}
 .plan-header-meta-nivel{display:inline-flex;align-items:center;border-radius:20px;
@@ -8711,10 +8713,14 @@ function asegurarDrawer(){
   dw.innerHTML = `
     <div class="plan-header">
       <div class="plan-header-info">
-        <h2 id="planTitle">Plan de mejora</h2>
-        <div class="plan-sub" id="planSubtitle"></div>
+        <div class="plan-header-top">
+          <h2 id="planTitle">Plan de mejora</h2>
+          <div class="plan-header-right">
+            <div class="plan-sub" id="planSubtitle"></div>
+            <div class="plan-header-meta" id="planHeaderMeta"></div>
+          </div>
+        </div>
         <div class="plan-header-desc" id="planHeaderDesc"></div>
-        <div class="plan-header-meta" id="planHeaderMeta"></div>
       </div>
       <button class="plan-close" onclick="cerrarPlan()">×</button>
     </div>
