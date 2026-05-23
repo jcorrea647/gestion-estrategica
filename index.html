@@ -7631,9 +7631,18 @@ let PLAN_BRECHAS_LOADING = false;
 
 // Helper: valida que una respuesta de brechas tenga _meta.version compatible
 // con la edge function actual. Si no, se considera obsoleta y forzamos regenerar.
-// VERSIONES_VIGENTES: lista de versiones aceptadas. Para forzar regeneración
-// global, basta con sacar versiones viejas de esta lista.
-const VERSIONES_BRECHAS_VIGENTES = ['v8.3'];
+//
+// VERSIONES_BRECHAS_VIGENTES: regex de versiones aceptadas. Aceptamos cualquier
+// minor de v8 (v8.0, v8.1, v8.2, v8.3, v8.4, ..., v8.99) porque los bumps de
+// minor son cambios compatibles del prompt o del payload sin romper el shape
+// de respuesta. Si en algún momento se rompe el shape (ej. v9.0), bajaremos a
+// una lista cerrada o cambiaremos el regex.
+//
+// HISTÓRICO: antes esto era una whitelist cerrada ['v8.3']. Cuando la edge
+// function bumpeó a v8.4, todos los planes guardados eran rechazados como
+// "no vigentes" y se regeneraba con IA en cada apertura (27 segundos por
+// apertura, costo de IA en cada una). El regex evita ese tipo de drift.
+const VERSIONES_BRECHAS_VIGENTES = /^v8\.\d+$/;
 function esBrechaVigente(b) {
   if (!b || typeof b !== 'object') return false;
   // Si hay error o modo distinto a PERSONALIZADO, no es vigente
@@ -7642,7 +7651,7 @@ function esBrechaVigente(b) {
   if (b.modo === 'FALLBACK_SIN_CONTEXTO') return true;
   const v = b?._meta?.version;
   if (!v) return false;
-  return VERSIONES_BRECHAS_VIGENTES.includes(v);
+  return VERSIONES_BRECHAS_VIGENTES.test(v);
 }
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
