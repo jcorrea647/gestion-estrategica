@@ -11665,16 +11665,8 @@ function renderPlanResumenPedagogico(){
     return;
   }
   const pasos = (DB.pasos||[]).filter(p=>p.microaccion_id===ma.id);
-  // % avance: promedio de porcentaje_avance por paso (consistente con _cumplimientoPlan
-  // en la vista "Mis planes"). Antes contaba solo COMPLETADO, lo que hacía que un plan
-  // con sliders en 70%, 90% mostrara 0%.
-  const pct = pasos.length
-    ? Math.round(pasos.reduce((a,p) => {
-        if(p.estado === 'COMPLETADO') return a + 100;
-        const v = Number(p.porcentaje_avance);
-        return a + (isFinite(v) ? Math.max(0, Math.min(100, v)) : 0);
-      }, 0) / pasos.length)
-    : 0;
+  const completos = pasos.filter(p=>p.estado==='COMPLETADO').length;
+  const pct = pasos.length ? Math.round(completos/pasos.length*100) : 0;
   const accion = (DB.acciones||[]).find(a => a.id === ma.accion_id);
 
   const maxPlazo = pasos.length ? Math.max(...pasos.map(p => p.plazo_dias||0)) : 0;
@@ -11851,15 +11843,8 @@ function renderPasoExistente(){
     return;
   }
   const pasos = (DB.pasos||[]).filter(p=>p.microaccion_id===ma.id);
-  // % avance: promedio de porcentaje_avance por paso (consistente con _cumplimientoPlan
-  // y renderPlanResumenPedagogico). Refleja sliders parciales además de COMPLETADO.
-  const pct = pasos.length
-    ? Math.round(pasos.reduce((a,p) => {
-        if(p.estado === 'COMPLETADO') return a + 100;
-        const v = Number(p.porcentaje_avance);
-        return a + (isFinite(v) ? Math.max(0, Math.min(100, v)) : 0);
-      }, 0) / pasos.length)
-    : 0;
+  const completos = pasos.filter(p=>p.estado==='COMPLETADO').length;
+  const pct = pasos.length ? Math.round(completos/pasos.length*100) : 0;
 
   const pasosHtml = pasos.map((p,i)=>{
     const done = p.estado==='COMPLETADO';
@@ -12237,20 +12222,12 @@ function _areaBadge(area){
   return `<span style="background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;border:1px solid ${c.borde}33">${escapeHtmlPlan(area.nombre)}</span>`;
 }
 
-/* % cumplimiento del plan = promedio del porcentaje_avance de cada paso.
- * Antes solo contaba pasos COMPLETADO (todo o nada), lo que dejaba en 0% planes
- * donde los pasos están en progreso parcial (slider en 70%, 90%, etc.).
- * Ahora promedia el porcentaje_avance real de cada paso. Si un paso está
- * COMPLETADO se asume 100%, si no tiene porcentaje_avance se asume 0%. */
+/* % cumplimiento del plan = pasos completados / pasos totales (de la tabla microacciones_pasos) */
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const suma = pasos.reduce((acc, p) => {
-    if(p.estado === 'COMPLETADO') return acc + 100;
-    const pct = Number(p.porcentaje_avance);
-    return acc + (isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0);
-  }, 0);
-  return Math.round(suma / pasos.length);
+  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
+  return Math.round(completos / pasos.length * 100);
 }
 
 /* Etiqueta de estado con color */
@@ -12404,7 +12381,7 @@ async function renderMisPlanes(){
       <div class="kpi-card ${cumplimientoPromedio===null?'':(cumplimientoPromedio>=70?'verde':cumplimientoPromedio>=40?'amarillo':'rojo')}">
         <div class="kpi-val">${cumplimientoPromedio===null?'—':cumplimientoPromedio+'%'}</div>
         <div class="kpi-label">Cumplim. promedio</div>
-        <div class="kpi-badge">Avance ponderado</div>
+        <div class="kpi-badge">Pasos completados</div>
       </div>
     </div>
 
