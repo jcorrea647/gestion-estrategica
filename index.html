@@ -6858,12 +6858,25 @@ const PLAN_CSS = `
 @keyframes fadePlan{from{opacity:0}to{opacity:1}}
 
 .plan-header{background:var(--accent);color:#fff;padding:16px 24px;
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-shrink:0}
+.plan-header-info{flex:1;min-width:0}
 .plan-header h2{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;font-weight:400}
 .plan-header .plan-sub{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.plan-header-desc{font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.78);margin-top:8px;
+  max-width:780px;display:none}
+.plan-header-desc.show{display:block}
+.plan-header-meta{display:none;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.plan-header-meta.show{display:flex}
+.plan-header-meta-pct{font-family:'DM Serif Display',serif;font-size:20px;font-weight:400;color:#fff;line-height:1}
+.plan-header-meta-pct-label{font-size:9.5px;font-weight:600;letter-spacing:1px;
+  text-transform:uppercase;color:rgba(255,255,255,.55);margin-right:6px}
+.plan-header-meta-nivel{display:inline-flex;align-items:center;border-radius:20px;
+  padding:3px 11px;font-size:10.5px;font-weight:700;letter-spacing:.4px;
+  text-transform:uppercase;line-height:1.4}
+.plan-header-meta-sep{color:rgba(255,255,255,.3);font-size:11px}
 .plan-close{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
   color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;
-  display:flex;align-items:center;justify-content:center}
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .plan-close:hover{background:rgba(255,255,255,.22)}
 
 .plan-progress{display:flex;gap:3px;padding:10px 20px 0;background:var(--surface2);
@@ -8525,6 +8538,13 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
   document.body.style.overflow='hidden';
   document.getElementById('planTitle').textContent = accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: ' + (typeof fmtMes==='function' ? fmtMes(mesActual) : mesActual);
+  // En la pantalla de "Continuar / Empezar nuevo" todavía no hay PLAN_STATE
+  // completo (no se ha decidido qué hacer con el plan anterior). Limpiamos
+  // explícitamente desc y meta para no arrastrar datos del drawer anterior.
+  const _hDesc = document.getElementById('planHeaderDesc');
+  const _hMeta = document.getElementById('planHeaderMeta');
+  if(_hDesc){ _hDesc.textContent = accion?.descripcion || ''; _hDesc.classList.toggle('show', !!accion?.descripcion); }
+  if(_hMeta){ _hMeta.innerHTML = ''; _hMeta.classList.remove('show'); }
 
   const prog = document.getElementById('planProgress');
   if(prog) prog.innerHTML = '';
@@ -8665,9 +8685,11 @@ function asegurarDrawer(){
   dw.id='planDrawer'; dw.className='plan-drawer';
   dw.innerHTML = `
     <div class="plan-header">
-      <div>
+      <div class="plan-header-info">
         <h2 id="planTitle">Plan de mejora</h2>
         <div class="plan-sub" id="planSubtitle"></div>
+        <div class="plan-header-desc" id="planHeaderDesc"></div>
+        <div class="plan-header-meta" id="planHeaderMeta"></div>
       </div>
       <button class="plan-close" onclick="cerrarPlan()">×</button>
     </div>
@@ -8683,6 +8705,10 @@ function renderPlanPaso(){
   const s = PLAN_STATE;
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
+
+  // Header enriquecido: descripción + porcentaje + nivel de logro.
+  // Visible tanto en el wizard (pasos 1-5) como en la vista de plan existente (paso 99).
+  _planActualizarHeaderDrawer();
 
   const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
@@ -8734,10 +8760,81 @@ function renderPlanPaso(){
 }
 
 /* ====================== HELPER: HEADER CONSISTENTE DEL WIZARD ====================== */
+// Actualiza el header superior del drawer (barra verde) con:
+//   - descripción de la acción
+//   - porcentaje de logro
+//   - pill de nivel (Inicial / Básico / En Desarrollo / Satisfactorio / Consolidado)
+// Se llama desde renderPlanPaso() en cada navegación, así queda consistente
+// tanto en el wizard como en la vista de plan ACTIVA (paso 99).
+function _planActualizarHeaderDrawer(){
+  const s = PLAN_STATE;
+  const descEl = document.getElementById('planHeaderDesc');
+  const metaEl = document.getElementById('planHeaderMeta');
+  if(!descEl || !metaEl) return;
+  if(!s){
+    descEl.textContent = ''; descEl.classList.remove('show');
+    metaEl.innerHTML = '';  metaEl.classList.remove('show');
+    return;
+  }
+
+  // Descripción de la acción
+  const desc = s.accion?.descripcion || '';
+  if(desc){
+    descEl.textContent = desc;
+    descEl.classList.add('show');
+  } else {
+    descEl.textContent = '';
+    descEl.classList.remove('show');
+  }
+
+  // Porcentaje: si estamos en plan existente (paso 99), preferimos el % real
+  // de pasos completados; si estamos en el wizard, usamos s.pct (el % de logro
+  // de la acción PME que motivó la creación del plan).
+  let pct = null;
+  if(s.paso === 99 && s.existente && s.existente.id){
+    const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === s.existente.id);
+    if(pasos.length){
+      // Promedio de porcentaje_avance de los pasos (más fiel que % completados)
+      const sum = pasos.reduce((a,p) => a + (Number(p.porcentaje_avance)||0), 0);
+      pct = Math.round(sum / pasos.length);
+    }
+  } else {
+    const raw = s.pct;
+    if(raw !== null && raw !== undefined && raw !== '' && !isNaN(raw)){
+      pct = Number(raw);
+    }
+  }
+
+  const nivel = nivelLogro(pct);
+
+  if(pct === null && !nivel){
+    metaEl.innerHTML = '';
+    metaEl.classList.remove('show');
+    return;
+  }
+
+  // Etiqueta contextual del % según pantalla
+  const pctLabel = (s.paso === 99) ? 'Avance del plan' : 'Logro actual';
+
+  const pctTxt = pct !== null
+    ? `<span><span class="plan-header-meta-pct-label">${pctLabel}</span><span class="plan-header-meta-pct">${Math.round(pct)}%</span></span>`
+    : '';
+  const nivelTxt = nivel
+    ? `<span class="plan-header-meta-nivel" style="background:${nivel.bg};color:${nivel.color}">${escapeHtmlPlan(nivel.nombre)}</span>`
+    : '';
+  const sep = (pctTxt && nivelTxt) ? '<span class="plan-header-meta-sep">·</span>' : '';
+  metaEl.innerHTML = `${pctTxt}${sep}${nivelTxt}`;
+  metaEl.classList.add('show');
+}
+
 // Genera el bloque "ACCIÓN PME · PASO X DE 7" con nombre, descripción, área,
 // porcentaje y nivel de logro. Se usa en todos los pasos (1 a 4) para mantener
 // contexto visual del director sobre qué acción está construyendo el plan y
 // en qué estado de logro se encuentra.
+// NOTA: Reemplazado por _planActualizarHeaderDrawer() que pinta esa info
+// directamente en la barra superior verde del drawer. Se conserva por si
+// se quisiera volver al patrón de header inline.
+// eslint-disable-next-line no-unused-vars
 function _planRenderHeaderAccion(pasoNumero){
   const s = PLAN_STATE;
   const accionNombre = s.accion?.nombre || '';
@@ -8787,8 +8884,6 @@ async function renderPaso1Contexto(){
   document.getElementById('planBody').innerHTML = `
     ${banner}
     <div class="plan-orient">Lo que verás aquí es un análisis automatizado para orientar tu decisión.</div>
-
-    ${_planRenderHeaderAccion(2)}
 
     <div id="planBrechasContenedor">
       <div class="plan-loading-inline" style="padding:40px 20px;justify-content:center">
@@ -9181,7 +9276,6 @@ function renderPaso2Diagnostico(){
     : '';
 
   document.getElementById('planBody').innerHTML = `
-    ${_planRenderHeaderAccion(3)}
     <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
     <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
     ${bannerIA}
@@ -9257,7 +9351,6 @@ function renderPaso2Consolidacion(){
   }).join('');
 
   document.getElementById('planBody').innerHTML = `
-    ${_planRenderHeaderAccion(3)}
     <h3>Modos de consolidación</h3>
     <p class="lead">Estás en banda Avanzada. Activa uno o varios modos. Son complementarios.</p>
     <div style="display:grid;gap:10px">${items}</div>
@@ -9689,7 +9782,6 @@ async function renderPaso4MarcoConceptual(){
   // Render con loading mientras carga la ficha
   document.getElementById('planBody').innerHTML = `
     <div class="aviso-disclaimer">Antes de mirar datos, leé el marco que sustenta el plan. Cuatro bullets por fuente — 60 segundos en total.</div>
-    ${_planRenderHeaderAccion(1)}
     <h3>Marco conceptual</h3>
     <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>marcos normativos chilenos</strong> (MBD, MBE, CPEIP y, cuando aplica, el Sistema de Desarrollo Profesional Docente) y en <strong>dos centros de investigación</strong> (CEPPE-UC y Harvard). Léelas antes de avanzar.</p>
     <div id="planMarcoContenedor">
@@ -10247,7 +10339,6 @@ function renderPaso4Constructor(){
     : '';
 
   document.getElementById('planBody').innerHTML = `
-    ${_planRenderHeaderAccion(4)}
     ${bannerFuentes}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px">
       <h3 style="margin:0">Construye tu plan</h3>
