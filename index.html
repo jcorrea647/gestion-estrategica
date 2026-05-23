@@ -4067,21 +4067,8 @@ function renderResumenEjecutivo() {
   const recs = generarRecomendaciones(data);
   const av = data.avanceGlobal;
 
-  // ── Período legible (para la fotografía instantánea) ──
-  let periodoTxt;
-  if(data.alcance === 'mes') {
-    periodoTxt = data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado';
-  } else {
-    if(data.mesesEval.length) {
-      const primero = data.mesesEval[0], ultimo = data.mesesEval[data.mesesEval.length-1];
-      periodoTxt = primero === ultimo ? fmtMes(primero) : 'acumulado ' + fmtMes(primero,true) + '–' + fmtMes(ultimo,true);
-    } else {
-      periodoTxt = 'sin datos registrados';
-    }
-  }
-
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
-  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+' · '+periodoTxt+'</div></div>';
+  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+'</div></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver a Informes</button>';
   html += '<button class="btn btn-export btn-sm" style="background:#1F4E79" onclick="descargarResumenWord()">📄 Word</button>';
@@ -4103,226 +4090,8 @@ function renderResumenEjecutivo() {
   }
   html += '</div>';
 
-  // ══════════════════════════════════════════════════════════════════
-  // RESUMEN EJECUTIVO — fotografía instantánea de < 2 minutos
-  // Estructura: Semáforo · KPIs big-picture · Logros/Alertas · Próximos pasos
-  // El detalle ampliado (narrativa + listas completas) queda en un <details>
-  // para preservar la lectura ejecutiva sin perder profundidad.
-  // ══════════════════════════════════════════════════════════════════
-
-  // ── Cálculos previos compartidos por las tarjetas ──
-  const planesAct = (DB.microacciones || []).filter(function(m){ return m.estado === 'ACTIVA'; });
-  let avancePromedioPlanes = null;
-  if(planesAct.length){
-    const cumpls = planesAct.map(function(m){ return (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null; }).filter(function(v){ return v !== null; });
-    if(cumpls.length) avancePromedioPlanes = Math.round(cumpls.reduce(function(s,x){return s+x;},0) / cumpls.length);
-  }
-  const planesVencidos = planesAct.filter(function(m){
-    const d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
-    return d !== null && d < 0;
-  }).length;
-  const totalAccionesEval = data.acciones.length;
-  const accionesCriticas = data.debilidades.length;
-  const accionesDestacadas = data.fortalezas.length;
-
-  // ── Semáforo: 3 luces (Rojo/Amarillo/Verde) según avance global ──
-  let semColor, semBg, semLabel, semGlosa;
-  if(av === null){
-    semColor = '#7A7670'; semBg = '#F4F2EE';
-    semLabel = 'Sin datos';
-    semGlosa = 'No hay registros suficientes para emitir un estado del período.';
-  } else if(av >= 70){
-    semColor = '#2E7D52'; semBg = '#E8F5EE';
-    semLabel = 'En curso';
-    semGlosa = 'El plan avanza dentro de lo esperado. Sostener el ritmo de seguimiento.';
-  } else if(av >= 50){
-    semColor = '#9C7918'; semBg = '#FDF6E3';
-    semLabel = 'Con observaciones';
-    semGlosa = 'Hay áreas con cumplimiento bajo el umbral. Requiere atención del equipo directivo.';
-  } else {
-    semColor = '#9B2335'; semBg = '#FCEEED';
-    semLabel = 'Acción requerida';
-    semGlosa = 'El avance está por debajo del umbral mínimo. Se requiere intervención inmediata.';
-  }
-
-  // ── Nivel cualitativo PME (consistente con el sistema EID) ──
-  let nivelLabel;
-  if(av === null)        nivelLabel = 'Sin datos';
-  else if(av >= 90)      nivelLabel = 'Cultura institucional';
-  else if(av >= 71)      nivelLabel = 'Análisis y mejora';
-  else if(av >= 51)      nivelLabel = 'Articulación institucional';
-  else if(av >= 31)      nivelLabel = 'Estandarización inicial';
-  else                   nivelLabel = 'Inicial';
-
-  // ══════════════════════════════════════════════════════════════════
-  // 1) HERO — SEMÁFORO + AVANCE GLOBAL (la "fotografía instantánea")
-  // ══════════════════════════════════════════════════════════════════
-  html += '<div class="card" style="margin-bottom:16px;padding:0;overflow:hidden;border-left:5px solid '+semColor+'">';
-  html += '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center;padding:22px 28px;background:linear-gradient(90deg,'+semBg+' 0%, #FFFFFF 60%)">';
-
-  // Columna 1: el "semáforo" — tres luces verticales en chasis oscuro
-  html += '<div style="display:flex;flex-direction:column;gap:6px;align-items:center;padding:6px 8px;background:#1F1F1F;border-radius:6px">';
-  ['#9B2335','#9C7918','#2E7D52'].forEach(function(c){
-    const activo = c === semColor;
-    html += '<div style="width:18px;height:18px;border-radius:50%;background:'+c+';opacity:'+(activo?'1':'0.18')+';box-shadow:'+(activo?'0 0 10px '+c:'none')+'"></div>';
-  });
-  html += '</div>';
-
-  // Columna 2: titular y glosa
-  html += '<div style="min-width:0">';
-  html += '<div style="font-size:10px;letter-spacing:1.5pt;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Estado general · '+periodoTxt+'</div>';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:26px;color:'+semColor+';line-height:1.1;margin-bottom:6px">'+semLabel+'</div>';
-  html += '<div style="font-size:13px;color:var(--text);line-height:1.5">'+semGlosa+'</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">'+colegio+(DB.colegio.rbd?' · RBD '+DB.colegio.rbd:'')+'</div>';
-  html += '</div>';
-
-  // Columna 3: la métrica grande — cumplimiento global
-  html += '<div style="text-align:right;min-width:120px">';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:54px;color:'+semColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div>';
-  html += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8pt;margin-top:2px">Cumplimiento global</div>';
-  if(av !== null){
-    html += '<div style="font-size:11px;color:'+semColor+';font-weight:600;margin-top:4px">Nivel '+nivelLabel+'</div>';
-  }
-  html += '</div>';
-
-  html += '</div></div>';
-
-  // ══════════════════════════════════════════════════════════════════
-  // 2) MÉTRICAS BIG PICTURE — 4 KPI cards (el "cuadro completo")
-  // ══════════════════════════════════════════════════════════════════
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">';
-
-  // KPI: Acciones evaluadas
-  html += '<div class="card" style="padding:14px 16px">';
-  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones evaluadas</div>';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--accent);line-height:1">'+totalAccionesEval+'</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(data.sinRegistro.length?'+'+data.sinRegistro.length+' sin registro':'todas con registro')+'</div>';
-  html += '</div>';
-
-  // KPI: Acciones destacadas (>= 90%)
-  html += '<div class="card" style="padding:14px 16px;border-top:3px solid var(--green)">';
-  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones destacadas</div>';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--green);line-height:1">'+accionesDestacadas+'</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">sobre el 90%</div>';
-  html += '</div>';
-
-  // KPI: Acciones críticas (< 70%)
-  html += '<div class="card" style="padding:14px 16px;border-top:3px solid '+(accionesCriticas>0?'var(--red)':'var(--border)')+'">';
-  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones críticas</div>';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+(accionesCriticas>0?'var(--red)':'var(--muted)')+';line-height:1">'+accionesCriticas+'</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">bajo el 70%</div>';
-  html += '</div>';
-
-  // KPI: Planes activos
-  html += '<div class="card" style="padding:14px 16px;border-top:3px solid '+(planesVencidos>0?'var(--red)':'var(--accent)')+'">';
-  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Planes activos</div>';
-  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--accent);line-height:1">'+planesAct.length+'</div>';
-  html += '<div style="font-size:11px;color:'+(planesVencidos>0?'var(--red)':'var(--muted)')+';margin-top:4px">'+(planesVencidos>0?planesVencidos+' vencido(s)':(avancePromedioPlanes!==null?avancePromedioPlanes+'% avance prom.':'sin avance registrado'))+'</div>';
-  html += '</div>';
-
-  html += '</div>';
-
-  // ══════════════════════════════════════════════════════════════════
-  // 3) LOGROS + ALERTAS — dos columnas, máx. 3 ítems cada una
-  // ══════════════════════════════════════════════════════════════════
-  // Logros: prioriza acciones >=90%, luego dimensión líder si está sobre umbral, luego planes con buen avance
-  const logros = [];
-  data.fortalezas.slice(0,2).forEach(function(a){
-    logros.push({ titulo: a.accion, sub: a.area, valor: a.promedio + '%' });
-  });
-  if(logros.length < 3){
-    const areasOrd = data.areas.filter(function(a){return a.promedio !== null;}).sort(function(a,b){return b.promedio-a.promedio;});
-    if(areasOrd.length && areasOrd[0].promedio >= 70){
-      logros.push({ titulo: 'Área '+areasOrd[0].nombre+' lidera el período', sub: areasOrd[0].registros+' registros · cumplimiento sostenido', valor: areasOrd[0].promedio+'%' });
-    }
-  }
-  if(logros.length < 3 && avancePromedioPlanes !== null && avancePromedioPlanes >= 70){
-    logros.push({ titulo: 'Planes de mejora en cartera con buen avance', sub: planesAct.length+' plan(es) activos', valor: avancePromedioPlanes+'%' });
-  }
-
-  // Alertas: planes vencidos > área crítica > acción crítica con comentario > sin registro masivo
-  const alertas = [];
-  if(planesVencidos > 0){
-    alertas.push({ titulo: planesVencidos+' plan(es) de mejora vencido(s)', sub: 'Requieren ajuste de plazo o cierre con evidencia', valor: '⚠' });
-  }
-  const areasCriticas = data.areas.filter(function(a){return a.promedio !== null && a.promedio < 50;}).sort(function(a,b){return a.promedio-b.promedio;});
-  if(areasCriticas.length && alertas.length < 3){
-    alertas.push({ titulo: 'Área '+areasCriticas[0].nombre+' bajo umbral mínimo', sub: 'Concentra el menor cumplimiento del período', valor: areasCriticas[0].promedio+'%' });
-  }
-  const accionConComentario = data.debilidades.find(function(a){return a.comentarios && a.comentarios.length;});
-  if(accionConComentario && alertas.length < 3){
-    alertas.push({ titulo: accionConComentario.accion, sub: accionConComentario.area+' · bloqueo registrado por el equipo', valor: accionConComentario.promedio+'%' });
-  }
-  if(data.sinRegistro.length >= 3 && alertas.length < 3){
-    alertas.push({ titulo: data.sinRegistro.length+' acciones sin registro', sub: 'Visibilidad incompleta del período', valor: '—' });
-  }
-
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:16px">';
-
-  // — LOGROS —
-  html += '<div class="card" style="padding:16px 18px;border-left:4px solid var(--green)">';
-  html += '<div style="font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:12px">Principales logros</div>';
-  if(!logros.length){
-    html += '<div style="font-size:12px;color:var(--muted);font-style:italic;line-height:1.5">Aún no hay hitos destacables en este período. Los primeros logros aparecerán al superar el umbral del 90% en alguna acción.</div>';
-  } else {
-    logros.forEach(function(l){
-      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dotted var(--border)">';
-      html += '<div style="flex:1;min-width:0">';
-      html += '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.35">'+l.titulo+'</div>';
-      html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+l.sub+'</div>';
-      html += '</div>';
-      html += '<div style="font-size:14px;color:var(--green);font-weight:600;white-space:nowrap">'+l.valor+'</div>';
-      html += '</div>';
-    });
-  }
-  html += '</div>';
-
-  // — ALERTAS / BLOQUEOS —
-  html += '<div class="card" style="padding:16px 18px;border-left:4px solid '+(alertas.length?'var(--red)':'var(--border)')+'">';
-  html += '<div style="font-size:10px;font-weight:600;color:'+(alertas.length?'var(--red)':'var(--muted)')+';text-transform:uppercase;letter-spacing:.5pt;margin-bottom:12px">Principales alertas / bloqueos</div>';
-  if(!alertas.length){
-    html += '<div style="font-size:12px;color:var(--muted);font-style:italic;line-height:1.5">Sin alertas críticas en este período. Ningún plan vencido, ninguna área bajo umbral mínimo.</div>';
-  } else {
-    alertas.forEach(function(a){
-      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dotted var(--border)">';
-      html += '<div style="flex:1;min-width:0">';
-      html += '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.35">'+a.titulo+'</div>';
-      html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+a.sub+'</div>';
-      html += '</div>';
-      html += '<div style="font-size:14px;color:var(--red);font-weight:600;white-space:nowrap">'+a.valor+'</div>';
-      html += '</div>';
-    });
-  }
-  html += '</div>';
-
-  html += '</div>';
-
-  // ══════════════════════════════════════════════════════════════════
-  // 4) PRÓXIMOS PASOS CRÍTICOS — 3-4 acciones macro
-  // Reutiliza generarRecomendaciones() (mismo input que usan PDF/Word).
-  // ══════════════════════════════════════════════════════════════════
-  const pasos = recs.slice(0, 4);
-  html += '<div class="card" style="margin-bottom:16px;padding:20px 24px;background:#1E3A2F;color:#fff;border:none">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px">';
-  html += '<div style="font-size:10px;font-weight:600;color:#C5A572;text-transform:uppercase;letter-spacing:.5pt">Próximos pasos críticos</div>';
-  html += '<div style="font-size:11px;color:#9DB5A8">Las '+pasos.length+' acciones macro que mueven la aguja</div>';
-  html += '</div>';
-  pasos.forEach(function(p,i){
-    html += '<div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0'+(i < pasos.length-1?';border-bottom:1px solid rgba(197,165,114,0.18)':'')+'">';
-    html += '<div style="flex-shrink:0;width:22px;height:22px;border:1px solid #C5A572;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#C5A572;font-weight:600">'+(i+1)+'</div>';
-    html += '<div style="font-size:13px;line-height:1.55;color:#F4F2EE;flex:1">'+p+'</div>';
-    html += '</div>';
-  });
-  html += '</div>';
-
-  // ══════════════════════════════════════════════════════════════════
-  // 5) DETALLE EXPANDIBLE — narrativa completa + listas + recomendaciones
-  // Oculto por defecto para preservar la lectura ejecutiva de < 2 min.
-  // ══════════════════════════════════════════════════════════════════
-  html += '<details style="margin-bottom:16px"><summary style="cursor:pointer;font-size:12px;color:var(--muted);padding:10px 14px;background:#F9F8F6;border-radius:4px;border:1px solid var(--border);user-select:none">▾ Ver detalle ampliado (narrativa, avance por área, fortalezas, debilidades y recomendaciones)</summary>';
-
-  // ── Detalle: Narrativa por secciones (incluye output de IA si lo hay) ──
-  html += '<div class="card" style="margin-top:12px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
+  // Resumen narrativo dividido en secciones
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
   if(secs.visionGeneral) {
     html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Visión general</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.visionGeneral+'</div></div>';
   }
@@ -4340,8 +4109,17 @@ function renderResumenEjecutivo() {
   }
   html += '</div>';
 
-  // ── Detalle: Avance por área (tabla) ──
-  html += '<div class="card" style="margin-top:12px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
+  // Indicadores clave
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">';
+  const avColor = av === null ? 'var(--muted)' : (av >= 90 ? 'var(--green)' : av >= 70 ? 'var(--yellow)' : 'var(--red)');
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Avance global</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:'+avColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟢 Fortalezas</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--green);line-height:1">'+data.distribucion.verde+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones ≥ 90%</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟡 En proceso</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--yellow);line-height:1">'+data.distribucion.amarillo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones 70-89%</div></div>';
+  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🔴 Debilidades</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--red);line-height:1">'+data.distribucion.rojo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones &lt; 70%</div></div>';
+  html += '</div>';
+
+  // Avance por área
+  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
   html += '<table class="accion-table"><thead><tr><th>Área</th><th style="text-align:center">% Avance</th><th style="text-align:center">Estado</th><th style="text-align:center">Acciones evaluadas</th></tr></thead><tbody>';
   data.areas.forEach(function(area){
     const est = area.promedio === null ? 'sin_datos' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
@@ -4353,9 +4131,9 @@ function renderResumenEjecutivo() {
   });
   html += '</tbody></table></div>';
 
-  // ── Detalle: Fortalezas completas ──
+  // Fortalezas
   if(data.fortalezas.length) {
-    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
     data.fortalezas.slice(0,10).forEach(function(f){
       html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+f.area+'</span></li>';
@@ -4365,9 +4143,9 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // ── Detalle: Debilidades completas ──
+  // Debilidades
   if(data.debilidades.length) {
-    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
     data.debilidades.slice(0,10).forEach(function(d){
       html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+d.area+'</span></li>';
@@ -4377,9 +4155,9 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // ── Detalle: Sin registro ──
+  // Sin registro
   if(data.sinRegistro.length) {
-    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
+    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--muted)">';
     data.sinRegistro.slice(0,10).forEach(function(s){
       html += '<li>'+s.accion+' <span style="font-size:11px">— '+s.area+'</span></li>';
@@ -4389,22 +4167,11 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // ── Detalle: Recomendaciones completas ──
-  html += '<div class="card" style="margin-top:12px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
+  // Recomendaciones
+  html += '<div class="card" style="margin-bottom:16px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
   html += '<ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.8">';
   recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
   html += '</ol></div>';
-
-  // ── Detalle: Atajos a otros paneles ──
-  html += '<div class="card" style="margin-top:12px;padding:14px 18px">';
-  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Profundizar</div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-  html += '<a href="javascript:showPanel(\'informes\')" class="btn btn-outline btn-sm">📊 Informes detallados</a>';
-  html += '<a href="javascript:showPanel(\'ver-reuniones\')" class="btn btn-outline btn-sm">📋 Historial de reuniones</a>';
-  html += '<a href="javascript:showPanel(\'admin-documentos\')" class="btn btn-outline btn-sm">📁 Documentos institucionales</a>';
-  html += '</div></div>';
-
-  html += '</details>';
 
   return html;
 }
