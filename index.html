@@ -13071,33 +13071,40 @@ const MAPA_AREAS_INFO = [
   { key:'recursos',    icono:'🧰', etiqueta:'Gestión de Recursos',color:'#0891b2' }
 ];
 
-/* Mapeo de cada acción a su área (modelo SACGE / SEP) */
+/* Mapeo de cada acción a su área (modelo SACGE / SEP)
+ *
+ * IMPORTANTE: estos slugs y sus áreas deben coincidir con la Estructura
+ * institucional definida por el superadmin. Cuando se mueva una acción de
+ * un área a otra en Estructura, hay que actualizar también este objeto.
+ * Pendiente para una refactor futura: leer este mapeo directamente desde
+ * la misma tabla/columna que usa Estructura, en vez de tenerlo hardcodeado.
+ */
 const MAPA_ACCION_AREA = {
   // Gestión Pedagógica
   'analisis_resultados':        'pedagogica',
   'calendario_evaluaciones':    'pedagogica',
-  'desarrollo_profesional':     'pedagogica',
   'ensayos_simce_paes':         'pedagogica',
+  'informe_semestral':          'pedagogica',
   'observacion_aula':           'pedagogica',
   'plan_evaluaciones':          'pedagogica',
+  'planes_apoyo_riesgo':        'pedagogica',
   'retroalimentacion_dia':      'pedagogica',
-  'reuniones_departamentos':    'pedagogica',
+  'seguimiento_pie':            'pedagogica',
   // Liderazgo
   'evaluacion_pme':             'liderazgo',
+  'reuniones_departamentos':    'liderazgo',
   'seguimiento_plan_liderazgo': 'liderazgo',
-  'informe_semestral':          'liderazgo',
+  'sistema_reconocimiento':     'liderazgo',
   // Convivencia Escolar
   'analisis_idps':              'convivencia',
   'denuncias_seguimiento':      'convivencia',
   'ejecucion_plan_convivencia': 'convivencia',
-  'monitoreo_asistencia':       'convivencia',
   'monitoreo_incidentes':       'convivencia',
-  'sistema_reconocimiento':     'convivencia',
+  'talleres_deportivos':        'convivencia',
   'talleres_resolucion':        'convivencia',
   // Gestión de Recursos
-  'planes_apoyo_riesgo':        'recursos',
-  'seguimiento_pie':            'recursos',
-  'talleres_deportivos':        'recursos'
+  'desarrollo_profesional':     'recursos',
+  'monitoreo_asistencia':       'recursos'
 };
 
 /* Helper: devuelve el área de una acción, o 'otras' si no está mapeada */
