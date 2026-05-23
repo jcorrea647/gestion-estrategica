@@ -8476,7 +8476,7 @@ async function _abrirPlanInternal(accionId, mes){
       const accion = DB.acciones.find(a=>a.id===accionId);
       planRenderSelectorHerencia(planAnterior, accion, mes, (modo) => {
         if(modo === 'continuar'){
-          const datos = planConstruirDesdePlanAnterior(planAnterior);
+          const datos = planConstruirDesdePlanAnterior(planAnterior, seg);
           planInitState(accionId, mes, seg, datos);
           renderPlanPaso();
           // Marcar como modificado para que el primer autosave persista
@@ -8568,22 +8568,50 @@ function planMarcarHeredado(planAnterior){
 }
 
 /* Construye datosBorrador desde el plan anterior. NO copia microaccionId
- * (es plan nuevo) ni cumplimiento/evidencia. */
-function planConstruirDesdePlanAnterior(planAnterior){
+ * (es plan nuevo) ni cumplimiento/evidencia.
+ *
+ * Si se pasa `segNuevo` (el seguimiento del mes destino), compara el nivel
+ * del plan anterior contra el nivel del mes nuevo. Si difieren, NO hereda
+ * propuestas_llm — el director llegará al paso 4 con propuestas frescas al
+ * nivel correcto. El resto (causas, comentario, brechas, acuerdos) sí se
+ * hereda, porque conserva el razonamiento del director del mes anterior. */
+function planConstruirDesdePlanAnterior(planAnterior, segNuevo){
   const heredado = planMarcarHeredado(planAnterior);
   const comentarioHeredado = planAnterior.comentario
     ? `[Continuación de ${planAnterior.mes}] ${planAnterior.comentario}`
     : '';
+
+  // ── Decidir si heredar propuestas_llm según coincidencia de nivel ──
+  // Por defecto se heredan (comportamiento histórico). Solo se descartan si
+  // se puede determinar con certeza que los niveles difieren.
+  let heredarPropuestas = true;
+  if(segNuevo && Array.isArray(planAnterior.propuestas_llm) && planAnterior.propuestas_llm.length){
+    const nivelNuevo = _planNivelDesdePct(segNuevo.porcentaje);
+    let nivelAnterior = null;
+    for(const ln of planAnterior.propuestas_llm){
+      if(ln && /^L[1-5]$/.test(ln._nivelGenerado||'')){ nivelAnterior = ln._nivelGenerado; break; }
+      const m = ln && ln.titulo && String(ln.titulo).match(/\bL([1-5])\b/);
+      if(m){ nivelAnterior = 'L'+m[1]; break; }
+    }
+    if(nivelNuevo && nivelAnterior && nivelNuevo !== nivelAnterior){
+      heredarPropuestas = false;
+      console.info('[planConstruirDesdePlanAnterior] Nivel cambió de', nivelAnterior, 'a', nivelNuevo, '- no se heredan propuestas_llm');
+    }
+  }
+
   return {
     id: null,
     paso_actual: 1,
     causas: planAnterior.causas || [],
     causas_otros: planAnterior.causas_otros || [],
     comentario: comentarioHeredado,
-    propuestas_llm: planAnterior.propuestas_llm || null,
-    pasos_seleccionados: planAnterior.pasos_seleccionados || [],
-    pasos_otros_linea: planAnterior.pasos_otros_linea || {},
-    pasos_foco_propio: planAnterior.pasos_foco_propio || [],
+    propuestas_llm: heredarPropuestas ? (planAnterior.propuestas_llm || null) : null,
+    // Si NO heredamos propuestas, tampoco heredamos pasos seleccionados ni
+    // otros pasos por línea, porque referencian IDs de líneas que no van a
+    // existir. Foco propio sí se hereda porque es independiente de las líneas.
+    pasos_seleccionados: heredarPropuestas ? (planAnterior.pasos_seleccionados || []) : [],
+    pasos_otros_linea:   heredarPropuestas ? (planAnterior.pasos_otros_linea   || {}) : {},
+    pasos_foco_propio:   planAnterior.pasos_foco_propio || [],
     asignaciones: heredado.asignaciones,
     consolidacion_modos: planAnterior.consolidacion_modos || [],
     acuerdo_que:   heredado.acuerdos.qhe,
@@ -9387,6 +9415,82 @@ async function planRegenerarPlan(){
   planGenerarPropuestas();
 }
 
+// ── Helpers para detectar desajuste de nivel en propuestas guardadas ──
+// Contexto: las líneas tipo "ámbito" se generan condicionadas al nivel actual
+// (L1/L2/L3/L4/L5 según s.pct). Si las propuestas guardadas son de un nivel
+// distinto al actual (porque el director ajustó el % en el mismo mes después
+// de armar el plan, o porque se heredaron desde un mes anterior con otro
+// nivel), aparece la inconsistencia visible "L3 En Desarrollo" cuando el
+// plan está en 20% Inicial.
+
+// Convierte un % en código de nivel L1..L5. Usa los mismos umbrales que
+// planGenerarPropuestas (línea 9346 original) y planGenerarCacheKey, no los
+// de nivelLogro() — porque el suffix del lookup en planes_cache usa esta
+// fórmula y la coherencia con esa key es lo que define el "nivel del plan".
+function _planNivelDesdePct(pct){
+  const p = Number(pct);
+  if(isNaN(p)) return null;
+  if(p <= 25) return 'L1';
+  if(p <= 50) return 'L2';
+  if(p <= 75) return 'L3';
+  if(p <= 90) return 'L4';
+  return 'L5';
+}
+
+// Detecta si las propuestas guardadas en PLAN_STATE corresponden a un nivel
+// distinto del actual. Retorna { desajustado, nivelGenerado, nivelActual,
+// hayTrabajoDelDirector }.
+//
+// Estrategia de detección, en orden de preferencia:
+//   1. Campo _nivelGenerado en alguna línea (planes nuevos creados después
+//      de este fix lo incluyen explícitamente).
+//   2. Regex sobre el título de las líneas tipo ámbito (formato actual:
+//      "📚 Aula · L3 En Desarrollo"). Cubre planes legacy sin la marca.
+//   3. Si no se puede determinar el nivel generado, retorna desajustado=false
+//      para evitar falsos positivos.
+function _planDetectarNivelDesajustado(s){
+  const nivelActual = _planNivelDesdePct(s.pct);
+  const result = {
+    desajustado: false,
+    nivelGenerado: null,
+    nivelActual,
+    hayTrabajoDelDirector: false
+  };
+  if(!nivelActual || !Array.isArray(s.propuestas) || s.propuestas.length === 0) return result;
+
+  // 1. Buscar _nivelGenerado en alguna línea (planes nuevos)
+  let nivelGenerado = null;
+  for(const ln of s.propuestas){
+    if(ln && typeof ln._nivelGenerado === 'string' && /^L[1-5]$/.test(ln._nivelGenerado)){
+      nivelGenerado = ln._nivelGenerado;
+      break;
+    }
+  }
+
+  // 2. Fallback: extraer Lx del título de líneas ámbito (planes legacy)
+  if(!nivelGenerado){
+    for(const ln of s.propuestas){
+      const titulo = (ln && ln.titulo) ? String(ln.titulo) : '';
+      const match = titulo.match(/\bL([1-5])\b/);
+      if(match){
+        nivelGenerado = 'L' + match[1];
+        break;
+      }
+    }
+  }
+
+  result.nivelGenerado = nivelGenerado;
+  if(!nivelGenerado) return result; // no se pudo determinar; no falso positivo
+  result.desajustado = nivelGenerado !== nivelActual;
+  // ¿El director ya marcó pasos? (criterio para decidir si avisar o regenerar
+  // silenciosamente. Camino 1: silencioso si no hay trabajo, banner si lo hay)
+  const totalPasos = (s.pasosSeleccionados?.length || 0)
+                   + (s.pasosFocoPropio?.length || 0)
+                   + Object.values(s.pasosOtrosLinea || {}).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+  result.hayTrabajoDelDirector = totalPasos > 0;
+  return result;
+}
+
 function planGenerarCacheKey(s){
   const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
   const causas = [...(s.causas||[])].map(c=>c.codigo).sort().join(',');
@@ -9404,6 +9508,47 @@ async function planGenerarPropuestas(){
   }
 
   // Si ya hay propuestas (borrador retomado), verificar que no sean obsoletas
+  if(s.propuestas && s.propuestas.length){
+    // ── DESAJUSTE DE NIVEL ──
+    // Camino 1: si las propuestas guardadas son de un nivel distinto al
+    // actual (porque el director cambió el % o el plan se heredó de otro
+    // mes con nivel distinto), descartarlas y regenerar al nivel correcto.
+    //
+    // Sin opt-in si no hay trabajo del director que perder; con confirmación
+    // si ya marcó pasos / asignó responsables / agregó focos propios. Esto
+    // evita borrar trabajo previo sin avisar pero también evita molestar
+    // cuando no hay nada que perder.
+    const desajuste = _planDetectarNivelDesajustado(s);
+    if(desajuste.desajustado){
+      if(desajuste.hayTrabajoDelDirector){
+        const ok = confirm(
+          'El % de cumplimiento de este plan cambió y las propuestas actuales son de otro nivel.\n\n' +
+          '¿Actualizar las propuestas al nivel actual?\n\n' +
+          'Esto descarta los pasos seleccionados, asignaciones y focos propios para reconstruir el plan al nivel correcto.'
+        );
+        if(!ok){
+          // El director eligió mantener las propuestas viejas — respetamos
+          // su decisión y avanzamos al paso 4 sin tocar nada. Notar que la
+          // inconsistencia visible "L3 En Desarrollo" seguirá ahí; es lo
+          // que él pidió.
+          s.paso = 4; renderPlanPaso(); return;
+        }
+      }
+      // Limpiar y regenerar al nivel actual
+      console.info('[planGenerarPropuestas] Desajuste de nivel:',
+        desajuste.nivelGenerado, '→', desajuste.nivelActual,
+        '· trabajo del director:', desajuste.hayTrabajoDelDirector);
+      s.propuestas = null;
+      s.pasosSeleccionados = [];
+      s.pasosFocoPropio = [];
+      s.pasosOtrosLinea = {};
+      s.asignaciones = {};
+      planMarcarCambio();
+      // Caemos al flujo de generación normal abajo (no return).
+    }
+  }
+
+  // Si ya hay propuestas (después del chequeo de nivel), verificar que no sean obsoletas
   if(s.propuestas && s.propuestas.length){
     const primerDesc = s.propuestas?.[0]?.pasos?.[0]?.descripcion || '';
     // Detectar propuestas obsoletas: del fallback genérico O del fallback de ficha
@@ -9629,6 +9774,7 @@ async function planGenerarPropuestas(){
                 descripcion_corta: AMBITO_DESCRIPCIONES[ambito] || ('Pasos base del nivel ' + nivelActual + ' en el ámbito ' + ambito + '. Edita o desmarca los que no apliquen.'),
                 causa_atacada: 'nivel',
                 _ambito: ambito,
+                _nivelGenerado: nivelActual, // marca explícita del nivel al momento de generar (para detectar desajustes en reaperturas)
                 pasos,
                 _fromPrecomp: true
               });
