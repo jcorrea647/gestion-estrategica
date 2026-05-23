@@ -5815,15 +5815,25 @@ function generarPDFReunion() {
   var microplanesReunion = (DB.microacciones || []).filter(function(m){
     return mesesReunion.indexOf(m.mes) !== -1;
   });
-  // Ordenar: ACTIVA primero, luego BORRADOR, luego COMPLETADA; dentro de cada grupo, por % desc.
-  var _ordMP = { 'ACTIVA':0, 'BORRADOR':1, 'COMPLETADA':2 };
+  // Ordenar: primero por Área (alfabético), luego por nombre de la acción (alfabético).
+  // Los planes sin área asociada quedan al final.
   microplanesReunion.sort(function(a,b){
-    var oa = _ordMP[a.estado] !== undefined ? _ordMP[a.estado] : 3;
-    var ob = _ordMP[b.estado] !== undefined ? _ordMP[b.estado] : 3;
-    if(oa !== ob) return oa - ob;
-    var ca = (typeof _cumplimientoPlan === 'function') ? (_cumplimientoPlan(a.id) || 0) : 0;
-    var cb = (typeof _cumplimientoPlan === 'function') ? (_cumplimientoPlan(b.id) || 0) : 0;
-    return cb - ca;
+    var areaA = (typeof _areaDeAccion === 'function') ? _areaDeAccion(a.accion_id) : null;
+    var areaB = (typeof _areaDeAccion === 'function') ? _areaDeAccion(b.accion_id) : null;
+    var nombreAreaA = areaA ? (areaA.nombre || '') : '';
+    var nombreAreaB = areaB ? (areaB.nombre || '') : '';
+    // Sin área va al final
+    if(!nombreAreaA && nombreAreaB) return 1;
+    if(nombreAreaA && !nombreAreaB) return -1;
+    if(nombreAreaA !== nombreAreaB){
+      return nombreAreaA.localeCompare(nombreAreaB, 'es', { sensitivity:'base' });
+    }
+    // Dentro de la misma área, alfabético por nombre de acción
+    var accA = (DB.acciones || []).find(function(x){ return x.id === a.accion_id; });
+    var accB = (DB.acciones || []).find(function(x){ return x.id === b.accion_id; });
+    var nA = accA ? (accA.nombre || '') : '';
+    var nB = accB ? (accB.nombre || '') : '';
+    return nA.localeCompare(nB, 'es', { sensitivity:'base' });
   });
 
   html += '<div class="section"><div class="section-title">Microplanes de los meses evaluados</div>';
