@@ -4067,8 +4067,21 @@ function renderResumenEjecutivo() {
   const recs = generarRecomendaciones(data);
   const av = data.avanceGlobal;
 
+  // ── Período legible (para la fotografía instantánea) ──
+  let periodoTxt;
+  if(data.alcance === 'mes') {
+    periodoTxt = data.mesesEval[0] ? fmtMes(data.mesesEval[0]) : 'Mes no seleccionado';
+  } else {
+    if(data.mesesEval.length) {
+      const primero = data.mesesEval[0], ultimo = data.mesesEval[data.mesesEval.length-1];
+      periodoTxt = primero === ultimo ? fmtMes(primero) : 'acumulado ' + fmtMes(primero,true) + '–' + fmtMes(ultimo,true);
+    } else {
+      periodoTxt = 'sin datos registrados';
+    }
+  }
+
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
-  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+'</div></div>';
+  html += '<div><div class="page-title">Resumen Ejecutivo</div><div class="page-sub">'+colegio+' · '+periodoTxt+'</div></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button class="btn btn-outline btn-sm" onclick="showPanel(\'informes\')">← Volver a Informes</button>';
   html += '<button class="btn btn-export btn-sm" style="background:#1F4E79" onclick="descargarResumenWord()">📄 Word</button>';
@@ -4090,8 +4103,459 @@ function renderResumenEjecutivo() {
   }
   html += '</div>';
 
-  // Resumen narrativo dividido en secciones
-  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
+  // ══════════════════════════════════════════════════════════════════
+  // RESUMEN EJECUTIVO — fotografía instantánea de < 2 minutos
+  // Estructura: Semáforo · KPIs big-picture · Logros/Alertas · Próximos pasos
+  // El detalle ampliado (narrativa + listas completas) queda en un <details>
+  // para preservar la lectura ejecutiva sin perder profundidad.
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── Cálculos previos compartidos por las tarjetas ──
+  const planesAct = (DB.microacciones || []).filter(function(m){ return m.estado === 'ACTIVA'; });
+  let avancePromedioPlanes = null;
+  if(planesAct.length){
+    const cumpls = planesAct.map(function(m){ return (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null; }).filter(function(v){ return v !== null; });
+    if(cumpls.length) avancePromedioPlanes = Math.round(cumpls.reduce(function(s,x){return s+x;},0) / cumpls.length);
+  }
+  const planesVencidos = planesAct.filter(function(m){
+    const d = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+    return d !== null && d < 0;
+  }).length;
+  const totalAccionesEval = data.acciones.length;
+  const accionesCriticas = data.debilidades.length;
+  const accionesDestacadas = data.fortalezas.length;
+
+  // ── Semáforo: 3 luces (Rojo/Amarillo/Verde) según avance global ──
+  let semColor, semBg, semLabel, semGlosa;
+  if(av === null){
+    semColor = '#7A7670'; semBg = '#F4F2EE';
+    semLabel = 'Sin datos';
+    semGlosa = 'No hay registros suficientes para emitir un estado del período.';
+  } else if(av >= 70){
+    semColor = '#2E7D52'; semBg = '#E8F5EE';
+    semLabel = 'En curso';
+    semGlosa = 'El plan avanza dentro de lo esperado. Sostener el ritmo de seguimiento.';
+  } else if(av >= 50){
+    semColor = '#9C7918'; semBg = '#FDF6E3';
+    semLabel = 'Con observaciones';
+    semGlosa = 'Hay áreas con cumplimiento bajo el umbral. Requiere atención del equipo directivo.';
+  } else {
+    semColor = '#9B2335'; semBg = '#FCEEED';
+    semLabel = 'Acción requerida';
+    semGlosa = 'El avance está por debajo del umbral mínimo. Se requiere intervención inmediata.';
+  }
+
+  // ── Nivel cualitativo: fuente única de verdad = nivelLogro() ──
+  // Consolidado ≥90 · Satisfactorio 70-90 · En Desarrollo 50-70 · Básico 25-50 · Inicial 1-25
+  const nivelObj = (typeof nivelLogro === 'function') ? nivelLogro(av) : null;
+  const nivelLabel = nivelObj ? nivelObj.nombre : 'Sin datos';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 1) HERO — SEMÁFORO + AVANCE GLOBAL (la "fotografía instantánea")
+  // ══════════════════════════════════════════════════════════════════
+  html += '<div class="card" style="margin-bottom:16px;padding:0;overflow:hidden;border-left:5px solid '+semColor+'">';
+  html += '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center;padding:22px 28px;background:linear-gradient(90deg,'+semBg+' 0%, #FFFFFF 60%)">';
+
+  // Columna 1: el "semáforo" — tres luces verticales en chasis oscuro
+  html += '<div style="display:flex;flex-direction:column;gap:6px;align-items:center;padding:6px 8px;background:#1F1F1F;border-radius:6px">';
+  ['#9B2335','#9C7918','#2E7D52'].forEach(function(c){
+    const activo = c === semColor;
+    html += '<div style="width:18px;height:18px;border-radius:50%;background:'+c+';opacity:'+(activo?'1':'0.18')+';box-shadow:'+(activo?'0 0 10px '+c:'none')+'"></div>';
+  });
+  html += '</div>';
+
+  // Columna 2: titular y glosa
+  html += '<div style="min-width:0">';
+  html += '<div style="font-size:10px;letter-spacing:1.5pt;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Estado general · '+periodoTxt+'</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:26px;color:'+semColor+';line-height:1.1;margin-bottom:6px">'+semLabel+'</div>';
+  html += '<div style="font-size:13px;color:var(--text);line-height:1.5">'+semGlosa+'</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">'+colegio+(DB.colegio.rbd?' · RBD '+DB.colegio.rbd:'')+'</div>';
+  html += '</div>';
+
+  // Columna 3: la métrica grande — cumplimiento global
+  html += '<div style="text-align:right;min-width:120px">';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:54px;color:'+semColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div>';
+  html += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8pt;margin-top:2px">Cumplimiento global</div>';
+  if(av !== null){
+    html += '<div style="font-size:11px;color:'+semColor+';font-weight:600;margin-top:4px">Nivel '+nivelLabel+'</div>';
+  }
+  html += '</div>';
+
+  html += '</div></div>';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 2) MÉTRICAS BIG PICTURE — 4 KPI cards (el "cuadro completo")
+  // ══════════════════════════════════════════════════════════════════
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">';
+
+  // KPI: Acciones evaluadas
+  html += '<div class="card" style="padding:14px 16px">';
+  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones evaluadas</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--accent);line-height:1">'+totalAccionesEval+'</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(data.sinRegistro.length?'+'+data.sinRegistro.length+' sin registro':'todas con registro')+'</div>';
+  html += '</div>';
+
+  // KPI: Acciones destacadas (>= 90%)
+  html += '<div class="card" style="padding:14px 16px;border-top:3px solid var(--green)">';
+  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones destacadas</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--green);line-height:1">'+accionesDestacadas+'</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">sobre el 90%</div>';
+  html += '</div>';
+
+  // KPI: Acciones críticas (< 70%)
+  html += '<div class="card" style="padding:14px 16px;border-top:3px solid '+(accionesCriticas>0?'var(--red)':'var(--border)')+'">';
+  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Acciones críticas</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:'+(accionesCriticas>0?'var(--red)':'var(--muted)')+';line-height:1">'+accionesCriticas+'</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">bajo el 70%</div>';
+  html += '</div>';
+
+  // KPI: Planes activos
+  html += '<div class="card" style="padding:14px 16px;border-top:3px solid '+(planesVencidos>0?'var(--red)':'var(--accent)')+'">';
+  html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5pt;color:var(--muted);margin-bottom:6px">Planes activos</div>';
+  html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--accent);line-height:1">'+planesAct.length+'</div>';
+  html += '<div style="font-size:11px;color:'+(planesVencidos>0?'var(--red)':'var(--muted)')+';margin-top:4px">'+(planesVencidos>0?planesVencidos+' vencido(s)':(avancePromedioPlanes!==null?avancePromedioPlanes+'% avance prom.':'sin avance registrado'))+'</div>';
+  html += '</div>';
+
+  html += '</div>';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 3) LOGROS + ALERTAS — dos columnas, máx. 3 ítems cada una
+  // ══════════════════════════════════════════════════════════════════
+  // Logros: prioriza acciones >=90%, luego dimensión líder si está sobre umbral, luego planes con buen avance
+  const logros = [];
+  data.fortalezas.slice(0,2).forEach(function(a){
+    logros.push({ titulo: a.accion, sub: a.area, valor: a.promedio + '%' });
+  });
+  if(logros.length < 3){
+    const areasOrd = data.areas.filter(function(a){return a.promedio !== null;}).sort(function(a,b){return b.promedio-a.promedio;});
+    if(areasOrd.length && areasOrd[0].promedio >= 70){
+      logros.push({ titulo: 'Área '+areasOrd[0].nombre+' lidera el período', sub: areasOrd[0].registros+' registros · cumplimiento sostenido', valor: areasOrd[0].promedio+'%' });
+    }
+  }
+  if(logros.length < 3 && avancePromedioPlanes !== null && avancePromedioPlanes >= 70){
+    logros.push({ titulo: 'Planes de mejora en cartera con buen avance', sub: planesAct.length+' plan(es) activos', valor: avancePromedioPlanes+'%' });
+  }
+
+  // Alertas: planes vencidos > área crítica > acción crítica con comentario > sin registro masivo
+  const alertas = [];
+  if(planesVencidos > 0){
+    alertas.push({ titulo: planesVencidos+' plan(es) de mejora vencido(s)', sub: 'Requieren ajuste de plazo o cierre con evidencia', valor: '⚠' });
+  }
+  const areasCriticas = data.areas.filter(function(a){return a.promedio !== null && a.promedio < 50;}).sort(function(a,b){return a.promedio-b.promedio;});
+  if(areasCriticas.length && alertas.length < 3){
+    alertas.push({ titulo: 'Área '+areasCriticas[0].nombre+' bajo umbral mínimo', sub: 'Concentra el menor cumplimiento del período', valor: areasCriticas[0].promedio+'%' });
+  }
+  const accionConComentario = data.debilidades.find(function(a){return a.comentarios && a.comentarios.length;});
+  if(accionConComentario && alertas.length < 3){
+    alertas.push({ titulo: accionConComentario.accion, sub: accionConComentario.area+' · bloqueo registrado por el equipo', valor: accionConComentario.promedio+'%' });
+  }
+  if(data.sinRegistro.length >= 3 && alertas.length < 3){
+    alertas.push({ titulo: data.sinRegistro.length+' acciones sin registro', sub: 'Visibilidad incompleta del período', valor: '—' });
+  }
+
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:16px">';
+
+  // — LOGROS —
+  html += '<div class="card" style="padding:16px 18px;border-left:4px solid var(--green)">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:12px">Principales logros</div>';
+  if(!logros.length){
+    html += '<div style="font-size:12px;color:var(--muted);font-style:italic;line-height:1.5">Aún no hay hitos destacables en este período. Los primeros logros aparecerán al superar el umbral del 90% en alguna acción.</div>';
+  } else {
+    logros.forEach(function(l){
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dotted var(--border)">';
+      html += '<div style="flex:1;min-width:0">';
+      html += '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.35">'+l.titulo+'</div>';
+      html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+l.sub+'</div>';
+      html += '</div>';
+      html += '<div style="font-size:14px;color:var(--green);font-weight:600;white-space:nowrap">'+l.valor+'</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+
+  // — ALERTAS / BLOQUEOS —
+  html += '<div class="card" style="padding:16px 18px;border-left:4px solid '+(alertas.length?'var(--red)':'var(--border)')+'">';
+  html += '<div style="font-size:10px;font-weight:600;color:'+(alertas.length?'var(--red)':'var(--muted)')+';text-transform:uppercase;letter-spacing:.5pt;margin-bottom:12px">Principales alertas / bloqueos</div>';
+  if(!alertas.length){
+    html += '<div style="font-size:12px;color:var(--muted);font-style:italic;line-height:1.5">Sin alertas críticas en este período. Ningún plan vencido, ninguna área bajo umbral mínimo.</div>';
+  } else {
+    alertas.forEach(function(a){
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px dotted var(--border)">';
+      html += '<div style="flex:1;min-width:0">';
+      html += '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.35">'+a.titulo+'</div>';
+      html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+a.sub+'</div>';
+      html += '</div>';
+      html += '<div style="font-size:14px;color:var(--red);font-weight:600;white-space:nowrap">'+a.valor+'</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+
+  html += '</div>';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 4) PRÓXIMOS PASOS CRÍTICOS — 3-4 acciones macro
+  // Reutiliza generarRecomendaciones() (mismo input que usan PDF/Word).
+  // ══════════════════════════════════════════════════════════════════
+  const pasos = recs.slice(0, 4);
+  html += '<div class="card" style="margin-bottom:16px;padding:20px 24px;background:#1E3A2F;color:#fff;border:none">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px">';
+  html += '<div style="font-size:10px;font-weight:600;color:#C5A572;text-transform:uppercase;letter-spacing:.5pt">Próximos pasos críticos</div>';
+  html += '<div style="font-size:11px;color:#9DB5A8">Las '+pasos.length+' acciones macro que mueven la aguja</div>';
+  html += '</div>';
+  pasos.forEach(function(p,i){
+    html += '<div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0'+(i < pasos.length-1?';border-bottom:1px solid rgba(197,165,114,0.18)':'')+'">';
+    html += '<div style="flex-shrink:0;width:22px;height:22px;border:1px solid #C5A572;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#C5A572;font-weight:600">'+(i+1)+'</div>';
+    html += '<div style="font-size:13px;line-height:1.55;color:#F4F2EE;flex:1">'+p+'</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 5) MICROPLANES — todos los planes creados con sus plazos y responsables
+  // Vista didáctica: una tarjeta por plan con su avance, plazo, responsables,
+  // y los primeros pasos para que cualquiera entienda en qué está cada plan.
+  // ══════════════════════════════════════════════════════════════════
+  // Tomamos TODOS los planes (ACTIVA, BORRADOR, COMPLETADA) — no solo activos.
+  const todosLosPlanes = (DB.microacciones || []).slice().sort(function(a,b){
+    // Orden: primero ACTIVA, luego BORRADOR, luego COMPLETADA; dentro de cada grupo, por fecha objetivo (urgencia)
+    const ordenEstado = { 'ACTIVA': 0, 'BORRADOR': 1, 'COMPLETADA': 2 };
+    const oa = ordenEstado[a.estado] !== undefined ? ordenEstado[a.estado] : 3;
+    const ob = ordenEstado[b.estado] !== undefined ? ordenEstado[b.estado] : 3;
+    if(oa !== ob) return oa - ob;
+    const da = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(a.fecha_objetivo) : null;
+    const db = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(b.fecha_objetivo) : null;
+    if(da === null && db === null) return 0;
+    if(da === null) return 1;
+    if(db === null) return -1;
+    return da - db;
+  });
+
+  html += '<div class="card" style="margin-bottom:16px;padding:20px 24px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;flex-wrap:wrap;gap:8px">';
+  html += '<div>';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:4px">Microplanes creados</div>';
+  html += '<div style="font-size:13px;color:var(--muted)">Todos los planes de mejora del colegio, con sus plazos, responsables y avance</div>';
+  html += '</div>';
+  html += '<div style="font-size:12px;color:var(--accent);font-weight:500;white-space:nowrap">'+todosLosPlanes.length+' plan'+(todosLosPlanes.length===1?'':'es')+' en total</div>';
+  html += '</div>';
+
+  if(!todosLosPlanes.length){
+    html += '<div style="font-size:13px;color:var(--muted);font-style:italic;text-align:center;padding:24px 0">';
+    html += 'Aún no se han creado microplanes. Los planes de mejora se generan desde el módulo "Ingresar seguimiento" cuando una acción requiere un foco de trabajo concreto.';
+    html += '</div>';
+  } else {
+    // Pintar cada plan como una tarjeta didáctica
+    todosLosPlanes.forEach(function(m, idx){
+      const accion = (DB.acciones || []).find(function(a){return a.id === m.accion_id;});
+      const accionNombre = accion ? accion.nombre : '(plan sin acción asociada)';
+      const area = (typeof _areaDeAccion === 'function') ? _areaDeAccion(m.accion_id) : null;
+      const areaNombre = area ? area.nombre : '';
+      const colorArea = (typeof _colorDeArea === 'function') ? _colorDeArea(area) : { bg:'#F4F2EE', fg:'#5F5E5A', borde:'#D3D1C7' };
+
+      // Pasos de este plan
+      const pasosPlan = (DB.pasos || []).filter(function(p){ return p.microaccion_id === m.id; }).sort(function(a,b){ return (a.orden||0) - (b.orden||0); });
+      const pasosCompletos = pasosPlan.filter(function(p){ return p.estado === 'COMPLETADO' || p.porcentaje_avance === 100; }).length;
+      // Avance: misma fórmula que _cumplimientoPlan ya corregido (promedio de porcentaje_avance, con COMPLETADO=100)
+      const cumpl = (typeof _cumplimientoPlan === 'function') ? _cumplimientoPlan(m.id) : null;
+
+      // Responsables únicos del plan (extraídos de los pasos)
+      const responsablesSet = new Set();
+      pasosPlan.forEach(function(p){
+        if(p.responsable && p.responsable.trim()) responsablesSet.add(p.responsable.trim());
+      });
+      const responsables = Array.from(responsablesSet);
+
+      // Plazo
+      const diasPlazo = (typeof _diasHastaFecha === 'function') ? _diasHastaFecha(m.fecha_objetivo) : null;
+      let plazoTexto = '', plazoColor = 'var(--muted)';
+      if(m.estado === 'COMPLETADA'){
+        plazoTexto = 'Cerrado';
+        plazoColor = '#5F5E5A';
+      } else if(diasPlazo === null){
+        plazoTexto = 'Sin plazo definido';
+      } else if(diasPlazo < 0){
+        plazoTexto = 'Vencido hace '+Math.abs(diasPlazo)+' día'+(Math.abs(diasPlazo)===1?'':'s');
+        plazoColor = 'var(--red)';
+      } else if(diasPlazo === 0){
+        plazoTexto = 'Vence hoy';
+        plazoColor = 'var(--red)';
+      } else if(diasPlazo <= 7){
+        plazoTexto = 'Vence en '+diasPlazo+' día'+(diasPlazo===1?'':'s');
+        plazoColor = '#9C7918';
+      } else {
+        plazoTexto = diasPlazo+' días restantes';
+        plazoColor = 'var(--muted)';
+      }
+      // Fecha legible
+      let fechaTxt = '';
+      if(m.fecha_objetivo){
+        try {
+          const d = new Date(m.fecha_objetivo + 'T00:00:00');
+          fechaTxt = d.toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' });
+        } catch(e){ fechaTxt = m.fecha_objetivo; }
+      }
+
+      // Estado badge
+      const badgeMap = {
+        'ACTIVA':     { bg:'#E8F5EE', fg:'#1E6B3C', label:'Activo' },
+        'BORRADOR':   { bg:'#F4F2EE', fg:'#5F5E5A', label:'Borrador' },
+        'COMPLETADA': { bg:'#E6F1FB', fg:'#185FA5', label:'Completado' }
+      };
+      const badge = badgeMap[m.estado] || { bg:'#F4F2EE', fg:'#5F5E5A', label: m.estado || '—' };
+
+      // Color de la barra de avance según %
+      let colorBarra;
+      if(cumpl === null || cumpl === 0) colorBarra = '#D3D1C7';
+      else if(cumpl >= 70) colorBarra = '#2E7D52';
+      else if(cumpl >= 40) colorBarra = '#9C7918';
+      else colorBarra = '#9B2335';
+
+      // ──── TARJETA DEL PLAN ────
+      html += '<div style="border:1px solid var(--border);border-radius:6px;padding:16px 18px;margin-bottom:'+(idx===todosLosPlanes.length-1?'0':'12px')+';background:#FFFFFF">';
+
+      // Encabezado: número grande + título + badges
+      html += '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start;margin-bottom:12px">';
+      // Número
+      html += '<div style="font-family:\'DM Serif Display\',serif;font-size:28px;color:var(--accent);line-height:1;min-width:32px;text-align:center">'+(idx+1)+'</div>';
+      // Título + área
+      html += '<div style="min-width:0">';
+      html += '<div style="font-size:15px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:4px">'+accionNombre+'</div>';
+      if(areaNombre){
+        html += '<span style="display:inline-block;background:'+colorArea.bg+';color:'+colorArea.fg+';font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.4pt">'+areaNombre+'</span>';
+      }
+      html += '</div>';
+      // Estado badge
+      html += '<div style="text-align:right">';
+      html += '<span style="display:inline-block;background:'+badge.bg+';color:'+badge.fg+';font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.5pt">'+badge.label+'</span>';
+      if(m.version && m.version > 1){
+        html += '<div style="font-size:10px;color:var(--muted);margin-top:4px">versión '+m.version+'</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+
+      // Línea de información: avance + plazo + responsables + pasos (en grid de 4 columnas en desktop)
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:'+(pasosPlan.length?'14px':'0')+';padding:12px;background:#F9F8F6;border-radius:4px">';
+
+      // Avance
+      html += '<div>';
+      html += '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4pt;color:var(--muted);margin-bottom:4px">Avance global</div>';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<div style="font-family:\'DM Serif Display\',serif;font-size:20px;color:'+colorBarra+';line-height:1">'+(cumpl!==null?cumpl+'%':'—')+'</div>';
+      html += '</div>';
+      html += '<div style="height:5px;background:#E8E5DE;border-radius:2px;overflow:hidden;margin-top:5px">';
+      if(cumpl !== null && cumpl > 0) html += '<div style="width:'+cumpl+'%;height:100%;background:'+colorBarra+'"></div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Plazo
+      html += '<div>';
+      html += '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4pt;color:var(--muted);margin-bottom:4px">Plazo</div>';
+      html += '<div style="font-size:13px;color:'+plazoColor+';font-weight:600;line-height:1.3">'+plazoTexto+'</div>';
+      if(fechaTxt) html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">'+fechaTxt+'</div>';
+      html += '</div>';
+
+      // Pasos
+      html += '<div>';
+      html += '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4pt;color:var(--muted);margin-bottom:4px">Pasos</div>';
+      html += '<div style="font-size:13px;color:var(--text);font-weight:600;line-height:1.3">'+pasosCompletos+' de '+pasosPlan.length+'</div>';
+      html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">completados</div>';
+      html += '</div>';
+
+      // Responsables
+      html += '<div>';
+      html += '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4pt;color:var(--muted);margin-bottom:4px">Responsables</div>';
+      if(responsables.length){
+        const responsablesTxt = responsables.length === 1 ? responsables[0] : responsables.length+' personas';
+        html += '<div style="font-size:13px;color:var(--text);font-weight:600;line-height:1.3" title="'+responsables.join(', ')+'">'+responsablesTxt+'</div>';
+        if(responsables.length > 1){
+          html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">'+responsables.slice(0,2).join(', ')+(responsables.length>2?'…':'')+'</div>';
+        }
+      } else {
+        html += '<div style="font-size:13px;color:var(--muted);font-style:italic">Sin asignar</div>';
+      }
+      html += '</div>';
+
+      html += '</div>'; // fin grid info
+
+      // ── PASOS DEL PLAN (todos, con su avance individual) ──
+      if(pasosPlan.length){
+        // Mostrar hasta 3 pasos para mantener la lectura ágil; si hay más, se indica el resto.
+        const pasosAMostrar = pasosPlan.slice(0, 3);
+        html += '<div style="margin-top:4px">';
+        html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4pt;margin-bottom:8px">Pasos del plan</div>';
+
+        pasosAMostrar.forEach(function(p, i){
+          const pctP = Number(p.porcentaje_avance) || 0;
+          const completoP = p.estado === 'COMPLETADO' || pctP === 100;
+          const pctMostrar = completoP ? 100 : pctP;
+          let colorP;
+          if(completoP) colorP = '#2E7D52';
+          else if(pctP >= 50) colorP = '#9C7918';
+          else if(pctP > 0) colorP = '#C2410C';
+          else colorP = '#9CA3AF';
+
+          // Fecha objetivo del paso
+          let fechaPasoTxt = '';
+          if(p.fecha_objetivo){
+            try {
+              const dp = new Date(p.fecha_objetivo + 'T00:00:00');
+              fechaPasoTxt = dp.toLocaleDateString('es-CL', { day:'numeric', month:'short' });
+            } catch(e){ fechaPasoTxt = p.fecha_objetivo; }
+          }
+
+          html += '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;padding:8px 0'+(i < pasosAMostrar.length-1?';border-bottom:1px dotted var(--border)':'')+'">';
+          // Número o check
+          html += '<div style="width:22px;height:22px;border-radius:50%;background:'+colorP+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">';
+          html += completoP ? '✓' : (i+1);
+          html += '</div>';
+          // Descripción + meta (responsable, fecha)
+          html += '<div style="min-width:0">';
+          html += '<div style="font-size:12px;color:var(--text);line-height:1.4;margin-bottom:3px">'+(p.descripcion || '(sin descripción)')+'</div>';
+          // Meta del paso
+          const metas = [];
+          if(p.responsable && p.responsable.trim()) metas.push('👤 '+p.responsable.trim());
+          if(fechaPasoTxt) metas.push('📅 '+fechaPasoTxt);
+          if(metas.length){
+            html += '<div style="font-size:10px;color:var(--muted)">'+metas.join(' · ')+'</div>';
+          }
+          html += '</div>';
+          // % avance del paso
+          html += '<div style="text-align:right;min-width:50px">';
+          html += '<div style="font-size:12px;color:'+colorP+';font-weight:600">'+pctMostrar+'%</div>';
+          html += '<div style="height:4px;width:48px;background:#E8E5DE;border-radius:2px;overflow:hidden;margin-top:3px">';
+          if(pctMostrar > 0) html += '<div style="width:'+pctMostrar+'%;height:100%;background:'+colorP+'"></div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+        });
+
+        if(pasosPlan.length > 3){
+          html += '<div style="font-size:11px;color:var(--muted);font-style:italic;text-align:right;margin-top:8px">+'+(pasosPlan.length - 3)+' paso'+(pasosPlan.length-3===1?'':'s')+' más en este plan</div>';
+        }
+        html += '</div>';
+      } else {
+        html += '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:6px 0">Este plan aún no tiene pasos definidos.</div>';
+      }
+
+      html += '</div>'; // fin tarjeta del plan
+    });
+  }
+
+  // Enlace para profundizar en Mis Planes
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--border);text-align:right">';
+  html += '<a href="javascript:showPanel(\'mis-planes\')" style="color:var(--accent);text-decoration:underline">Ver el detalle completo en Mis Planes →</a>';
+  html += '</div>';
+  html += '</div>';
+
+  // ══════════════════════════════════════════════════════════════════
+  // 6) DETALLE EXPANDIBLE — narrativa completa + listas + recomendaciones
+  // Oculto por defecto para preservar la lectura ejecutiva de < 2 min.
+  // ══════════════════════════════════════════════════════════════════
+  html += '<details style="margin-bottom:16px"><summary style="cursor:pointer;font-size:12px;color:var(--muted);padding:10px 14px;background:#F9F8F6;border-radius:4px;border:1px solid var(--border);user-select:none">▾ Ver detalle ampliado (narrativa, avance por área, fortalezas, debilidades y recomendaciones)</summary>';
+
+  // ── Detalle: Narrativa por secciones (incluye output de IA si lo hay) ──
+  html += '<div class="card" style="margin-top:12px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:14px">📝 Resumen narrativo</div>';
   if(secs.visionGeneral) {
     html += '<div style="margin-bottom:18px"><h4 style="font-family:DM Serif Display,serif;font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:normal">Visión general</h4><div style="font-size:14px;line-height:1.7;color:var(--text)">'+secs.visionGeneral+'</div></div>';
   }
@@ -4109,17 +4573,8 @@ function renderResumenEjecutivo() {
   }
   html += '</div>';
 
-  // Indicadores clave
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">';
-  const avColor = av === null ? 'var(--muted)' : (av >= 90 ? 'var(--green)' : av >= 70 ? 'var(--yellow)' : 'var(--red)');
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Avance global</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:'+avColor+';line-height:1">'+(av!==null?av+'%':'—')+'</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟢 Fortalezas</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--green);line-height:1">'+data.distribucion.verde+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones ≥ 90%</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🟡 En proceso</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--yellow);line-height:1">'+data.distribucion.amarillo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones 70-89%</div></div>';
-  html += '<div class="card" style="text-align:center;padding:18px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">🔴 Debilidades</div><div style="font-family:DM Serif Display,serif;font-size:36px;color:var(--red);line-height:1">'+data.distribucion.rojo+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">acciones &lt; 70%</div></div>';
-  html += '</div>';
-
-  // Avance por área
-  html += '<div class="card" style="margin-bottom:16px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
+  // ── Detalle: Avance por área (tabla) ──
+  html += '<div class="card" style="margin-top:12px"><div class="card-title" style="font-size:13px;color:var(--accent);margin-bottom:12px">📊 Avance por área</div>';
   html += '<table class="accion-table"><thead><tr><th>Área</th><th style="text-align:center">% Avance</th><th style="text-align:center">Estado</th><th style="text-align:center">Acciones evaluadas</th></tr></thead><tbody>';
   data.areas.forEach(function(area){
     const est = area.promedio === null ? 'sin_datos' : (area.promedio >= 90 ? 'verde' : area.promedio >= 70 ? 'amarillo' : 'rojo');
@@ -4131,9 +4586,9 @@ function renderResumenEjecutivo() {
   });
   html += '</tbody></table></div>';
 
-  // Fortalezas
+  // ── Detalle: Fortalezas completas ──
   if(data.fortalezas.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
+    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--green)"><div class="card-title" style="font-size:13px;color:var(--green);margin-bottom:12px">🟢 Fortalezas — Acciones con cumplimiento ≥ 90%</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
     data.fortalezas.slice(0,10).forEach(function(f){
       html += '<li><strong>'+f.accion+'</strong> ('+f.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+f.area+'</span></li>';
@@ -4143,9 +4598,9 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // Debilidades
+  // ── Detalle: Debilidades completas ──
   if(data.debilidades.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
+    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--red)"><div class="card-title" style="font-size:13px;color:var(--red);margin-bottom:12px">🔴 Debilidades — Acciones con cumplimiento &lt; 70%</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8">';
     data.debilidades.slice(0,10).forEach(function(d){
       html += '<li><strong>'+d.accion+'</strong> ('+d.promedio+'%) <span style="color:var(--muted);font-size:11px">— '+d.area+'</span></li>';
@@ -4155,9 +4610,9 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // Sin registro
+  // ── Detalle: Sin registro ──
   if(data.sinRegistro.length) {
-    html += '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
+    html += '<div class="card" style="margin-top:12px;border-left:4px solid var(--muted)"><div class="card-title" style="font-size:13px;color:var(--muted);margin-bottom:12px">⚪ Acciones sin registro en el período</div>';
     html += '<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--muted)">';
     data.sinRegistro.slice(0,10).forEach(function(s){
       html += '<li>'+s.accion+' <span style="font-size:11px">— '+s.area+'</span></li>';
@@ -4167,11 +4622,22 @@ function renderResumenEjecutivo() {
     html += '</div>';
   }
 
-  // Recomendaciones
-  html += '<div class="card" style="margin-bottom:16px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
+  // ── Detalle: Recomendaciones completas ──
+  html += '<div class="card" style="margin-top:12px;background:#FDF6E3;border-left:4px solid var(--gold)"><div class="card-title" style="font-size:13px;color:var(--gold);margin-bottom:12px">💡 Recomendaciones de mejora</div>';
   html += '<ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.8">';
   recs.forEach(function(r){ html += '<li>'+r+'</li>'; });
   html += '</ol></div>';
+
+  // ── Detalle: Atajos a otros paneles ──
+  html += '<div class="card" style="margin-top:12px;padding:14px 18px">';
+  html += '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5pt;margin-bottom:10px">Profundizar</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<a href="javascript:showPanel(\'informes\')" class="btn btn-outline btn-sm">📊 Informes detallados</a>';
+  html += '<a href="javascript:showPanel(\'ver-reuniones\')" class="btn btn-outline btn-sm">📋 Historial de reuniones</a>';
+  html += '<a href="javascript:showPanel(\'admin-documentos\')" class="btn btn-outline btn-sm">📁 Documentos institucionales</a>';
+  html += '</div></div>';
+
+  html += '</details>';
 
   return html;
 }
@@ -12407,8 +12873,8 @@ function _areaBadge(area){
 function _cumplimientoPlan(microaccionId){
   const pasos = (DB.pasos||[]).filter(p => p.microaccion_id === microaccionId);
   if(!pasos.length) return null;
-  const suma = pasos.reduce((acc,p) => acc + (p.estado === 'COMPLETADO' ? 100 : (Number(p.porcentaje_avance)||0)), 0);
-  return Math.round(suma / pasos.length);
+  const completos = pasos.filter(p => p.estado === 'COMPLETADO').length;
+  return Math.round(completos / pasos.length * 100);
 }
 
 /* Etiqueta de estado con color */
