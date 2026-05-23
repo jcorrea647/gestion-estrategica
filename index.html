@@ -7125,6 +7125,14 @@ const PLAN_CSS = `
   margin-bottom:6px;font-family:var(--serif,Georgia,serif)}
 .plan-accion-evaluada-desc{font-size:12px;line-height:1.5;opacity:.85;margin-top:4px}
 .plan-accion-evaluada-area{font-size:10.5px;font-weight:600;letter-spacing:.5px;opacity:.65;margin-top:8px;text-transform:uppercase}
+.plan-accion-evaluada-meta{display:flex;align-items:center;gap:8px;margin-top:10px;
+  padding-top:10px;border-top:1px solid rgba(255,255,255,.15);flex-wrap:wrap}
+.plan-accion-evaluada-meta-pct{font-family:var(--serif,Georgia,serif);font-size:18px;
+  font-weight:700;color:#fff;line-height:1}
+.plan-accion-evaluada-meta-nivel{display:inline-flex;align-items:center;
+  border-radius:20px;padding:3px 11px;font-size:10.5px;font-weight:700;
+  letter-spacing:.4px;text-transform:uppercase;line-height:1.4}
+.plan-accion-evaluada-meta-sep{color:rgba(255,255,255,.35);font-size:11px}
 
 .plan-brecha-explicacion{font-size:12.5px;line-height:1.55;color:var(--muted);
   margin:0 0 14px 0;padding:10px 14px;background:#FAF7F2;border-radius:6px;
@@ -7380,8 +7388,11 @@ const PLAN_CSS = `
 .marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-nivel{
   border-color:#7A5A18;
 }
-.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn{
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn:not(.activa){
   color:#7A5A18;
+}
+.marco-eid-bloque-unificado:has(.marco-eid-toggle-btn[data-nivel="avanzado"].activa) .marco-eid-toggle-btn.activa{
+  color:#fff;
 }
 
 /* Línea con el sujeto extraído ("El equipo técnico-pedagógico y los docentes:") */
@@ -7607,18 +7618,9 @@ let PLAN_BRECHAS_LOADING = false;
 
 // Helper: valida que una respuesta de brechas tenga _meta.version compatible
 // con la edge function actual. Si no, se considera obsoleta y forzamos regenerar.
-//
-// VERSIONES_BRECHAS_VIGENTES: regex de versiones aceptadas. Aceptamos cualquier
-// minor de v8 (v8.0, v8.1, v8.2, v8.3, v8.4, ..., v8.99) porque los bumps de
-// minor son cambios compatibles del prompt o del payload sin romper el shape
-// de respuesta. Si en algún momento se rompe el shape (ej. v9.0), bajaremos a
-// una lista cerrada o cambiaremos el regex.
-//
-// HISTÓRICO: antes esto era una whitelist cerrada ['v8.3']. Cuando la edge
-// function bumpeó a v8.4, todos los planes guardados eran rechazados como
-// "no vigentes" y se regeneraba con IA en cada apertura (27 segundos por
-// apertura, costo de IA en cada una). El regex evita ese tipo de drift.
-const VERSIONES_BRECHAS_VIGENTES = /^v8\.\d+$/;
+// VERSIONES_VIGENTES: lista de versiones aceptadas. Para forzar regeneración
+// global, basta con sacar versiones viejas de esta lista.
+const VERSIONES_BRECHAS_VIGENTES = ['v8.3'];
 function esBrechaVigente(b) {
   if (!b || typeof b !== 'object') return false;
   // Si hay error o modo distinto a PERSONALIZADO, no es vigente
@@ -7627,7 +7629,7 @@ function esBrechaVigente(b) {
   if (b.modo === 'FALLBACK_SIN_CONTEXTO') return true;
   const v = b?._meta?.version;
   if (!v) return false;
-  return VERSIONES_BRECHAS_VIGENTES.test(v);
+  return VERSIONES_BRECHAS_VIGENTES.includes(v);
 }
 
 async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
@@ -7646,29 +7648,10 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
     const bandaOk = !storedBanda || storedBanda === (banda||'');
     const vigente = esBrechaVigente(PLAN_STATE.brechasData);
     if (bandaOk && vigente) {
-      // Limpiamos cualquier marca previa de banda desactualizada si la banda
-      // ahora vuelve a coincidir (ej. director ajustó el % de vuelta).
-      if (PLAN_STATE.brechasData._bandaDesactualizada) {
-        delete PLAN_STATE.brechasData._bandaDesactualizada;
-      }
       PLAN_BRECHAS_CACHE[cacheKey] = PLAN_STATE.brechasData;
       return PLAN_STATE.brechasData;
     }
-    // Si la banda cambió pero las brechas son vigentes (v8.3+), las reusamos
-    // marcándolas como "banda desactualizada". El director ve un aviso y
-    // decide si regenerar manualmente (opción 3: respetar trabajo previo,
-    // evitar costos automáticos de IA cuando el director sube el %).
-    if (vigente && !bandaOk) {
-      const reusadas = {
-        ...PLAN_STATE.brechasData,
-        _bandaDesactualizada: { previa: storedBanda, actual: banda||'' }
-      };
-      PLAN_BRECHAS_CACHE[cacheKey] = reusadas;
-      // Importante: NO actualizamos PLAN_STATE.brechasData con la marca para
-      // no persistir el flag en BD; la marca es solo runtime, para el render.
-      return reusadas;
-    }
-    // Brechas viejas sin _meta o versión obsoleta — invalidar y regenerar
+    // Banda cambió o brechas viejas sin _meta — invalidar y regenerar
     if (!vigente) console.log('[planCargarBrechas] PLAN_STATE.brechasData no vigente, regenerando con v8.3');
     PLAN_STATE.brechasData = null;
     if (typeof planSyncSupabase === 'function') planSyncSupabase();
@@ -7694,20 +7677,7 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
         if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
         return ma.brechas_data;
       }
-      // Brechas vigentes pero con banda distinta — reusar con marca de aviso
-      // en vez de regenerar (opción 3). El director decide si actualizar.
-      if (vigente && !bandaOk) {
-        const reusadas = {
-          ...ma.brechas_data,
-          _bandaDesactualizada: { previa: storedBanda, actual: banda||'' }
-        };
-        PLAN_BRECHAS_CACHE[cacheKey] = reusadas;
-        // Hidratamos PLAN_STATE con las brechas originales (sin la marca) para
-        // que el autosave no escriba el flag a BD. La marca es solo runtime.
-        if (PLAN_STATE) PLAN_STATE.brechasData = ma.brechas_data;
-        return reusadas;
-      }
-      // Banda igual pero brechas no vigentes (versión vieja) — regenerar
+      // Banda cambió o brechas no vigentes (sin _meta.version v8.3) — regenerar
       if (!vigente) console.log('[planCargarBrechas] brechas en Supabase no vigentes, regenerando con v8.3');
     }
   } catch(e) { console.warn('planCargarBrechas lookup mes-exacto:', e.message); }
@@ -7792,63 +7762,6 @@ async function planCargarBrechas(colegioId, accionId, mes, pct, banda) {
   } finally {
     PLAN_BRECHAS_LOADING = false;
   }
-}
-
-// Etiqueta legible para cada banda. Usada por el aviso de "banda desactualizada"
-// del paso 2 (Brechas). Mantener sincronizado con los strings de banda que
-// produce planInitState (CRITICO/MEJORA/CONSOLIDACION).
-function _etiquetaBanda(b) {
-  if(!b) return '';
-  const map = { CRITICO: 'Crítico', MEJORA: 'En mejora', CONSOLIDACION: 'Consolidación' };
-  return map[b] || b;
-}
-
-// Regenera las brechas manualmente. Lo dispara el director cuando ve el banner
-// "El % de cumplimiento cambió" y decide actualizar el análisis. Es la única
-// vía por la que el cambio de banda gatilla un costo de IA (antes era
-// automático en cada apertura, ahora es opt-in explícito).
-//
-// Funciona tanto para BORRADOR (donde planSyncSupabase escribe todo el
-// payload) como para ACTIVA/COMPLETADA (donde planSyncSupabase corta por
-// seguridad). Para planes activos hacemos un UPDATE quirúrgico solo del
-// campo brechas_data, evitando que el plan se revierta a BORRADOR.
-async function planRegenerarBrechas() {
-  if (!PLAN_STATE) return;
-  if (!confirm('¿Actualizar el análisis de brechas con el % actual?\n\nEsto vuelve a consultar la IA y reemplaza las brechas previas. La acción puede tardar unos segundos.')) return;
-  const s = PLAN_STATE;
-  const colId = DB.colegio?.id || '';
-
-  // Invalidar todas las copias en cache (memoria + estado) para que
-  // planCargarBrechas caiga al paso 4 (llamada a IA) en el siguiente render.
-  Object.keys(PLAN_BRECHAS_CACHE).forEach(k => {
-    if (k.startsWith(colId + '_' + s.accionId + '_' + s.mes + '_')) {
-      delete PLAN_BRECHAS_CACHE[k];
-    }
-  });
-  s.brechasData = null;
-
-  // Limpieza en BD del campo brechas_data, según el estado del plan:
-  //  - BORRADOR: usamos planSyncSupabase normal (autosave)
-  //  - ACTIVA/COMPLETADA: UPDATE quirúrgico solo de brechas_data
-  // El UPDATE quirúrgico es lo que evita que el guard de planSyncSupabase
-  // (que protege planes activos de ser revertidos a borrador) bloquee la
-  // limpieza.
-  const planActivo = s.existente && s.existente.estado && s.existente.estado !== 'BORRADOR';
-  if (planActivo && s.microaccionId) {
-    try {
-      await sb.from('microacciones')
-        .update({ brechas_data: null })
-        .eq('id', s.microaccionId);
-    } catch(e) {
-      console.warn('[planRegenerarBrechas] no se pudo limpiar brechas_data en BD:', e.message);
-    }
-  } else if (typeof planSyncSupabase === 'function') {
-    await planSyncSupabase();
-  }
-
-  // Re-renderizar el paso de brechas: el spinner aparece y planCargarBrechas
-  // genera con IA porque ya no hay nada en cache ni en BD.
-  renderPlanPaso();
 }
 
 // Cache de contenido de ficha por nombre de acción (marco conceptual + niveles + causales + sustento)
@@ -8485,7 +8398,7 @@ async function _abrirPlanInternal(accionId, mes){
       const accion = DB.acciones.find(a=>a.id===accionId);
       planRenderSelectorHerencia(planAnterior, accion, mes, (modo) => {
         if(modo === 'continuar'){
-          const datos = planConstruirDesdePlanAnterior(planAnterior, seg);
+          const datos = planConstruirDesdePlanAnterior(planAnterior);
           planInitState(accionId, mes, seg, datos);
           renderPlanPaso();
           // Marcar como modificado para que el primer autosave persista
@@ -8577,50 +8490,22 @@ function planMarcarHeredado(planAnterior){
 }
 
 /* Construye datosBorrador desde el plan anterior. NO copia microaccionId
- * (es plan nuevo) ni cumplimiento/evidencia.
- *
- * Si se pasa `segNuevo` (el seguimiento del mes destino), compara el nivel
- * del plan anterior contra el nivel del mes nuevo. Si difieren, NO hereda
- * propuestas_llm — el director llegará al paso 4 con propuestas frescas al
- * nivel correcto. El resto (causas, comentario, brechas, acuerdos) sí se
- * hereda, porque conserva el razonamiento del director del mes anterior. */
-function planConstruirDesdePlanAnterior(planAnterior, segNuevo){
+ * (es plan nuevo) ni cumplimiento/evidencia. */
+function planConstruirDesdePlanAnterior(planAnterior){
   const heredado = planMarcarHeredado(planAnterior);
   const comentarioHeredado = planAnterior.comentario
     ? `[Continuación de ${planAnterior.mes}] ${planAnterior.comentario}`
     : '';
-
-  // ── Decidir si heredar propuestas_llm según coincidencia de nivel ──
-  // Por defecto se heredan (comportamiento histórico). Solo se descartan si
-  // se puede determinar con certeza que los niveles difieren.
-  let heredarPropuestas = true;
-  if(segNuevo && Array.isArray(planAnterior.propuestas_llm) && planAnterior.propuestas_llm.length){
-    const nivelNuevo = _planNivelDesdePct(segNuevo.porcentaje);
-    let nivelAnterior = null;
-    for(const ln of planAnterior.propuestas_llm){
-      if(ln && /^L[1-5]$/.test(ln._nivelGenerado||'')){ nivelAnterior = ln._nivelGenerado; break; }
-      const m = ln && ln.titulo && String(ln.titulo).match(/\bL([1-5])\b/);
-      if(m){ nivelAnterior = 'L'+m[1]; break; }
-    }
-    if(nivelNuevo && nivelAnterior && nivelNuevo !== nivelAnterior){
-      heredarPropuestas = false;
-      console.info('[planConstruirDesdePlanAnterior] Nivel cambió de', nivelAnterior, 'a', nivelNuevo, '- no se heredan propuestas_llm');
-    }
-  }
-
   return {
     id: null,
     paso_actual: 1,
     causas: planAnterior.causas || [],
     causas_otros: planAnterior.causas_otros || [],
     comentario: comentarioHeredado,
-    propuestas_llm: heredarPropuestas ? (planAnterior.propuestas_llm || null) : null,
-    // Si NO heredamos propuestas, tampoco heredamos pasos seleccionados ni
-    // otros pasos por línea, porque referencian IDs de líneas que no van a
-    // existir. Foco propio sí se hereda porque es independiente de las líneas.
-    pasos_seleccionados: heredarPropuestas ? (planAnterior.pasos_seleccionados || []) : [],
-    pasos_otros_linea:   heredarPropuestas ? (planAnterior.pasos_otros_linea   || {}) : {},
-    pasos_foco_propio:   planAnterior.pasos_foco_propio || [],
+    propuestas_llm: planAnterior.propuestas_llm || null,
+    pasos_seleccionados: planAnterior.pasos_seleccionados || [],
+    pasos_otros_linea: planAnterior.pasos_otros_linea || {},
+    pasos_foco_propio: planAnterior.pasos_foco_propio || [],
     asignaciones: heredado.asignaciones,
     consolidacion_modos: planAnterior.consolidacion_modos || [],
     acuerdo_que:   heredado.acuerdos.qhe,
@@ -8660,12 +8545,12 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">🔁</div>
         <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px">Continuar de ${escapeHtmlPlan(mesAnteriorLabel)}</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Mismos factores, mismos pasos, mismas asignaciones (con aviso para confirmar).
+          Mismas causales, mismos pasos, mismas asignaciones (con aviso para confirmar).
           Sumás un mes más a la estrategia que ya venías trabajando.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
           <div>📋 ${numPasos} paso(s) ya definidos</div>
-          <div style="margin-top:3px">🎯 Factores: ${escapeHtmlPlan(causasNombres)}</div>
+          <div style="margin-top:3px">🎯 Causales: ${escapeHtmlPlan(causasNombres)}</div>
         </div>
         <div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:10px;text-transform:uppercase;letter-spacing:.05em">
           Recomendado si la realidad no cambió
@@ -8677,7 +8562,7 @@ function planRenderSelectorHerencia(planAnterior, accion, mesActual, callback){
         <div style="font-size:24px;margin-bottom:8px">✏</div>
         <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Empezar plan nuevo</div>
         <div style="font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px">
-          Partís desde la versión institucional. Volves a diagnosticar factores
+          Partís desde la versión institucional. Volves a diagnosticar causales
           y construir el plan según lo que está pasando hoy.
         </div>
         <div style="font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border-light,#e8e8e8)">
@@ -8799,7 +8684,7 @@ function renderPlanPaso(){
   document.getElementById('planTitle').textContent = s.accion?.nombre || 'Plan';
   document.getElementById('planSubtitle').textContent = 'Período: '+fmtMes(s.mes);
 
-  const PASO_LABELS = ['','Marco','Brechas','Factores','Construye tu plan','Planes'];
+  const PASO_LABELS = ['','Marco','Brechas','Causales','Construye tu plan','Planes'];
   const prog = document.getElementById('planProgress');
   prog.innerHTML='';
   for(let i=1;i<=5;i++){
@@ -8848,6 +8733,43 @@ function renderPlanPaso(){
   }, 0);
 }
 
+/* ====================== HELPER: HEADER CONSISTENTE DEL WIZARD ====================== */
+// Genera el bloque "ACCIÓN PME · PASO X DE 7" con nombre, descripción, área,
+// porcentaje y nivel de logro. Se usa en todos los pasos (1 a 4) para mantener
+// contexto visual del director sobre qué acción está construyendo el plan y
+// en qué estado de logro se encuentra.
+function _planRenderHeaderAccion(pasoNumero){
+  const s = PLAN_STATE;
+  const accionNombre = s.accion?.nombre || '';
+  const accionDescripcion = s.accion?.descripcion || '';
+  const obj = DB.objetivos.find(o=>o.id===s.accion?.objetivo_id);
+  const area = obj ? DB.areas.find(a=>a.id===obj.area_id) : null;
+  const colegioNombre = DB.colegio?.nombre || '';
+  const areaLabel = (area?.nombre || '') + (colegioNombre ? ' · ' + colegioNombre : '');
+
+  const pct = (s.pct === null || s.pct === undefined || s.pct === '' || isNaN(s.pct)) ? null : Number(s.pct);
+  const nivel = nivelLogro(pct);
+
+  let metaHtml = '';
+  if(pct !== null || nivel){
+    const pctTxt = pct !== null ? `<span class="plan-accion-evaluada-meta-pct">${Math.round(pct)}%</span>` : '';
+    const nivelTxt = nivel
+      ? `<span class="plan-accion-evaluada-meta-nivel" style="background:${nivel.bg};color:${nivel.color}">${escapeHtmlPlan(nivel.nombre)}</span>`
+      : '';
+    const sep = (pctTxt && nivelTxt) ? '<span class="plan-accion-evaluada-meta-sep">·</span>' : '';
+    metaHtml = `<div class="plan-accion-evaluada-meta">${pctTxt}${sep}${nivelTxt}</div>`;
+  }
+
+  return `
+    <div class="plan-accion-evaluada">
+      <div class="plan-accion-evaluada-label">ACCIÓN PME · PASO ${pasoNumero} DE 7</div>
+      <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(accionNombre)}</div>
+      ${accionDescripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(accionDescripcion)+'</div>' : ''}
+      ${areaLabel ? '<div class="plan-accion-evaluada-area">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
+      ${metaHtml}
+    </div>`;
+}
+
 /* ====================== PASO 1: CONTEXTO ====================== */
 async function renderPaso1Contexto(){
   const s = PLAN_STATE;
@@ -8866,11 +8788,7 @@ async function renderPaso1Contexto(){
     ${banner}
     <div class="plan-orient">Lo que verás aquí es un análisis automatizado para orientar tu decisión.</div>
 
-    <div class="plan-accion-evaluada">
-      <div class="plan-accion-evaluada-label">ACCIÓN PME EVALUADA</div>
-      <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(s.accion?.nombre || '')}</div>
-      ${s.accion?.descripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(s.accion.descripcion)+'</div>' : ''}
-    </div>
+    ${_planRenderHeaderAccion(2)}
 
     <div id="planBrechasContenedor">
       <div class="plan-loading-inline" style="padding:40px 20px;justify-content:center">
@@ -8896,25 +8814,6 @@ async function renderPaso1Contexto(){
   }
   const cont = document.getElementById('planBrechasContenedor');
   if (!cont) return; // Drawer ya cerrado
-
-  // Si las brechas vienen marcadas como _bandaDesactualizada, mostramos un
-  // aviso explícito al director. Se reusa el trabajo previo en vez de
-  // regenerar automáticamente (decisión: respetar costos de IA y trabajo
-  // hecho; el director decide si actualizar).
-  const _bd = brechasResp && brechasResp._bandaDesactualizada;
-  const bandaDesactualizadaBanner = _bd
-    ? `<div class="plan-borrador-banner" style="background:#FFF4E0;border-left:3px solid #C18B2A;margin-bottom:14px">
-         <div style="flex:1">
-           <strong>El % de cumplimiento cambió.</strong>
-           Este análisis se generó cuando el plan estaba en
-           <em>${escapeHtmlPlan(_etiquetaBanda(_bd.previa))}</em>
-           y ahora está en
-           <em>${escapeHtmlPlan(_etiquetaBanda(_bd.actual))}</em>.
-           Las brechas pueden estar desactualizadas.
-         </div>
-         <button onclick="planRegenerarBrechas()">Actualizar análisis</button>
-       </div>`
-    : '';
 
   // Determinar bullets a mostrar según los 3 escenarios:
   //   1) IA personalizada → usar b.diagnostico (frase corta) de cada brecha
@@ -9084,7 +8983,7 @@ async function renderPaso1Contexto(){
       return `<span${tip} style="display:inline-block;font-size:13px;padding:5px 11px;border-radius:14px;background:#EFEEEA;color:#444441;border:1px solid #DDD9CF;margin:0 0 6px 6px">${escapeHtmlPlan(etiq)}</span>`;
     }).join('');
     const causalesBloque = causalesPills
-      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Factores asociados</div>${causalesPills}</div>`
+      ? `<div style="text-align:right;align-self:flex-start"><div style="font-size:10px;color:#888780;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-weight:600">Causales asociadas</div>${causalesPills}</div>`
       : '<div></div>';
     const sep = i < bullets.length - 1 ? 'border-bottom:1px solid rgba(0,0,0,0.06);' : '';
     return `
@@ -9155,7 +9054,7 @@ async function renderPaso1Contexto(){
           frase = nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1];
         }
         const cantidad = nombres.length;
-        cierre = 'Los ' + cantidad + ' factores más recurrentes por tanto son ' + frase + '.';
+        cierre = 'Las ' + cantidad + ' causales más recurrentes por tanto son ' + frase + '.';
         console.log('[resumen] frase de cierre generada por el frontend:', cierre);
       }
     }
@@ -9178,7 +9077,6 @@ async function renderPaso1Contexto(){
       : `<div style="font-size:11px;color:#888780;margin-top:14px;letter-spacing:.04em">Orientaciones generales según el nivel de logro</div>`;
 
   cont.innerHTML = `
-    ${bandaDesactualizadaBanner}
     <div style="background:#fff;border:1px solid #e0d8c4;border-radius:14px;padding:24px 26px;margin-top:8px;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
       <div style="display:grid;grid-template-columns:200px 1fr;gap:28px;align-items:flex-start">
         <div style="background:${nivel.bg};border-radius:10px;padding:20px 16px;text-align:center;border:1px solid ${nivel.borde}">
@@ -9194,7 +9092,7 @@ async function renderPaso1Contexto(){
           ${resumenHtml}
           <ul style="list-style:none;padding:0;margin:0">${bulletsHtml}</ul>
           <div style="font-size:13px;line-height:1.65;color:#5F5E5A;font-style:italic;border-top:1px solid rgba(0,0,0,0.08);padding-top:14px;margin-top:16px">
-            Para esto te invitamos al siguiente paso, donde podrás identificar los factores de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
+            Para esto te invitamos al siguiente paso, donde podrás identificar las causales de logro y a definir un plan de acción focalizado para avanzar al siguiente nivel y tener un impacto positivo en la formación de los alumnos y alumnas.
           </div>
           ${fuenteTag}
         </div>
@@ -9283,6 +9181,7 @@ function renderPaso2Diagnostico(){
     : '';
 
   document.getElementById('planBody').innerHTML = `
+    ${_planRenderHeaderAccion(3)}
     <h3>¿Qué podría explicar que no se haya logrado esta acción?</h3>
     <p class="lead">Marca hasta 3 causas en orden de importancia. Si tu caso no encaja, agrega causas propias en Otros.</p>
     ${bannerIA}
@@ -9358,6 +9257,7 @@ function renderPaso2Consolidacion(){
   }).join('');
 
   document.getElementById('planBody').innerHTML = `
+    ${_planRenderHeaderAccion(3)}
     <h3>Modos de consolidación</h3>
     <p class="lead">Estás en banda Avanzada. Activa uno o varios modos. Son complementarios.</p>
     <div style="display:grid;gap:10px">${items}</div>
@@ -9424,82 +9324,6 @@ async function planRegenerarPlan(){
   planGenerarPropuestas();
 }
 
-// ── Helpers para detectar desajuste de nivel en propuestas guardadas ──
-// Contexto: las líneas tipo "ámbito" se generan condicionadas al nivel actual
-// (L1/L2/L3/L4/L5 según s.pct). Si las propuestas guardadas son de un nivel
-// distinto al actual (porque el director ajustó el % en el mismo mes después
-// de armar el plan, o porque se heredaron desde un mes anterior con otro
-// nivel), aparece la inconsistencia visible "L3 En Desarrollo" cuando el
-// plan está en 20% Inicial.
-
-// Convierte un % en código de nivel L1..L5. Usa los mismos umbrales que
-// planGenerarPropuestas (línea 9346 original) y planGenerarCacheKey, no los
-// de nivelLogro() — porque el suffix del lookup en planes_cache usa esta
-// fórmula y la coherencia con esa key es lo que define el "nivel del plan".
-function _planNivelDesdePct(pct){
-  const p = Number(pct);
-  if(isNaN(p)) return null;
-  if(p <= 25) return 'L1';
-  if(p <= 50) return 'L2';
-  if(p <= 75) return 'L3';
-  if(p <= 90) return 'L4';
-  return 'L5';
-}
-
-// Detecta si las propuestas guardadas en PLAN_STATE corresponden a un nivel
-// distinto del actual. Retorna { desajustado, nivelGenerado, nivelActual,
-// hayTrabajoDelDirector }.
-//
-// Estrategia de detección, en orden de preferencia:
-//   1. Campo _nivelGenerado en alguna línea (planes nuevos creados después
-//      de este fix lo incluyen explícitamente).
-//   2. Regex sobre el título de las líneas tipo ámbito (formato actual:
-//      "📚 Aula · L3 En Desarrollo"). Cubre planes legacy sin la marca.
-//   3. Si no se puede determinar el nivel generado, retorna desajustado=false
-//      para evitar falsos positivos.
-function _planDetectarNivelDesajustado(s){
-  const nivelActual = _planNivelDesdePct(s.pct);
-  const result = {
-    desajustado: false,
-    nivelGenerado: null,
-    nivelActual,
-    hayTrabajoDelDirector: false
-  };
-  if(!nivelActual || !Array.isArray(s.propuestas) || s.propuestas.length === 0) return result;
-
-  // 1. Buscar _nivelGenerado en alguna línea (planes nuevos)
-  let nivelGenerado = null;
-  for(const ln of s.propuestas){
-    if(ln && typeof ln._nivelGenerado === 'string' && /^L[1-5]$/.test(ln._nivelGenerado)){
-      nivelGenerado = ln._nivelGenerado;
-      break;
-    }
-  }
-
-  // 2. Fallback: extraer Lx del título de líneas ámbito (planes legacy)
-  if(!nivelGenerado){
-    for(const ln of s.propuestas){
-      const titulo = (ln && ln.titulo) ? String(ln.titulo) : '';
-      const match = titulo.match(/\bL([1-5])\b/);
-      if(match){
-        nivelGenerado = 'L' + match[1];
-        break;
-      }
-    }
-  }
-
-  result.nivelGenerado = nivelGenerado;
-  if(!nivelGenerado) return result; // no se pudo determinar; no falso positivo
-  result.desajustado = nivelGenerado !== nivelActual;
-  // ¿El director ya marcó pasos? (criterio para decidir si avisar o regenerar
-  // silenciosamente. Camino 1: silencioso si no hay trabajo, banner si lo hay)
-  const totalPasos = (s.pasosSeleccionados?.length || 0)
-                   + (s.pasosFocoPropio?.length || 0)
-                   + Object.values(s.pasosOtrosLinea || {}).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
-  result.hayTrabajoDelDirector = totalPasos > 0;
-  return result;
-}
-
 function planGenerarCacheKey(s){
   const tramo = (s.pct||0) <= 25 ? 'L1' : (s.pct||0) <= 50 ? 'L2' : (s.pct||0) <= 75 ? 'L3' : (s.pct||0) <= 90 ? 'L4' : 'L5';
   const causas = [...(s.causas||[])].map(c=>c.codigo).sort().join(',');
@@ -9517,47 +9341,6 @@ async function planGenerarPropuestas(){
   }
 
   // Si ya hay propuestas (borrador retomado), verificar que no sean obsoletas
-  if(s.propuestas && s.propuestas.length){
-    // ── DESAJUSTE DE NIVEL ──
-    // Camino 1: si las propuestas guardadas son de un nivel distinto al
-    // actual (porque el director cambió el % o el plan se heredó de otro
-    // mes con nivel distinto), descartarlas y regenerar al nivel correcto.
-    //
-    // Sin opt-in si no hay trabajo del director que perder; con confirmación
-    // si ya marcó pasos / asignó responsables / agregó focos propios. Esto
-    // evita borrar trabajo previo sin avisar pero también evita molestar
-    // cuando no hay nada que perder.
-    const desajuste = _planDetectarNivelDesajustado(s);
-    if(desajuste.desajustado){
-      if(desajuste.hayTrabajoDelDirector){
-        const ok = confirm(
-          'El % de cumplimiento de este plan cambió y las propuestas actuales son de otro nivel.\n\n' +
-          '¿Actualizar las propuestas al nivel actual?\n\n' +
-          'Esto descarta los pasos seleccionados, asignaciones y focos propios para reconstruir el plan al nivel correcto.'
-        );
-        if(!ok){
-          // El director eligió mantener las propuestas viejas — respetamos
-          // su decisión y avanzamos al paso 4 sin tocar nada. Notar que la
-          // inconsistencia visible "L3 En Desarrollo" seguirá ahí; es lo
-          // que él pidió.
-          s.paso = 4; renderPlanPaso(); return;
-        }
-      }
-      // Limpiar y regenerar al nivel actual
-      console.info('[planGenerarPropuestas] Desajuste de nivel:',
-        desajuste.nivelGenerado, '→', desajuste.nivelActual,
-        '· trabajo del director:', desajuste.hayTrabajoDelDirector);
-      s.propuestas = null;
-      s.pasosSeleccionados = [];
-      s.pasosFocoPropio = [];
-      s.pasosOtrosLinea = {};
-      s.asignaciones = {};
-      planMarcarCambio();
-      // Caemos al flujo de generación normal abajo (no return).
-    }
-  }
-
-  // Si ya hay propuestas (después del chequeo de nivel), verificar que no sean obsoletas
   if(s.propuestas && s.propuestas.length){
     const primerDesc = s.propuestas?.[0]?.pasos?.[0]?.descripcion || '';
     // Detectar propuestas obsoletas: del fallback genérico O del fallback de ficha
@@ -9587,7 +9370,7 @@ async function planGenerarPropuestas(){
     <div class="plan-loading">
       <div class="plan-loading-spin"></div>
       <p>Construyendo plan personalizado…</p>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo factores curados · Nivel actual · Trayectoria de mejora</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Leyendo causales curadas · Nivel actual · Trayectoria de mejora</p>
     </div>`;
   document.getElementById('planFooter').innerHTML = '';
 
@@ -9783,7 +9566,6 @@ async function planGenerarPropuestas(){
                 descripcion_corta: AMBITO_DESCRIPCIONES[ambito] || ('Pasos base del nivel ' + nivelActual + ' en el ámbito ' + ambito + '. Edita o desmarca los que no apliquen.'),
                 causa_atacada: 'nivel',
                 _ambito: ambito,
-                _nivelGenerado: nivelActual, // marca explícita del nivel al momento de generar (para detectar desajustes en reaperturas)
                 pasos,
                 _fromPrecomp: true
               });
@@ -9903,21 +9685,11 @@ function generarPropuestasFallback(s){
 async function renderPaso4MarcoConceptual(){
   const s = PLAN_STATE;
   const accionNombre = s.accion?.nombre || '';
-  const accionDescripcion = s.accion?.descripcion || '';
-  const obj = DB.objetivos.find(o=>o.id===s.accion?.objetivo_id);
-  const area = obj ? DB.areas.find(a=>a.id===obj.area_id) : null;
-  const colegioNombre = DB.colegio?.nombre || '';
-  const areaLabel = (area?.nombre || '') + (colegioNombre ? ' · ' + colegioNombre : '');
 
   // Render con loading mientras carga la ficha
   document.getElementById('planBody').innerHTML = `
     <div class="aviso-disclaimer">Antes de mirar datos, leé el marco que sustenta el plan. Cuatro bullets por fuente — 60 segundos en total.</div>
-    <div class="plan-accion-evaluada">
-      <div class="plan-accion-evaluada-label">ACCIÓN PME · PASO 1 DE 7</div>
-      <div class="plan-accion-evaluada-nombre">${escapeHtmlPlan(accionNombre)}</div>
-      ${accionDescripcion ? '<div class="plan-accion-evaluada-desc">'+escapeHtmlPlan(accionDescripcion)+'</div>' : ''}
-      ${areaLabel ? '<div class="plan-accion-evaluada-area">'+escapeHtmlPlan(areaLabel)+'</div>' : ''}
-    </div>
+    ${_planRenderHeaderAccion(1)}
     <h3>Marco conceptual</h3>
     <p class="marco-intro">El plan que vas a construir no es un listado al azar. Se sustenta en <strong>marcos normativos chilenos</strong> (MBD, MBE, CPEIP y, cuando aplica, el Sistema de Desarrollo Profesional Docente) y en <strong>dos centros de investigación</strong> (CEPPE-UC y Harvard). Léelas antes de avanzar.</p>
     <div id="planMarcoContenedor">
@@ -10475,6 +10247,7 @@ function renderPaso4Constructor(){
     : '';
 
   document.getElementById('planBody').innerHTML = `
+    ${_planRenderHeaderAccion(4)}
     ${bannerFuentes}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px">
       <h3 style="margin:0">Construye tu plan</h3>
@@ -13026,7 +12799,7 @@ const ACCION_NOMBRE_A_SLUG = {
   'Evaluación y seguimiento PME':                                           'evaluacion_pme',
   'Implementar talleres para la resoución pacifica de conflictos.':         'talleres_resolucion',
   'Informe semestral y anual de término':                                   'informe_semestral',
-  'Monitoreo de Asistencia y Revinculación':                                'monitoreo_asistencia',
+  'Monitoreo de Asistencia y Revinculación agregar DUPLA PSICOSOCIAL':      'monitoreo_asistencia',
   'Monitoreo de incidentes':                                                'monitoreo_incidentes',
   'Observación aula y retroalimentación':                                   'observacion_aula',
   'Plan evaluaciones':                                                      'plan_evaluaciones',
@@ -13071,40 +12844,33 @@ const MAPA_AREAS_INFO = [
   { key:'recursos',    icono:'🧰', etiqueta:'Gestión de Recursos',color:'#0891b2' }
 ];
 
-/* Mapeo de cada acción a su área (modelo SACGE / SEP)
- *
- * IMPORTANTE: estos slugs y sus áreas deben coincidir con la Estructura
- * institucional definida por el superadmin. Cuando se mueva una acción de
- * un área a otra en Estructura, hay que actualizar también este objeto.
- * Pendiente para una refactor futura: leer este mapeo directamente desde
- * la misma tabla/columna que usa Estructura, en vez de tenerlo hardcodeado.
- */
+/* Mapeo de cada acción a su área (modelo SACGE / SEP) */
 const MAPA_ACCION_AREA = {
   // Gestión Pedagógica
   'analisis_resultados':        'pedagogica',
   'calendario_evaluaciones':    'pedagogica',
+  'desarrollo_profesional':     'pedagogica',
   'ensayos_simce_paes':         'pedagogica',
-  'informe_semestral':          'pedagogica',
   'observacion_aula':           'pedagogica',
   'plan_evaluaciones':          'pedagogica',
-  'planes_apoyo_riesgo':        'pedagogica',
   'retroalimentacion_dia':      'pedagogica',
-  'seguimiento_pie':            'pedagogica',
+  'reuniones_departamentos':    'pedagogica',
   // Liderazgo
   'evaluacion_pme':             'liderazgo',
-  'reuniones_departamentos':    'liderazgo',
   'seguimiento_plan_liderazgo': 'liderazgo',
-  'sistema_reconocimiento':     'liderazgo',
+  'informe_semestral':          'liderazgo',
   // Convivencia Escolar
   'analisis_idps':              'convivencia',
   'denuncias_seguimiento':      'convivencia',
   'ejecucion_plan_convivencia': 'convivencia',
+  'monitoreo_asistencia':       'convivencia',
   'monitoreo_incidentes':       'convivencia',
-  'talleres_deportivos':        'convivencia',
+  'sistema_reconocimiento':     'convivencia',
   'talleres_resolucion':        'convivencia',
   // Gestión de Recursos
-  'desarrollo_profesional':     'recursos',
-  'monitoreo_asistencia':       'recursos'
+  'planes_apoyo_riesgo':        'recursos',
+  'seguimiento_pie':            'recursos',
+  'talleres_deportivos':        'recursos'
 };
 
 /* Helper: devuelve el área de una acción, o 'otras' si no está mapeada */
@@ -13547,7 +13313,7 @@ function _mapaRenderNiveles(accionNombre, porNivel){
     const { unidades } = _mapaContarUnidades(sec);
     const desglose = [
       nAmbitos ? (nAmbitos + ' ámbito' + (nAmbitos>1?'s':'')) : null,
-      nCausales ? (nCausales + ' factor' + (nCausales>1?'es':'')) : null
+      nCausales ? (nCausales + ' causal' + (nCausales>1?'es':'')) : null
     ].filter(Boolean).join(' · ');
 
     html += `
