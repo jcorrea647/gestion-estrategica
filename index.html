@@ -3626,7 +3626,10 @@ async function ejecutarRestauracion() {
         // Para tablas que tienen ID, conservamos el ID original si no choca; si hay choque, dejamos que la BD genere uno nuevo
         const idOriginal = payload.id;
         // Quitar id para que la BD genere uno nuevo (más seguro para evitar choques)
-        if('id' in payload && tabla !== 'accion_responsable') {
+        // Tablas con id autogenerado por la BD: borrar id para que la BD lo regenere.
+        // Tablas con id construido manualmente (denuncias usa 'Caso_NNN_...'): conservar el id original.
+        const tablasConIdManual = ['accion_responsable', 'denuncias'];
+        if('id' in payload && !tablasConIdManual.includes(tabla)) {
           delete payload.id;
         }
 
