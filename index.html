@@ -1055,8 +1055,80 @@ function renderSidebar() {
       '</div>' : '') +
     (cu ? '<div class="nav-divider"></div><div class="nav-section"><div class="nav-label">Acceso</div>' +
       '<div class="nav-item" onclick="showPanel(\'admin-usuarios\')" id="nav-admin-usuarios"><span class="icon">u</span> Usuarios</div>' +
-      '</div>' : '');
+      '</div>' : '') +
+    '<div class="nav-divider"></div>' +
+    '<div class="nav-section">' +
+    '<div class="nav-label">Soporte</div>' +
+    '<div class="nav-item" onclick="showPanel(\'ayuda\')" id="nav-ayuda"><span class="icon">?</span> Ayuda</div>' +
+    '</div>';
   initFilters();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MÓDULO DE AYUDA — Entrega 1: estructura mínima funcional
+// ═══════════════════════════════════════════════════════════════════
+function renderAyuda() {
+  const u = SESSION.user;
+  const rol = u?.rol || 'director';
+  const rolLabel = ROL_LABELS[rol] || rol;
+
+  const todasFunciones = [
+    { titulo: 'Dashboard', desc: 'Vista general del avance del plan del colegio.', roles: ['superadmin','sostenedor','director','equipo_gestion'] },
+    { titulo: 'Ingresar seguimiento', desc: 'Registrar el avance mensual de cada acción del plan.', roles: ['superadmin'] },
+    { titulo: 'Mis planes', desc: 'Ver y gestionar las acciones asignadas y sus mejoras.', roles: ['superadmin','sostenedor','director','equipo_gestion'] },
+    { titulo: 'Reuniones', desc: 'Programar y registrar reuniones de seguimiento del plan.', roles: ['superadmin','sostenedor','director','equipo_gestion'] },
+    { titulo: 'Informes', desc: 'Generar reportes ejecutivos y comparativos del cumplimiento.', roles: ['superadmin','sostenedor','director','equipo_gestion'] },
+    { titulo: 'Denuncias', desc: 'Sistema de gestión de denuncias bajo Ley 20.529.', roles: ['superadmin','director','equipo_gestion'] },
+    { titulo: 'Mapa de Acciones', desc: 'Vista comparativa multi-colegio de acciones del plan.', roles: ['superadmin'] },
+    { titulo: 'Estructura del plan', desc: 'Configurar áreas, objetivos y acciones del PME.', roles: ['superadmin'] },
+    { titulo: 'Responsables y Cargos', desc: 'Administrar el equipo de gestión y sus roles.', roles: ['superadmin'] },
+    { titulo: 'Documentos', desc: 'Repositorio institucional de documentos del colegio.', roles: ['superadmin'] },
+    { titulo: 'Biblioteca', desc: 'Recursos pedagógicos y plantillas compartidas.', roles: ['superadmin'] },
+    { titulo: 'Usuarios', desc: 'Crear y administrar cuentas de acceso al sistema.', roles: ['superadmin'] },
+    { titulo: 'Respaldo de datos', desc: 'Descargar y restaurar copias de seguridad del colegio.', roles: ['superadmin'] },
+  ];
+
+  const funcionesDelRol = todasFunciones.filter(f => f.roles.includes(rol));
+
+  let html = '<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  html += '<div>';
+  html += '<div class="page-title">📘 Centro de Ayuda</div>';
+  html += '<div class="page-sub">Funcionalidades disponibles según tu rol en la plataforma</div>';
+  html += '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px">';
+  html += '<span style="font-size:12px;color:var(--muted)">Viendo ayuda para el rol:</span>';
+  html += '<span class="role-badge '+rol+'">'+rolLabel+'</span>';
+  html += '</div>';
+  html += '</div>';
+
+  html += '<div style="background:#FDF6E3;border:1px solid #E8D9A8;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#5F4500">';
+  html += '<strong>⚙ Vista inicial.</strong> Próximamente: tutoriales paso a paso, preguntas frecuentes y ayuda contextual con tooltips.';
+  html += '</div>';
+
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px">';
+  html += '<div style="font-size:16px;font-weight:700;margin-bottom:14px;color:var(--text)">';
+  html += '¿Qué puedo hacer? <span style="font-size:12px;font-weight:500;color:var(--muted)">('+funcionesDelRol.length+' funciones disponibles)</span>';
+  html += '</div>';
+
+  if(funcionesDelRol.length === 0) {
+    html += '<div style="padding:20px;text-align:center;color:var(--muted)">No hay funciones registradas para tu rol.</div>';
+  } else {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
+    funcionesDelRol.forEach(function(f){
+      html += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">';
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--text)">'+f.titulo+'</div>';
+      html += '<div style="font-size:12px;color:var(--muted);line-height:1.5">'+f.desc+'</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:18px;padding:14px;background:var(--surface2);border-radius:8px;font-size:12px;color:var(--muted);text-align:center">';
+  html += '¿Necesitas más ayuda? Contacta al administrador del sistema o al soporte LIAX.';
+  html += '</div>';
+
+  return html;
 }
 
 function volverMulti() {
@@ -1251,6 +1323,7 @@ function renderCurrentPanel() {
     case 'admin-usuarios':     main.innerHTML = renderAdminUsuarios(); break;
     case 'denuncias':          main.innerHTML = renderDenuncias(); break;
     case 'denuncia-detalle':   main.innerHTML = renderDenunciaDetalle(); break;
+    case 'ayuda':              main.innerHTML = renderAyuda(); break;
   }
   if(currentPanel==='dashboard') setTimeout(initDashboardCharts,100);
   if(currentPanel==='informes')  setTimeout(initInformeCharts,100);
