@@ -3633,6 +3633,7 @@ async function ejecutarRestauracion() {
           delete payload.id;
         }
 
+        if(tabla === 'denuncias') console.log('[restaurar denuncias] payload:', JSON.stringify(payload, null, 2));
         const { data: inserted, error } = await sb.from(tabla).insert(payload).select().maybeSingle();
         if(error) {
           reporte.errores.push({tabla: tabla, error: error.message, item: idOriginal || '(sin id)'});
