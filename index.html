@@ -3424,7 +3424,7 @@ async function analizarBackup() {
   window._backupRestaurar = datosColegio;
 
   // Calcular el diff por tabla
-  const diff = calcularDiffRestauracion(datosColegio);
+const diff = await calcularDiffRestauracion(datosColegio);
 
   // Mostrar pantalla de previsualización
   mostrarPreviewRestauracion(diff, datosColegio);
