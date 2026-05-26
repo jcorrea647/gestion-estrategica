@@ -3392,10 +3392,15 @@ async function analizarBackup() {
     errEl.style.display='block';
     return;
   }
-  if(backup.meta.version && !['2.0','2.1'].includes(backup.meta.version)) {
-    errEl.textContent='Versión de backup no soportada: '+backup.meta.version+'. Esperado 2.0 o 2.1. Descarga un backup nuevo.';
-    errEl.style.display='block';
-    return;
+// Aceptamos cualquier versión 2.x (2.0, 2.1, 2.4.1, etc.). Rechazamos 1.x, 3.x, etc.
+  if(backup.meta.version) {
+    const _v = String(backup.meta.version).trim();
+    const _m = _v.match(/^(\d+)\.(\d+)(?:\.\d+)?$/);
+    if(!_m || parseInt(_m[1],10) !== 2) {
+      errEl.textContent='Versión de backup no soportada: '+_v+'. Solo se aceptan backups versión 2.x. Descarga un backup nuevo.';
+      errEl.style.display='block';
+      return;
+    }
   }
 
   // Buscar el colegio activo en el backup por RBD
