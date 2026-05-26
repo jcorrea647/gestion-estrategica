@@ -3430,7 +3430,7 @@ async function analizarBackup() {
   mostrarPreviewRestauracion(diff, datosColegio);
 }
 
-function calcularDiffRestauracion(datosBackup) {
+async function calcularDiffRestauracion(datosBackup) {
   // Helpers para detectar duplicados según las claves acordadas
   const claves = {
     cargos: function(b, db){ return db.find(x => x.nombre === b.nombre); },
@@ -3449,6 +3449,18 @@ function calcularDiffRestauracion(datosBackup) {
   const tablas = ['cargos','responsables','areas','objetivos','acciones','accion_responsable','seguimiento','reuniones','reunion_participantes','evidencias','denuncias'];
   const resultado = {};
 
+  // Traer denuncias y evidencias actuales desde Supabase (no están en DB en memoria)
+  let denunciasActuales = [];
+  let evidenciasActuales = [];
+  try {
+    const { data: dData } = await sb.from('denuncias').select('id').eq('colegio_id', DB.colegio.id);
+    denunciasActuales = dData || [];
+  } catch(e) { console.warn('No se pudieron cargar denuncias actuales para diff:', e); }
+  try {
+    const { data: eData } = await sb.from('evidencias').select('accion_id, mes, url').eq('colegio_id', DB.colegio.id);
+    evidenciasActuales = eData || [];
+  } catch(e) { console.warn('No se pudieron cargar evidencias actuales para diff:', e); }
+
   // Datos actuales en BD para comparar
   const dbData = {
     cargos: DB.cargos || [],
@@ -3460,8 +3472,8 @@ function calcularDiffRestauracion(datosBackup) {
     seguimiento: DB.seguimiento || [],
     reuniones: DB.reuniones || [],
     reunion_participantes: [],  // se calculará desde reuniones
-    evidencias: [],  // no está en DB en memoria, lo asumimos vacío para preview
-    denuncias: [],   // idem
+    evidencias: evidenciasActuales,
+    denuncias: denunciasActuales,
   };
   // Aplanar reunion_participantes de DB.reuniones
   (DB.reuniones || []).forEach(function(r){
