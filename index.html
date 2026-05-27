@@ -5484,12 +5484,12 @@ function partRow(idx,nombre,correo) {
   // se agrega como opción "personalizada" para no perder su nombre.
   var opciones='<option value="">-- Seleccionar responsable --</option>';
   if(nm && !matchResp){
-    opciones+='<option value="'+escapeHtmlAttr(nm)+'" selected data-custom="1">'+escapeHtmlPlan(nm)+' (externo)</option>';
+    opciones+='<option value="'+escapeHtmlAttr(nm)+'" selected data-custom="1" data-correo="'+escapeHtmlAttr(correo||'')+'">'+escapeHtmlPlan(nm)+' (externo)</option>';
   }
   opciones+=resps.map(function(r){
     var sel=(matchResp && matchResp.id===r.id)?' selected':'';
     var cargoTxt=r.cargo?' — '+r.cargo:'';
-    return '<option value="'+escapeHtmlAttr(r.nombre||'')+'"'+sel+'>'+escapeHtmlPlan(r.nombre||'')+escapeHtmlPlan(cargoTxt)+'</option>';
+    return '<option value="'+escapeHtmlAttr(r.nombre||'')+'" data-correo="'+escapeHtmlAttr(r.correo||'')+'"'+sel+'>'+escapeHtmlPlan(r.nombre||'')+escapeHtmlPlan(cargoTxt)+'</option>';
   }).join('');
   opciones+='<option value="__custom__">+ Otro (escribir manualmente)…</option>';
 
@@ -5509,18 +5509,30 @@ function partRow(idx,nombre,correo) {
 }
 
 /* Sincroniza el <select> con el input oculto que lee getParticipantes().
- * Si el usuario elige "+ Otro", muestra un input de texto libre. */
+ * Si el usuario elige "+ Otro", muestra un input de texto libre.
+ * Si selecciona un responsable existente, autocompleta su correo desde data-correo. */
 function onSelectParticipante(idx){
   var sel=document.getElementById('ps-'+idx);
   var hidden=document.getElementById('pn-'+idx);
   var custom=document.getElementById('pcust-'+idx);
+  var correoInput=document.getElementById('pc-'+idx);
   if(!sel||!hidden) return;
   if(sel.value==='__custom__'){
     if(custom){ custom.style.display=''; custom.value=''; custom.focus(); }
     hidden.value='';
+    if(correoInput) correoInput.value='';
+  } else if(sel.value===''){
+    // Selección vacía: limpiar todo
+    if(custom){ custom.style.display='none'; custom.value=''; }
+    hidden.value='';
+    if(correoInput) correoInput.value='';
   } else {
     if(custom){ custom.style.display='none'; custom.value=''; }
     hidden.value=sel.value;
+    // Autocompletar correo desde la opción seleccionada (data-correo).
+    var opt=sel.options[sel.selectedIndex];
+    var nuevoCorreo=opt?(opt.getAttribute('data-correo')||''):'';
+    if(correoInput && nuevoCorreo) correoInput.value=nuevoCorreo;
   }
 }
 function onCustomParticipante(idx){
