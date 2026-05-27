@@ -3061,6 +3061,33 @@ async function updateResponsable(id){
   showToast('Responsable actualizado');
   initFilters();
 }
+
+function editResponsable(id){
+  const r=DB.responsables.find(x=>x.id===id);
+  if(!r)return;
+  const cO=_cargosOrdenados().map(c=>'<option value="'+c.id+'"'+(c.id===r.cargo_id?' selected':'')+'>'+c.nombre+'</option>').join('');
+  openModal('Editar responsable',
+    '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre" value="'+(r.nombre||'').replace(/"/g,'&quot;')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="f-correo" type="email" placeholder="correo@ejemplo.cl" value="'+(r.correo||'').replace(/"/g,'&quot;')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Guardar',cls:'btn-primary',action:"updateResponsable('"+id+"')"}]);
+}
+
+async function updateResponsable(id){
+  const nombre=document.getElementById('f-nombre')?.value.trim();
+  const correo=document.getElementById('f-correo')?.value.trim()||null;
+  const cargoId=document.getElementById('f-cargo')?.value;
+  if(!nombre||!cargoId){showToast('Completa los campos obligatorios');return;}
+  const cargo=DB.cargos.find(c=>c.id===cargoId);
+  const {error}=await sb.from('responsables').update({nombre,correo,cargo_id:cargoId}).eq('id',id);
+  if(error){showToast('Error: '+error.message);return;}
+  const i=DB.responsables.findIndex(x=>x.id===id);
+  if(i>=0) DB.responsables[i]={...DB.responsables[i],nombre,correo,cargo_id:cargoId,cargo:cargo?.nombre||''};
+  closeModal();
+  renderCurrentPanel();
+  showToast('Responsable actualizado');
+  initFilters();
+}
 function addResponsable(){
   const cO=_cargosOrdenados().map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');
   openModal('Nuevo responsable',
