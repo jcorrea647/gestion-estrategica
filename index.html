@@ -5427,10 +5427,64 @@ function openModalReunion(datos) {
 }
 
 function partRow(idx,nombre,correo) {
+  // Listado de responsables del colegio, ordenado alfabéticamente.
+  var resps=(DB.responsables||[]).slice().sort(function(a,b){
+    return (a.nombre||'').localeCompare(b.nombre||'');
+  });
+  var nm=(nombre||'').trim();
+  var matchResp=resps.find(function(r){ return (r.nombre||'').trim().toLowerCase()===nm.toLowerCase(); });
+  // Si el participante guardado no es un responsable conocido (ej. consultor externo),
+  // se agrega como opción "personalizada" para no perder su nombre.
+  var opciones='<option value="">-- Seleccionar responsable --</option>';
+  if(nm && !matchResp){
+    opciones+='<option value="'+escapeHtmlAttr(nm)+'" selected data-custom="1">'+escapeHtmlPlan(nm)+' (externo)</option>';
+  }
+  opciones+=resps.map(function(r){
+    var sel=(matchResp && matchResp.id===r.id)?' selected':'';
+    var cargoTxt=r.cargo?' — '+r.cargo:'';
+    return '<option value="'+escapeHtmlAttr(r.nombre||'')+'"'+sel+'>'+escapeHtmlPlan(r.nombre||'')+escapeHtmlPlan(cargoTxt)+'</option>';
+  }).join('');
+  opciones+='<option value="__custom__">+ Otro (escribir manualmente)…</option>';
+
+  // El <select> sincroniza su valor con el input oculto id="pn-IDX" para que
+  // getParticipantes() siga funcionando sin cambios. Si el usuario elige
+  // "__custom__", se muestra un input de texto libre.
+  var customStyle=(nm && !matchResp)?'':'display:none';
+  var customVal=(nm && !matchResp)?escapeHtmlAttr(nm):'';
   return '<div class="part-row" id="pr-'+idx+'">'+
-    '<input class="form-input" placeholder="Nombre" value="'+(nombre||'')+'" id="pn-'+idx+'" style="flex:1.2">'+
-    '<input class="form-input" placeholder="Correo" type="email" value="'+(correo||'')+'" id="pc-'+idx+'" style="flex:1.5">'+
+    '<div style="flex:1.2;display:flex;flex-direction:column;gap:4px">'+
+      '<select class="form-input part-select" id="ps-'+idx+'" onchange="onSelectParticipante('+idx+')" style="font-size:13px">'+opciones+'</select>'+
+      '<input class="form-input part-custom" id="pcust-'+idx+'" placeholder="Nombre del participante externo" value="'+customVal+'" oninput="onCustomParticipante('+idx+')" style="font-size:12px;'+customStyle+'">'+
+    '</div>'+
+    '<input type="hidden" id="pn-'+idx+'" value="'+escapeHtmlAttr(nombre||'')+'">'+
+    '<input class="form-input" placeholder="Correo (opcional)" type="email" value="'+escapeHtmlAttr(correo||'')+'" id="pc-'+idx+'" style="flex:1.5">'+
     '<button class="remove-part" onclick="eliminarParticipante('+idx+')" title="Eliminar">x</button></div>';
+}
+
+/* Sincroniza el <select> con el input oculto que lee getParticipantes().
+ * Si el usuario elige "+ Otro", muestra un input de texto libre. */
+function onSelectParticipante(idx){
+  var sel=document.getElementById('ps-'+idx);
+  var hidden=document.getElementById('pn-'+idx);
+  var custom=document.getElementById('pcust-'+idx);
+  if(!sel||!hidden) return;
+  if(sel.value==='__custom__'){
+    if(custom){ custom.style.display=''; custom.value=''; custom.focus(); }
+    hidden.value='';
+  } else {
+    if(custom){ custom.style.display='none'; custom.value=''; }
+    hidden.value=sel.value;
+  }
+}
+function onCustomParticipante(idx){
+  var custom=document.getElementById('pcust-'+idx);
+  var hidden=document.getElementById('pn-'+idx);
+  if(custom && hidden) hidden.value=custom.value.trim();
+}
+
+/* Helper para escapar atributos HTML (comillas y signos). */
+function escapeHtmlAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function agregarParticipante() {
   const cont=document.getElementById('partsContainer');
@@ -5441,8 +5495,16 @@ function eliminarParticipante(idx) {
   const cont=document.getElementById('partsContainer'); if(!cont)return;
   [].slice.call(cont.querySelectorAll('.part-row')).forEach(function(row,i){
     row.id='pr-'+i;
-    var nb=row.querySelector('[id^="pn-"]');if(nb)nb.id='pn-'+i;
-    var cb=row.querySelector('[id^="pc-"]');if(cb)cb.id='pc-'+i;
+    // Hidden input que lee getParticipantes()
+    var nb=row.querySelector('input[type="hidden"][id^="pn-"]');if(nb)nb.id='pn-'+i;
+    // Input de correo (exacto, no confundir con pcust-)
+    var cb=row.querySelector('input[id^="pc-"]:not([id^="pcust-"])');if(cb)cb.id='pc-'+i;
+    // Select de responsable
+    var ps=row.querySelector('select[id^="ps-"]');
+    if(ps){ ps.id='ps-'+i; ps.setAttribute('onchange','onSelectParticipante('+i+')'); }
+    // Input de nombre personalizado
+    var pcust=row.querySelector('input[id^="pcust-"]');
+    if(pcust){ pcust.id='pcust-'+i; pcust.setAttribute('oninput','onCustomParticipante('+i+')'); }
     var btn=row.querySelector('.remove-part');if(btn)btn.setAttribute('onclick','eliminarParticipante('+i+')');
   });
 }
