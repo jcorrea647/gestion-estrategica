@@ -306,7 +306,15 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .part-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .remove-part{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px;flex-shrink:0}
 .remove-part:hover{background:var(--red-bg);color:var(--red)}
-</style>
+/* Chips de participantes en modal de Reunión */
+.chips-grid{display:flex;flex-wrap:wrap;gap:6px;max-height:240px;overflow-y:auto;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px}
+.chip-part{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface);border:1px solid var(--border);border-radius:18px;font-size:12px;cursor:pointer;user-select:none;transition:all .12s ease}
+.chip-part:hover{border-color:var(--accent)}
+.chip-part-on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip-part-on:hover{background:var(--accent)}
+.chip-part .chip-check{display:inline-block;width:14px;text-align:center;font-weight:bold}
+.chip-part .chip-cargo{font-size:10px;opacity:.7;margin-left:2px}
+.chip-part-on .chip-cargo{opacity:.85;color:#fff}</style>
 </head>
 <body>
 
@@ -5467,12 +5475,22 @@ function abrirEditarReunion() {
 }
 function openModalReunion(datos) {
   const parts=datos.reunion_participantes||[];
-  let partsHtml=''; parts.forEach(function(p,i){partsHtml+=partRow(i,p.nombre,p.correo);});
   const modalEl=document.getElementById('modal');
-  if(modalEl) modalEl.style.maxWidth='640px';
+  if(modalEl) modalEl.style.maxWidth='720px';
   document.getElementById('modalTitle').textContent=window._editReunionId?'Editar Reunion':'Crear Reunion';
   document.getElementById('modalBody').innerHTML=
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+    '<div class="form-group"><label class="form-label">Titulo</label><input class="form-input" id="r-titulo" value="'+(datos.titulo||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="r-fecha" type="date" value="'+(datos.fecha||'')+'"></div></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+    '<div class="form-group"><label class="form-label">Consultor Responsable</label><input class="form-input" id="r-consultor" placeholder="Nombre" value="'+(datos.consultor_nombre||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Correo Consultor</label><input class="form-input" id="r-correo-cons" type="email" placeholder="correo@ejemplo.cl" value="'+(datos.consultor_correo||'')+'"></div></div>'+
+    '<div class="form-group"><label class="form-label">Meses de evaluacion a revisar</label>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px" id="mesesGrid"><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-03" class="mes-reunion-check" style="accent-color:var(--accent)"> Marzo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-04" class="mes-reunion-check" style="accent-color:var(--accent)"> Abril</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-05" class="mes-reunion-check" style="accent-color:var(--accent)"> Mayo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-06" class="mes-reunion-check" style="accent-color:var(--accent)"> Junio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-07" class="mes-reunion-check" style="accent-color:var(--accent)"> Julio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-08" class="mes-reunion-check" style="accent-color:var(--accent)"> Agosto</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-09" class="mes-reunion-check" style="accent-color:var(--accent)"> Septiembre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-10" class="mes-reunion-check" style="accent-color:var(--accent)"> Octubre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-11" class="mes-reunion-check" style="accent-color:var(--accent)"> Noviembre</label></div>'+
+    '<div id="meses-sel-label" style="font-size:11px;color:var(--muted);margin-top:5px">Selecciona al menos un mes</div></div>'+
+    '<div class="form-group"><label class="form-label">Comentarios Generales</label>'+
+    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales..." style="min-height:90px">'+(datos.comentarios_generales||'')+'</textarea>'+
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:5px" onclick="guardarComentariosReunion()">Guardar comentarios</button></div>'+
     '<div class="form-group"><label class="form-label">Participantes</label>'+
     renderParticipantesChipsUI(parts)+
     '</div>';
@@ -5487,109 +5505,118 @@ function openModalReunion(datos) {
     cb.addEventListener('change',actualizarLabelMeses);
   });
   actualizarLabelMeses();
+  if(typeof actualizarContadorChips==='function') actualizarContadorChips();
 }
 
-function partRow(idx,nombre,correo) {
-  // Listado de responsables del colegio, ordenado alfabéticamente.
+function partRow(idx,nombre,correo) {/* =========================================================
+ * PARTICIPANTES — UI con CHIPS clickeables
+ * - Chips: click toggle (agregar/quitar del colegio)
+ * - Externos: filas con nombre+correo libres
+ * - Contrato interno con BD: getParticipantes() devuelve [{nombre, correo}]
+ * ========================================================= */
+
+function renderParticipantesChipsUI(participantesActuales){
   var resps=(DB.responsables||[]).slice().sort(function(a,b){
     return (a.nombre||'').localeCompare(b.nombre||'');
   });
-  var nm=(nombre||'').trim();
-  var matchResp=resps.find(function(r){ return (r.nombre||'').trim().toLowerCase()===nm.toLowerCase(); });
-  // Si el participante guardado no es un responsable conocido (ej. consultor externo),
-  // se agrega como opción "personalizada" para no perder su nombre.
-  var opciones='<option value="">-- Seleccionar responsable --</option>';
-  if(nm && !matchResp){
-    opciones+='<option value="'+escapeHtmlAttr(nm)+'" selected data-custom="1" data-correo="'+escapeHtmlAttr(correo||'')+'">'+escapeHtmlPlan(nm)+' (externo)</option>';
-  }
-  opciones+=resps.map(function(r){
-    var sel=(matchResp && matchResp.id===r.id)?' selected':'';
-    var cargoTxt=r.cargo?' — '+r.cargo:'';
-    return '<option value="'+escapeHtmlAttr(r.nombre||'')+'" data-correo="'+escapeHtmlAttr(r.correo||'')+'"'+sel+'>'+escapeHtmlPlan(r.nombre||'')+escapeHtmlPlan(cargoTxt)+'</option>';
+  // Set de nombres ya seleccionados (case-insensitive)
+  var seleccionados={};
+  (participantesActuales||[]).forEach(function(p){
+    if(p && p.nombre) seleccionados[p.nombre.trim().toLowerCase()]=true;
+  });
+
+  // Chips del colegio
+  var chips=resps.map(function(r){
+    var nm=(r.nombre||'').trim();
+    var sel=seleccionados[nm.toLowerCase()]?true:false;
+    return '<div class="chip-part'+(sel?' chip-part-on':'')+'" '+
+      'data-nombre="'+escapeHtmlAttr(nm)+'" '+
+      'data-correo="'+escapeHtmlAttr(r.correo||'')+'" '+
+      'onclick="toggleChipParticipante(this)" '+
+      'title="'+escapeHtmlAttr(r.cargo||'')+'">'+
+      '<span class="chip-check">'+(sel?'✓':'')+'</span>'+
+      escapeHtmlPlan(nm)+
+      (r.cargo?' <span class="chip-cargo">'+escapeHtmlPlan(r.cargo)+'</span>':'')+
+    '</div>';
   }).join('');
-  opciones+='<option value="__custom__">+ Otro (escribir manualmente)…</option>';
 
-  // El <select> sincroniza su valor con el input oculto id="pn-IDX" para que
-  // getParticipantes() siga funcionando sin cambios. Si el usuario elige
-  // "__custom__", se muestra un input de texto libre.
-  var customStyle=(nm && !matchResp)?'':'display:none';
-  var customVal=(nm && !matchResp)?escapeHtmlAttr(nm):'';
-  return '<div class="part-row" id="pr-'+idx+'">'+
-    '<div style="flex:1.2;display:flex;flex-direction:column;gap:4px">'+
-      '<select class="form-input part-select" id="ps-'+idx+'" onchange="onSelectParticipante('+idx+')" style="font-size:13px">'+opciones+'</select>'+
-      '<input class="form-input part-custom" id="pcust-'+idx+'" placeholder="Nombre del participante externo" value="'+customVal+'" oninput="onCustomParticipante('+idx+')" style="font-size:12px;'+customStyle+'">'+
-    '</div>'+
-    '<input type="hidden" id="pn-'+idx+'" value="'+escapeHtmlAttr(nombre||'')+'">'+
-    '<input class="form-input" placeholder="Correo (opcional)" type="email" value="'+escapeHtmlAttr(correo||'')+'" id="pc-'+idx+'" style="flex:1.5">'+
-    '<button class="remove-part" onclick="eliminarParticipante('+idx+')" title="Eliminar">x</button></div>';
+  // Externos: los que están en participantesActuales y NO matchean ningún responsable
+  var respsNombres={};
+  resps.forEach(function(r){ respsNombres[(r.nombre||'').trim().toLowerCase()]=true; });
+  var externos=(participantesActuales||[]).filter(function(p){
+    return p && p.nombre && !respsNombres[p.nombre.trim().toLowerCase()];
+  });
+  var externosHtml='';
+  externos.forEach(function(p,i){ externosHtml+=externoRow(i,p.nombre,p.correo); });
+
+  return ''+
+    '<div id="chipsParticipantes" class="chips-grid">'+chips+'</div>'+
+    '<div id="chipsCounter" style="font-size:11px;color:var(--muted);margin-top:6px"></div>'+
+    '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">'+
+      '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Participantes externos (opcional)</div>'+
+      '<div id="externosContainer">'+externosHtml+'</div>'+
+      '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="agregarExternoRow()">+ Agregar externo</button>'+
+    '</div>';
 }
 
-/* Sincroniza el <select> con el input oculto que lee getParticipantes().
- * Si el usuario elige "+ Otro", muestra un input de texto libre.
- * Si selecciona un responsable existente, autocompleta su correo desde data-correo. */
-function onSelectParticipante(idx){
-  var sel=document.getElementById('ps-'+idx);
-  var hidden=document.getElementById('pn-'+idx);
-  var custom=document.getElementById('pcust-'+idx);
-  var correoInput=document.getElementById('pc-'+idx);
-  if(!sel||!hidden) return;
-  if(sel.value==='__custom__'){
-    if(custom){ custom.style.display=''; custom.value=''; custom.focus(); }
-    hidden.value='';
-    if(correoInput) correoInput.value='';
-  } else if(sel.value===''){
-    // Selección vacía: limpiar todo
-    if(custom){ custom.style.display='none'; custom.value=''; }
-    hidden.value='';
-    if(correoInput) correoInput.value='';
-  } else {
-    if(custom){ custom.style.display='none'; custom.value=''; }
-    hidden.value=sel.value;
-    // Autocompletar correo desde la opción seleccionada (data-correo).
-    var opt=sel.options[sel.selectedIndex];
-    var nuevoCorreo=opt?(opt.getAttribute('data-correo')||''):'';
-    if(correoInput && nuevoCorreo) correoInput.value=nuevoCorreo;
+function externoRow(idx,nombre,correo){
+  return '<div class="part-row" data-ext-row="1">'+
+    '<input class="form-input" placeholder="Nombre" value="'+escapeHtmlAttr(nombre||'')+'" style="flex:1.2" data-ext-nombre="1">'+
+    '<input class="form-input" placeholder="Correo (opcional)" type="email" value="'+escapeHtmlAttr(correo||'')+'" style="flex:1.5" data-ext-correo="1">'+
+    '<button class="remove-part" onclick="this.closest(\'.part-row\').remove();actualizarContadorChips()" title="Eliminar">x</button>'+
+  '</div>';
+}
+
+function toggleChipParticipante(el){
+  var on=el.classList.toggle('chip-part-on');
+  var check=el.querySelector('.chip-check');
+  if(check) check.textContent=on?'✓':'';
+  actualizarContadorChips();
+}
+
+function agregarExternoRow(){
+  var cont=document.getElementById('externosContainer');
+  if(cont){
+    cont.insertAdjacentHTML('beforeend',externoRow(cont.children.length,'',''));
+    actualizarContadorChips();
   }
 }
-function onCustomParticipante(idx){
-  var custom=document.getElementById('pcust-'+idx);
-  var hidden=document.getElementById('pn-'+idx);
-  if(custom && hidden) hidden.value=custom.value.trim();
+
+function actualizarContadorChips(){
+  var n=document.querySelectorAll('#chipsParticipantes .chip-part-on').length;
+  var ext=document.querySelectorAll('#externosContainer .part-row').length;
+  var lbl=document.getElementById('chipsCounter');
+  if(lbl) lbl.textContent=n+' del colegio'+(ext?' · '+ext+' externo'+(ext===1?'':'s'):'');
 }
 
-/* Helper para escapar atributos HTML (comillas y signos). */
+/* getParticipantes(): contrato preservado para guardarReunion() */
+function getParticipantes(){
+  var lista=[];
+  document.querySelectorAll('#chipsParticipantes .chip-part-on').forEach(function(ch){
+    var nb=ch.getAttribute('data-nombre')||'';
+    var cb=ch.getAttribute('data-correo')||'';
+    if(nb.trim()) lista.push({nombre:nb.trim(),correo:cb.trim()||null});
+  });
+  document.querySelectorAll('#externosContainer .part-row').forEach(function(row){
+    var nb=row.querySelector('[data-ext-nombre]');
+    var cb=row.querySelector('[data-ext-correo]');
+    var nombre=nb?nb.value.trim():'';
+    var correo=cb?cb.value.trim():'';
+    if(nombre) lista.push({nombre:nombre,correo:correo||null});
+  });
+  return lista;
+}
+
+/* Stubs por compatibilidad con código antiguo que pueda llamarlos. */
+function partRow(){ return ''; }
+function agregarParticipante(){ agregarExternoRow(); }
+function eliminarParticipante(){}
+function onSelectParticipante(){}
+function onCustomParticipante(){}
+
+/* Helper para escapar atributos HTML. */
 function escapeHtmlAttr(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function agregarParticipante() {
-  const cont=document.getElementById('partsContainer');
-  if(cont) cont.insertAdjacentHTML('beforeend',partRow(cont.querySelectorAll('.part-row').length,'',''));
-}
-function eliminarParticipante(idx) {
-  const row=document.getElementById('pr-'+idx); if(row)row.remove();
-  const cont=document.getElementById('partsContainer'); if(!cont)return;
-  [].slice.call(cont.querySelectorAll('.part-row')).forEach(function(row,i){
-    row.id='pr-'+i;
-    // Hidden input que lee getParticipantes()
-    var nb=row.querySelector('input[type="hidden"][id^="pn-"]');if(nb)nb.id='pn-'+i;
-    // Input de correo (exacto, no confundir con pcust-)
-    var cb=row.querySelector('input[id^="pc-"]:not([id^="pcust-"])');if(cb)cb.id='pc-'+i;
-    // Select de responsable
-    var ps=row.querySelector('select[id^="ps-"]');
-    if(ps){ ps.id='ps-'+i; ps.setAttribute('onchange','onSelectParticipante('+i+')'); }
-    // Input de nombre personalizado
-    var pcust=row.querySelector('input[id^="pcust-"]');
-    if(pcust){ pcust.id='pcust-'+i; pcust.setAttribute('oninput','onCustomParticipante('+i+')'); }
-    var btn=row.querySelector('.remove-part');if(btn)btn.setAttribute('onclick','eliminarParticipante('+i+')');
-  });
-}
-function getParticipantes() {
-  const cont=document.getElementById('partsContainer');if(!cont)return[];
-  return [].slice.call(cont.querySelectorAll('.part-row')).map(function(row,i){
-    var nb=document.getElementById('pn-'+i),cb=document.getElementById('pc-'+i);
-    var nombre=nb?nb.value.trim():'',correo=cb?cb.value.trim():'';
-    return nombre?{nombre:nombre,correo:correo}:null;
-  }).filter(Boolean);
 }
 
 function actualizarLabelMeses() {
@@ -5780,9 +5807,12 @@ async function confirmarCierreReunion() {
     '<div style="font-size:24px">✅</div>' +
     '<div><div style="font-weight:600;color:var(--green);margin-bottom:2px">Reunión cerrada correctamente</div>' +
     '<div style="font-size:12px;color:var(--muted)">Todos los seguimientos han sido guardados.</div></div></div>' +
-    '<div class="form-group"><label class="form-label">Lista de destinatarios <span style="font-weight:400;color:var(--muted)">(aparecerá en el documento)</span></label>' +
+    '<div class="form-group"><label class="form-label">Lista de destinatarios <span style="font-weight:400;color:var(--muted)">(participantes que recibirán el documento)</span></label>' +
     '<div id="destList">'+partsList+'</div>' +
-    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="agregarDestEnvio()">+ Agregar destinatario</button></div>';
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="agregarDestEnvio()">+ Agregar destinatario</button></div>' +
+    '<div class="form-group" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px"><label class="form-label">Con copia a <span style="font-weight:400;color:var(--muted)">(aparecen en el documento como CC)</span></label>' +
+    '<div id="copiaList">'+renderCopiaListHtml()+'</div>' +
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="agregarCopiaEnvio()">+ Agregar copia</button></div>';
 
   document.getElementById('modalFooter').innerHTML =
     '<button class="btn btn-outline" onclick="closeModal();renderCurrentPanel()">Cerrar</button>' +
@@ -5792,7 +5822,50 @@ async function confirmarCierreReunion() {
   document.getElementById('modal').style.maxWidth = '560px';
 }
 
-function agregarDestEnvio() {
+/* =========================================================
+ * "COPIA A" — destinatarios CC por defecto (LIAX)
+ * Hardcodeados para todos los colegios. Editables por reunión.
+ * ========================================================= */
+const COPIA_DEFAULT = [
+  { nombre: 'Makarenna Bustiman Sepúlveda',  correo: 'mbustiman@cdsprovidencia.cl' },
+  { nombre: 'Alfonso Valenzuela Providencia', correo: 'avalenzuela@cdsprovidencia.cl' }
+];
+
+function renderCopiaListHtml(){
+  return COPIA_DEFAULT.map(function(c){
+    return ''+
+      '<div class="part-row" data-copia-row="1">'+
+        '<input class="form-input" style="flex:1;font-size:12px" value="'+escapeHtmlAttr(c.nombre)+'" placeholder="Nombre" data-copia-nombre="1">'+
+        '<input class="form-input" style="flex:1;font-size:12px" value="'+escapeHtmlAttr(c.correo)+'" placeholder="Email" data-copia-correo="1">'+
+        '<button class="remove-part" onclick="this.closest(\'.part-row\').remove()" title="Eliminar">✕</button>'+
+      '</div>';
+  }).join('');
+}
+
+function agregarCopiaEnvio(){
+  const cont = document.getElementById('copiaList');
+  if(!cont) return;
+  cont.insertAdjacentHTML('beforeend',
+    '<div class="part-row" data-copia-row="1">'+
+      '<input class="form-input" style="flex:1;font-size:12px" placeholder="Nombre" data-copia-nombre="1">'+
+      '<input class="form-input" style="flex:1;font-size:12px" placeholder="Email" data-copia-correo="1">'+
+      '<button class="remove-part" onclick="this.closest(\'.part-row\').remove()" title="Eliminar">✕</button>'+
+    '</div>');
+}
+
+function getCopiaEnvio(){
+  const rows = document.querySelectorAll('#copiaList .part-row');
+  const dest = [];
+  rows.forEach(function(row){
+    const nb = row.querySelector('[data-copia-nombre]');
+    const cb = row.querySelector('[data-copia-correo]');
+    const nombre = nb?nb.value.trim():'';
+    const correo = cb?cb.value.trim():'';
+    if(nombre) dest.push({ nombre: nombre, correo: correo });
+  });
+  return dest;
+}
+  function agregarDestEnvio() {
   const cont = document.getElementById('destList');
   if(!cont) return;
   const idx = cont.querySelectorAll('.part-row').length;
@@ -5835,6 +5908,10 @@ function descargarWordReunion() {
   const destHTML = destinatarios.length
     ? destinatarios.map(d => d.nombre + (d.correo ? ' &lt;'+d.correo+'&gt;' : '')).join(' | ')
     : '—';
+  const copiaArr = (typeof getCopiaEnvio==='function') ? getCopiaEnvio() : [];
+  const copiaHTML = copiaArr.length
+    ? copiaArr.map(d => d.nombre + (d.correo ? ' &lt;'+d.correo+'&gt;' : '')).join(' | ')
+    : '—';
 
   const css = `
     body{font-family:Calibri,sans-serif;margin:2cm;color:#1A1916;font-size:12pt}
@@ -5854,6 +5931,7 @@ function descargarWordReunion() {
   if(reunion.consultor_nombre) body += ` | Consultor: <strong>${reunion.consultor_nombre}</strong>`;
   body += `</div>`;
   body += `<div class="dest"><strong>Destinatarios:</strong> ${destHTML}</div>`;
+  body += `<div class="dest"><strong>Con copia a:</strong> ${copiaHTML}</div>`;
 
   if(reunion.comentarios_generales) {
     body += `<h2>Comentarios Generales</h2><p>${reunion.comentarios_generales.replace(/\n/g,'<br>')}</p>`;
