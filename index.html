@@ -6101,10 +6101,8 @@ function generarPDFReunion() {
     html+='<div style="font-size:11px;font-weight:600;color:'+_nivelColorPDF+';margin-top:4px;letter-spacing:.5pt">'+_nivelLabelPDF+'</div>';
     html+='</div>';
   }
-  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
-  if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
-  if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
-  html+='</div>';
+ html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div></div>';
+  html+='<div class="meta-row" style="margin-top:6px"><div class="meta-item"><strong>Consultor(a):</strong> '+(reunion.consultor_nombre||'—')+(reunion.consultor_correo?' &lt;'+reunion.consultor_correo+'&gt;':'')+'</div></div>';
   if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
   html+='</div>';
 
