@@ -3034,7 +3034,14 @@ function renderAdminResponsables(){
   return '<div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><div class="page-title">Responsables</div><div class="page-sub">Personas asignadas a acciones</div></div><button class="btn btn-primary" onclick="addResponsable()">+ Nuevo</button></div></div>'+
     '<div class="card">'+(DB.responsables.length?DB.responsables.map(r=>'<div class="list-item"><div><div style="font-weight:500">'+r.nombre+'</div><div style="font-size:11px;color:var(--muted)">'+r.cargo+'</div></div><div style="display:flex;gap:4px;align-items:center"><span class="tag">'+r.cargo+'</span><button class="icon-btn" style="color:var(--red)" onclick="deleteResponsable(\''+r.id+'\')">X</button></div></div>').join(''):'<div class="empty-state"><div class="icon">?</div>Sin responsables.</div>')+'</div>';
 }
-function addResponsable(){const cO=_cargosOrdenados().map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');openModal('Nuevo responsable','<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div><div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',[{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveResponsable()'}]);}
+function addResponsable(){
+  const cO=_cargosOrdenados().map(c=>'<option value="'+c.id+'">'+c.nombre+'</option>').join('');
+  openModal('Nuevo responsable',
+    '<div class="form-group"><label class="form-label">Nombre completo</label><input class="form-input" id="f-nombre"></div>'+
+    '<div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="f-correo" type="email" placeholder="correo@ejemplo.cl"></div>'+
+    '<div class="form-group"><label class="form-label">Cargo</label><select class="form-select" id="f-cargo"><option value="">Seleccionar...</option>'+cO+'</select></div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},{label:'Crear',cls:'btn-primary',action:'saveResponsable()'}]);
+}
 async function saveResponsable(){const nombre=document.getElementById('f-nombre')?.value.trim(),cargoId=document.getElementById('f-cargo')?.value;if(!nombre||!cargoId){showToast('Completa los campos');return;}const cargo=DB.cargos.find(c=>c.id===cargoId);const{data,error}=await sb.from('responsables').insert({colegio_id:SESSION.colegioActivo,nombre,cargo_id:cargoId}).select().single();if(error){showToast('Error: '+error.message);return;}DB.responsables.push({...data,cargo:cargo?.nombre||''});closeModal();renderCurrentPanel();showToast('Responsable creado');initFilters();}
 async function deleteResponsable(id){if(!confirm('Eliminar?'))return;const{error}=await sb.from('responsables').delete().eq('id',id);if(error){showToast('Error: '+error.message);return;}DB.responsables=DB.responsables.filter(r=>r.id!==id);renderCurrentPanel();}
 
