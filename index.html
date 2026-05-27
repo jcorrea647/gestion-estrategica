@@ -5841,7 +5841,8 @@ async function confirmarCierreReunion() {
   document.getElementById('modalFooter').innerHTML =
     '<button class="btn btn-outline" onclick="closeModal();renderCurrentPanel()">Cerrar</button>' +
     '<button class="btn btn-primary" style="background:#1F4E79" onclick="descargarWordReunion()">📄 Descargar Word</button>' +
-    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>';
+    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>' +
+    '<button class="btn btn-primary" style="background:#D44638" onclick="abrirEmailEnGmail()">📧 Abrir en Gmail</button>';
 
   document.getElementById('modal').style.maxWidth = '560px';
 }
@@ -5888,6 +5889,57 @@ function getCopiaEnvio(){
     if(nombre) dest.push({ nombre: nombre, correo: correo });
   });
   return dest;
+}/* =========================================================
+ * "ABRIR EN GMAIL" — Genera URL de Gmail con destinatarios,
+ * CC, asunto y cuerpo precompletados.
+ * ========================================================= */
+function abrirEmailEnGmail(){
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
+  if(!reunion){ showToast('No hay reunión activa'); return; }
+
+  const destinatarios = getDestinatariosEnvio();
+  const copia = getCopiaEnvio();
+
+  const correosTo = destinatarios.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
+  const correosCc = copia.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
+
+  if(!correosTo.length && !correosCc.length){
+    showToast('⚠️ No hay correos válidos en destinatarios ni copia');
+    return;
+  }
+
+  const mesesReunion = (reunion.meses_evaluacion && reunion.meses_evaluacion.length)
+    ? reunion.meses_evaluacion.slice()
+    : (reunion.mes ? [reunion.mes] : []);
+  const mesesLabel = mesesReunion.map(m => fmtMes(m, false)).join(', ') || '(sin mes)';
+
+  function construirBody(){
+    let body = 'Estimadas(os).\n\n';
+    body += 'Adjunto el acta de la reunión de seguimiento estratégico realizada el ' + reunion.fecha + ' en ' + (DB.colegio?.nombre || '') + '.\n\n';
+    body += 'Consultor responsable: ' + (reunion.consultor_nombre || '—') + '\n';
+    body += 'Meses revisados: ' + mesesLabel + '\n\n';
+    body += 'Por favor revisar y dar continuidad a los compromisos asumidos.\n';
+    body += 'Quedamos atentos a cualquier consulta.\n\n';
+    body += 'Saludos cordiales,\n';
+    body += (reunion.consultor_nombre || '');
+    return body;
+  }
+
+  const subject = 'Acta reunión: ' + reunion.titulo + ' – ' + (DB.colegio?.nombre || '') + ' – ' + reunion.fecha;
+  const toStr = correosTo.join(',');
+  const ccStr = correosCc.join(',');
+
+  function buildUrl(body){
+    return 'https://mail.google.com/mail/?view=cm&fs=1' +
+      (toStr ? '&to=' + encodeURIComponent(toStr) : '') +
+      (ccStr ? '&cc=' + encodeURIComponent(ccStr) : '') +
+      '&su=' + encodeURIComponent(subject) +
+      '&body=' + encodeURIComponent(body);
+  }
+
+  const url = buildUrl(construirBody());
+  window.open(url, '_blank');
+  showToast('📧 Recuerda adjuntar el Word/PDF descargado');
 }
   function agregarDestEnvio() {
   const cont = document.getElementById('destList');
