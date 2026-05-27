@@ -5465,11 +5465,35 @@ function abrirCrearReunion() {
   const mesActual=filterMes||new Date().toISOString().slice(0,7);
   openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
 }
-function abrirEditarReunion() {
+async function abrirEditarReunion() {
   if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
   const reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion)return;
-  if(reunion.cerrada){ showToast('🔒 La reunión está cerrada. Reábrela para editarla.'); return; }
+
+  // Si la reunión está cerrada, intentar reabrirla antes de editar
+  if(reunion.cerrada){
+    // Verificar que no haya OTRA reunión abierta (excluyendo esta misma)
+    const otraAbierta = (DB.reuniones||[]).find(function(r){ return !r.cerrada && r.id !== reunion.id; });
+    if(otraAbierta){
+      showToast('⚠️ Ya hay otra reunión abierta: "'+otraAbierta.titulo+'". Ciérrala primero.');
+      return;
+    }
+    if(!confirm('La reunión "'+reunion.titulo+'" está cerrada.\n\n¿Quieres reabrirla para editarla?\n(Se permitirá modificar el seguimiento nuevamente.)')) return;
+    // Reabrir en BD
+    const {error} = await sb.from('reuniones')
+      .update({cerrada:false, fecha_cierre:null, updated_at:new Date().toISOString()})
+      .eq('id', reunion.id);
+    if(error){ showToast('Error al reabrir: '+error.message); return; }
+    // Sincronizar estado local
+    const i = DB.reuniones.findIndex(function(r){ return r.id===reunion.id; });
+    if(i>=0){
+      DB.reuniones[i] = Object.assign({}, DB.reuniones[i], {cerrada:false, fecha_cierre:null});
+      reunion.cerrada = false;
+      reunion.fecha_cierre = null;
+    }
+    showToast('🔓 Reunión reabierta');
+  }
+
   window._editReunionId=reunion.id;
   openModalReunion(Object.assign({},reunion,{meses_evaluacion:reunion.meses_evaluacion||[]}));
 }
