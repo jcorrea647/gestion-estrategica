@@ -1034,6 +1034,7 @@ function renderSidebar() {
     '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
     '<div class="nav-item" onclick="showPanel(\'mis-planes\')" id="nav-mis-planes"><span class="icon">p</span> Mis planes <span id="nav-mis-planes-count" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
     '<div class="nav-item" onclick="showPanel(\'ver-reuniones\')" id="nav-ver-reuniones"><span class="icon">r</span> Reuniones</div>' +
+    '<div class="nav-item" onclick="showPanel(\'funciones-cargo\')" id="nav-funciones-cargo"><span class="icon">f</span> Funciones por cargo</div>' +
     (cc ? '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' : '') +
     '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
     '</div>' +
@@ -1323,6 +1324,7 @@ function renderCurrentPanel() {
       break;
     case 'informes':           main.innerHTML = renderInformes(); break;
     case 'ver-reuniones':      main.innerHTML = renderVerReuniones(); break;
+    case 'funciones-cargo':    renderFuncionesCargo(); break;
     case 'resumen-ejecutivo':  main.innerHTML = renderResumenEjecutivo(); break;
     case 'admin-estructura':   main.innerHTML = renderAdminEstructura(); break;
     case 'admin-responsables': main.innerHTML = renderAdminResponsables(); break;
