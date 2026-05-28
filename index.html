@@ -5467,35 +5467,11 @@ function abrirCrearReunion() {
   const mesActual=filterMes||new Date().toISOString().slice(0,7);
   openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
 }
-async function abrirEditarReunion() {
+function abrirEditarReunion() {
   if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
   const reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion)return;
-
-  // Si la reunión está cerrada, intentar reabrirla antes de editar
-  if(reunion.cerrada){
-    // Verificar que no haya OTRA reunión abierta (excluyendo esta misma)
-    const otraAbierta = (DB.reuniones||[]).find(function(r){ return !r.cerrada && r.id !== reunion.id; });
-    if(otraAbierta){
-      showToast('⚠️ Ya hay otra reunión abierta: "'+otraAbierta.titulo+'". Ciérrala primero.');
-      return;
-    }
-    if(!confirm('La reunión "'+reunion.titulo+'" está cerrada.\n\n¿Quieres reabrirla para editarla?\n(Se permitirá modificar el seguimiento nuevamente.)')) return;
-    // Reabrir en BD
-    const {error} = await sb.from('reuniones')
-      .update({cerrada:false, fecha_cierre:null, updated_at:new Date().toISOString()})
-      .eq('id', reunion.id);
-    if(error){ showToast('Error al reabrir: '+error.message); return; }
-    // Sincronizar estado local
-    const i = DB.reuniones.findIndex(function(r){ return r.id===reunion.id; });
-    if(i>=0){
-      DB.reuniones[i] = Object.assign({}, DB.reuniones[i], {cerrada:false, fecha_cierre:null});
-      reunion.cerrada = false;
-      reunion.fecha_cierre = null;
-    }
-    showToast('🔓 Reunión reabierta');
-  }
-
+  if(reunion.cerrada){ showToast('🔒 La reunión está cerrada. Reábrela para editarla.'); return; }
   window._editReunionId=reunion.id;
   openModalReunion(Object.assign({},reunion,{meses_evaluacion:reunion.meses_evaluacion||[]}));
 }
@@ -5534,7 +5510,7 @@ function openModalReunion(datos) {
   if(typeof actualizarContadorChips==='function') actualizarContadorChips();
 }
 
-/* =========================================================
+function partRow(idx,nombre,correo) {/* =========================================================
  * PARTICIPANTES — UI con CHIPS clickeables
  * - Chips: click toggle (agregar/quitar del colegio)
  * - Externos: filas con nombre+correo libres
@@ -5843,8 +5819,7 @@ async function confirmarCierreReunion() {
   document.getElementById('modalFooter').innerHTML =
     '<button class="btn btn-outline" onclick="closeModal();renderCurrentPanel()">Cerrar</button>' +
     '<button class="btn btn-primary" style="background:#1F4E79" onclick="descargarWordReunion()">📄 Descargar Word</button>' +
-    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>' +
-    '<button class="btn btn-primary" style="background:#D44638" onclick="abrirEmailEnGmail()">📧 Abrir en Gmail</button>';
+    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>';
 
   document.getElementById('modal').style.maxWidth = '560px';
 }
@@ -5891,57 +5866,6 @@ function getCopiaEnvio(){
     if(nombre) dest.push({ nombre: nombre, correo: correo });
   });
   return dest;
-}/* =========================================================
- * "ABRIR EN GMAIL" — Genera URL de Gmail con destinatarios,
- * CC, asunto y cuerpo precompletados.
- * ========================================================= */
-function abrirEmailEnGmail(){
-  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
-  if(!reunion){ showToast('No hay reunión activa'); return; }
-
-  const destinatarios = getDestinatariosEnvio();
-  const copia = getCopiaEnvio();
-
-  const correosTo = destinatarios.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
-  const correosCc = copia.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
-
-  if(!correosTo.length && !correosCc.length){
-    showToast('⚠️ No hay correos válidos en destinatarios ni copia');
-    return;
-  }
-
-  const mesesReunion = (reunion.meses_evaluacion && reunion.meses_evaluacion.length)
-    ? reunion.meses_evaluacion.slice()
-    : (reunion.mes ? [reunion.mes] : []);
-  const mesesLabel = mesesReunion.map(m => fmtMes(m, false)).join(', ') || '(sin mes)';
-
-  function construirBody(){
-    let body = 'Estimadas(os).\n\n';
-    body += 'Adjunto el acta de la reunión de seguimiento estratégico realizada el ' + reunion.fecha + ' en ' + (DB.colegio?.nombre || '') + '.\n\n';
-    body += 'Consultor responsable: ' + (reunion.consultor_nombre || '—') + '\n';
-    body += 'Meses revisados: ' + mesesLabel + '\n\n';
-    body += 'Por favor revisar y dar continuidad a los compromisos asumidos.\n';
-    body += 'Quedamos atentos a cualquier consulta.\n\n';
-    body += 'Saludos cordiales,\n';
-    body += (reunion.consultor_nombre || '');
-    return body;
-  }
-
-  const subject = 'Acta reunión: ' + reunion.titulo + ' – ' + (DB.colegio?.nombre || '') + ' – ' + reunion.fecha;
-  const toStr = correosTo.join(',');
-  const ccStr = correosCc.join(',');
-
-  function buildUrl(body){
-    return 'https://mail.google.com/mail/?view=cm&fs=1' +
-      (toStr ? '&to=' + encodeURIComponent(toStr) : '') +
-      (ccStr ? '&cc=' + encodeURIComponent(ccStr) : '') +
-      '&su=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body);
-  }
-
-  const url = buildUrl(construirBody());
-  window.open(url, '_blank');
-  showToast('📧 Recuerda adjuntar el Word/PDF descargado');
 }
   function agregarDestEnvio() {
   const cont = document.getElementById('destList');
@@ -6103,8 +6027,10 @@ function generarPDFReunion() {
     html+='<div style="font-size:11px;font-weight:600;color:'+_nivelColorPDF+';margin-top:4px;letter-spacing:.5pt">'+_nivelLabelPDF+'</div>';
     html+='</div>';
   }
- html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div></div>';
-  html+='<div class="meta-row" style="margin-top:6px"><div class="meta-item"><strong>Consultor(a):</strong> '+(reunion.consultor_nombre||'—')+(reunion.consultor_correo?' &lt;'+reunion.consultor_correo+'&gt;':'')+'</div></div>';
+  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
+  if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
+  if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
+  html+='</div>';
   if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
   html+='</div>';
 
@@ -8364,6 +8290,37 @@ const PLAN_CSS = `
   .marco-eid-mini-grid{grid-template-columns:1fr}
   .marco-eid-criterio-header{flex-direction:column; align-items:flex-start}
 }
+
+/* === FUNCIONES POR CARGO (panel en pantalla) === */
+.fcargo-empty,.fcargo-loading{background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:40px 24px;text-align:center;color:var(--muted);font-size:13px}
+.fcargo-head-card{background:linear-gradient(135deg,#1E3A2F 0%,#2D5A42 100%);border-radius:12px;padding:22px 26px;margin-bottom:20px;color:#fff;box-shadow:var(--shadow)}
+.fcargo-head-badge{font-size:10px;font-weight:700;letter-spacing:1.4px;color:#C4962A;text-transform:uppercase;margin-bottom:4px}
+.fcargo-head-nombre{font-family:'DM Serif Display',serif;font-size:26px;line-height:1.15;margin-bottom:8px}
+.fcargo-head-personas{font-size:12.5px;color:rgba(255,255,255,.82);margin-bottom:4px}
+.fcargo-head-personas span{color:rgba(255,255,255,.55);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+.fcargo-head-resumen{font-size:12px;color:rgba(255,255,255,.6)}
+.fcargo-ficha-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden;box-shadow:var(--shadow)}
+.fcargo-ficha-grid{display:grid;grid-template-columns:250px 1fr}
+.fcargo-ficha-side{background:var(--surface2);padding:22px 20px;border-right:1px solid var(--border)}
+.fcargo-ficha-label{font-size:10px;font-weight:700;letter-spacing:1.2px;color:var(--accent);border-bottom:1.5px solid var(--gold);padding-bottom:7px;margin-bottom:16px}
+.fcargo-ficha-campo{margin-bottom:14px}
+.fcargo-ficha-campo-label{font-size:9.5px;font-weight:700;letter-spacing:.8px;color:var(--gold);text-transform:uppercase;margin-bottom:3px}
+.fcargo-ficha-campo-valor{font-size:12.5px;color:var(--text);font-weight:500;line-height:1.45}
+.fcargo-ficha-main{padding:22px 24px}
+.fcargo-eidcode{display:inline-block;background:#E8EEF5;color:#1E3A6E;border:1px solid #B5D4F4;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:9px}
+.fcargo-accion-titulo{font-size:21px;color:var(--accent);margin-bottom:6px;line-height:1.2}
+.fcargo-accion-desc{font-size:13px;color:var(--muted);margin-bottom:16px;font-style:italic;line-height:1.5}
+.fcargo-eid-block{background:#F0F4F9;border:1px solid #C9D3E5;border-radius:10px;padding:18px}
+.fcargo-eid-enunciado-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#1E3A6E;text-transform:uppercase;margin-bottom:7px}
+.fcargo-eid-enunciado{font-family:'DM Serif Display',serif;font-size:16px;color:#1E3A6E;line-height:1.4;margin-bottom:18px}
+.fcargo-eid-nivel{margin-bottom:18px}
+.fcargo-eid-nivel:last-child{margin-bottom:0}
+.fcargo-eid-nivel-titulo{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#1E3A6E;display:flex;align-items:center;gap:8px;margin-bottom:11px}
+.fcargo-eid-nivel-titulo::before{content:'';width:16px;height:2px;background:#1E3A6E;display:inline-block}
+.fcargo-eid-nivel-titulo.avanzado{color:#7A5A18}
+.fcargo-eid-nivel-titulo.avanzado::before{background:#7A5A18}
+.fcargo-eid-noeid{font-size:12.5px;color:var(--muted);font-style:italic;padding:8px 0}
+@media (max-width:760px){.fcargo-ficha-grid{grid-template-columns:1fr}.fcargo-ficha-side{border-right:none;border-bottom:1px solid var(--border)}}
 
 /* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
 .marco-sintesis{
@@ -13206,6 +13163,417 @@ window.__testVistaActiva = function(){
   console.groupEnd();
   return allOK ? 'OK' : 'FAIL';
 };
+
+/* ============================================================
+   FUNCIONES POR CARGO
+   Panel disponible para todos los usuarios. Permite seleccionar
+   un cargo y ver todas sus metas/acciones asociadas con la ficha
+   completa (descripción, fórmula, evidencia, meses) y el Estándar
+   Indicativo de Desempeño (EID) asociado en nivel Satisfactorio y
+   Avanzado. Pensado para enviarse a cada persona (export PDF).
+
+   Incluye generación en LOTE: seleccionar varios cargos y abrir
+   un documento por cada uno en pestañas separadas.
+
+   Reusa el modelo de datos existente (DB.cargos / DB.acciones /
+   getResps / planCargarEIDsAccion). Los helpers de formato de
+   criterio (fcargoExtraerVerbo / fcargoRenderCriterio) son copias
+   autocontenidas de la lógica del wizard, para NO depender de
+   funciones internas que podrían cambiar.
+   ============================================================ */
+
+let FCARGO_SELECCIONADO = '';      // cargo_id activo en el panel
+let fcargoEIDsCache = {};          // { accionId: [eids] } — acumulativo
+
+// --- Helpers de formato de criterio (autocontenidos) -------------------------
+function fcargoExtraerVerbo(texto){
+  if(!texto) return { verbo: '', resto: '' };
+  let t = texto.trim();
+  const conectoresIniciales = /^(para\s+esto|para\s+ello|adicionalmente|por\s+ejemplo|además|asimismo|por\s+otra\s+parte|en\s+conjunto\s+con\s+(?:los|las|el|la)?\s*\S+|por\s+su\s+parte)[,;:]?\s+/i;
+  t = t.replace(conectoresIniciales, '');
+  const hastaPrimeraComa = t.split(',')[0].trim();
+  const palabras = hastaPrimeraComa.split(/\s+/);
+  const palabrasVacias = new Set(['el','la','los','las','un','una','unos','unas','a','al','de','del','en','con','por','para','su','sus','lo']);
+  let verbo, resto;
+  if(palabras.length <= 2){
+    verbo = palabras.join(' ');
+    resto = t.substring(hastaPrimeraComa.length).replace(/^[,\s]+/, '').trim();
+  } else {
+    const segunda = (palabras[1] || '').toLowerCase();
+    const palabrasParaVerbo = palabrasVacias.has(segunda) ? 1 : 2;
+    verbo = palabras.slice(0, palabrasParaVerbo).join(' ');
+    const restoDelPrimerSegmento = palabras.slice(palabrasParaVerbo).join(' ');
+    const restoDespuesComa = t.includes(',') ? t.substring(hastaPrimeraComa.length) : '';
+    resto = (restoDelPrimerSegmento + ' ' + restoDespuesComa).replace(/^[,\s]+/, '').trim();
+  }
+  if(!resto){ resto = verbo; verbo = ''; }
+  return { verbo, resto };
+}
+
+function fcargoRenderCriterio(texto, esAvanzado){
+  if(!texto) return '<div style="font-size:13px;color:var(--muted);font-style:italic;padding:12px;text-align:center">No hay criterio cargado para este nivel.</div>';
+  let t = texto.trim();
+  let sujetoExtraido = '';
+  for(let len = 8; len >= 3; len--){
+    const candidato = t.split(/\s+/).slice(0, len).join(' ').replace(/[,;:.]$/,'').trim();
+    if(!candidato) continue;
+    const regex = new RegExp(candidato.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = t.match(regex);
+    if(matches && matches.length >= 2){
+      sujetoExtraido = candidato;
+      t = t.replace(regex, '').replace(/\s+/g, ' ').replace(/^[,;:.\s]+/, '').trim();
+      t = t.replace(/\.\s*[,;]\s*/g, '. ');
+      break;
+    }
+  }
+  let oraciones = t.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ])/).map(s => s.trim()).filter(Boolean);
+  if(oraciones.length === 0){
+    return '<div class="marco-eid-criterio-sujeto-line">'+(sujetoExtraido ? escapeHtmlPlan(sujetoExtraido)+':' : '')+'</div>' +
+      '<div class="marco-eid-mini-grid"><div class="marco-eid-mini-card'+(esAvanzado?' avanzado':'')+'">' +
+      '<div class="marco-eid-mini-cuerpo">'+escapeHtmlPlan(texto)+'</div></div></div>';
+  }
+  const cards = oraciones.map((oracion, idx) => {
+    const oracionLimpia = oracion.replace(/\.$/, '').trim();
+    const { verbo, resto } = fcargoExtraerVerbo(oracionLimpia);
+    return '<div class="marco-eid-mini-card'+(esAvanzado?' avanzado':'')+'">' +
+      '<div class="marco-eid-mini-head"><span class="marco-eid-mini-num">'+(idx+1)+'</span>' +
+      (verbo ? '<span class="marco-eid-mini-verbo">'+escapeHtmlPlan(verbo)+'</span>' : '') + '</div>' +
+      '<div class="marco-eid-mini-cuerpo">'+escapeHtmlPlan(resto || oracionLimpia)+'</div></div>';
+  }).join('');
+  const encabezadoSujeto = sujetoExtraido ? '<div class="marco-eid-criterio-sujeto-line">'+escapeHtmlPlan(sujetoExtraido)+':</div>' : '';
+  return encabezadoSujeto + '<div class="marco-eid-mini-grid">'+cards+'</div>';
+}
+
+// --- Modelo: acciones y personas de un cargo ---------------------------------
+function fcargoAccionesDeCargo(cargoId){
+  if(!cargoId) return [];
+  const acciones = (DB.acciones || []).filter(ac =>
+    getResps(ac.id).some(r => r.cargo_id === cargoId)
+  );
+  return acciones.map(ac => {
+    const obj  = (DB.objetivos || []).find(o => o.id === ac.objetivo_id) || {};
+    const area = (DB.areas || []).find(a => a.id === obj.area_id) || {};
+    return { ac, obj, area };
+  }).sort((x, y) =>
+    (x.area.nombre || '').localeCompare(y.area.nombre || '') ||
+    (x.obj.nombre  || '').localeCompare(y.obj.nombre  || '')
+  );
+}
+
+function fcargoPersonasDeCargo(cargoId){
+  return (DB.responsables || [])
+    .filter(r => r.cargo_id === cargoId)
+    .map(r => r.nombre)
+    .filter(Boolean);
+}
+
+// --- Render principal del panel ----------------------------------------------
+async function renderFuncionesCargo(){
+  const host = document.getElementById('mainContent');
+  if(!host) return;
+
+  const cargos = _cargosOrdenados();
+  const opts = '<option value="">— Selecciona un cargo —</option>' +
+    cargos.map(c => '<option value="'+c.id+'"'+(FCARGO_SELECCIONADO===c.id?' selected':'')+'>'+escapeHtmlPlan(c.nombre)+'</option>').join('');
+
+  const loteChecks = cargos.map(c => {
+    const n = fcargoAccionesDeCargo(c.id).length;
+    const dis = n === 0;
+    return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;'+(dis?'opacity:.45':'cursor:pointer')+'">' +
+      '<input type="checkbox" class="fcargo-check" value="'+c.id+'"'+(dis?' disabled':'')+' style="accent-color:var(--accent);width:14px;height:14px">' +
+      '<span>'+escapeHtmlPlan(c.nombre)+'</span>' +
+      '<span style="margin-left:auto;color:var(--muted);font-size:10px">'+n+'</span>' +
+    '</label>';
+  }).join('');
+
+  host.innerHTML =
+    '<div class="page-header">' +
+      '<div class="page-title">Funciones por cargo</div>' +
+      '<div class="page-sub">Selecciona un cargo para ver sus metas y los estándares de desempeño (EID) que le corresponden, en nivel satisfactorio y avanzado. Puedes exportar la ficha en PDF para enviarla a cada persona.</div>' +
+    '</div>' +
+    '<div class="card" style="margin-bottom:18px;padding:16px 18px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
+        '<div style="font-size:13px;font-weight:600;color:var(--accent)">Generar PDFs en lote</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(true)">Seleccionar todos</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(false)">Limpiar</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="fcargoExportarLote()">Generar seleccionados</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">'+loteChecks+'</div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:10px">El número junto a cada cargo indica cuántas acciones tiene asignadas. Cada cargo se abre en una pestaña distinta; el navegador debe permitir ventanas emergentes.</div>' +
+    '</div>' +
+    '<div class="card" style="margin-bottom:18px;padding:16px 18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">' +
+      '<div style="flex:1;min-width:240px">' +
+        '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600;letter-spacing:.4px">VER UN CARGO EN DETALLE</label>' +
+        '<select id="fcargoSelect" class="form-input" style="width:100%;max-width:440px" onchange="fcargoOnSelect(this.value)">'+opts+'</select>' +
+      '</div>' +
+      '<button id="fcargoBtnPDF" class="btn btn-primary btn-sm" style="display:none" onclick="fcargoExportarPDF()">Exportar este cargo a PDF</button>' +
+    '</div>' +
+    '<div id="fcargoContenido">' +
+      (FCARGO_SELECCIONADO ? '<div class="fcargo-loading">Cargando metas y estándares…</div>'
+                           : '<div class="fcargo-empty">Elige un cargo en el selector para ver sus funciones en detalle.</div>') +
+    '</div>';
+
+  if(FCARGO_SELECCIONADO){
+    await fcargoPintarContenido(FCARGO_SELECCIONADO);
+  }
+}
+
+function fcargoOnSelect(cargoId){
+  FCARGO_SELECCIONADO = cargoId || '';
+  const cont = document.getElementById('fcargoContenido');
+  const btn  = document.getElementById('fcargoBtnPDF');
+  if(!FCARGO_SELECCIONADO){
+    if(cont) cont.innerHTML = '<div class="fcargo-empty">Elige un cargo en el selector para ver sus funciones en detalle.</div>';
+    if(btn)  btn.style.display = 'none';
+    return;
+  }
+  if(cont) cont.innerHTML = '<div class="fcargo-loading">Cargando metas y estándares…</div>';
+  fcargoPintarContenido(FCARGO_SELECCIONADO);
+}
+
+async function fcargoPintarContenido(cargoId){
+  const cargo = (DB.cargos || []).find(c => c.id === cargoId);
+  const items = fcargoAccionesDeCargo(cargoId);
+  const personas = fcargoPersonasDeCargo(cargoId);
+  const cont = document.getElementById('fcargoContenido');
+  const btn  = document.getElementById('fcargoBtnPDF');
+  if(!cont) return;
+
+  if(items.length === 0){
+    cont.innerHTML = '<div class="fcargo-empty">El cargo <strong>'+escapeHtmlPlan(cargo?.nombre||'')+'</strong> no tiene acciones asignadas todavía. Asigna responsables con este cargo a una o más acciones del plan.</div>';
+    if(btn) btn.style.display = 'none';
+    return;
+  }
+
+  await fcargoAsegurarEIDs(items);
+
+  let html =
+    '<div class="fcargo-head-card">' +
+      '<div class="fcargo-head-badge">CARGO</div>' +
+      '<div class="fcargo-head-nombre">'+escapeHtmlPlan(cargo?.nombre||'')+'</div>' +
+      (personas.length ? '<div class="fcargo-head-personas"><span>Personas:</span> '+personas.map(p=>escapeHtmlPlan(p)).join(', ')+'</div>' : '') +
+      '<div class="fcargo-head-resumen">'+items.length+' '+(items.length===1?'acción asignada':'acciones asignadas')+'</div>' +
+    '</div>';
+
+  html += items.map(({ac, obj, area}) => fcargoFichaAccion(ac, obj, area, fcargoEIDsCache[ac.id])).join('');
+
+  cont.innerHTML = html;
+  if(btn) btn.style.display = '';
+}
+
+async function fcargoAsegurarEIDs(items){
+  const pend = items.filter(({ac}) => fcargoEIDsCache[ac.id] === undefined).map(({ac}) => ac);
+  await Promise.all(pend.map(async ac => {
+    fcargoEIDsCache[ac.id] = await planCargarEIDsAccion(ac.nombre) || [];
+  }));
+}
+
+function fcargoFichaAccion(ac, obj, area, eids){
+  const eid = (eids && eids.length) ? eids[0] : null;
+  const meses = (ac.meses_activos || []).map(m => fmtMes(m, true)).join(' · ') || '—';
+  const dimSub = eid ? [eid.dimension, eid.subdimension].filter(Boolean).join(' · ') : '';
+
+  let side =
+    '<div class="fcargo-ficha-side">' +
+      '<div class="fcargo-ficha-label">FICHA DE LA ACCIÓN</div>' +
+      (area.nombre ? fcargoFichaCampo('ÁREA', escapeHtmlPlan(area.nombre)) : '') +
+      (obj.nombre  ? fcargoFichaCampo('OBJETIVO', escapeHtmlPlan(obj.nombre)) : '') +
+      fcargoFichaCampo('PERÍODO DE EVALUACIÓN', meses) +
+      (ac.formula_cumplimiento ? fcargoFichaCampo('FÓRMULA DE CUMPLIMIENTO', escapeHtmlPlan(ac.formula_cumplimiento)) : '') +
+      (ac.evidencia_esperada ? fcargoFichaCampo('EVIDENCIA', escapeHtmlPlan(ac.evidencia_esperada)) : '') +
+      (typeof ac.ponderador === 'number' ? fcargoFichaCampo('PONDERADOR', (ac.ponderador*100).toFixed(0)+'%') : '') +
+    '</div>';
+
+  let der =
+    '<div class="fcargo-ficha-main">' +
+      (eid ? '<div class="fcargo-eidcode">EID '+escapeHtmlPlan(eid.codigo)+(dimSub?' · '+escapeHtmlPlan(dimSub):'')+'</div>' : '') +
+      '<h3 class="fcargo-accion-titulo">'+escapeHtmlPlan(ac.nombre)+'</h3>' +
+      (ac.descripcion ? '<div class="fcargo-accion-desc">'+escapeHtmlPlan(ac.descripcion)+'</div>' : '');
+
+  if(eid){
+    der +=
+      '<div class="fcargo-eid-block">' +
+        '<div class="fcargo-eid-enunciado-label">ESTÁNDAR INDICATIVO DE DESEMPEÑO '+escapeHtmlPlan(eid.codigo)+(eid.dimension?' · '+escapeHtmlPlan(eid.dimension):'')+'</div>' +
+        '<div class="fcargo-eid-enunciado">'+escapeHtmlPlan(eid.enunciado)+'</div>' +
+        '<div class="fcargo-eid-nivel">' +
+          '<div class="fcargo-eid-nivel-titulo">Criterio satisfactorio · lo esperado</div>' +
+          fcargoRenderCriterio(eid.nivel_satisfactorio, false) +
+        '</div>' +
+        (eid.nivel_avanzado ?
+        '<div class="fcargo-eid-nivel">' +
+          '<div class="fcargo-eid-nivel-titulo avanzado">Criterio avanzado · lo destacado</div>' +
+          fcargoRenderCriterio(eid.nivel_avanzado, true) +
+        '</div>' : '') +
+      '</div>';
+  } else {
+    der += '<div class="fcargo-eid-noeid">Esta acción no tiene un Estándar Indicativo de Desempeño (EID) mapeado todavía.</div>';
+  }
+  der += '</div>';
+
+  return '<div class="fcargo-ficha-card"><div class="fcargo-ficha-grid">'+side+der+'</div></div>';
+}
+
+function fcargoFichaCampo(label, valor){
+  return '<div class="fcargo-ficha-campo"><div class="fcargo-ficha-campo-label">'+label+'</div><div class="fcargo-ficha-campo-valor">'+valor+'</div></div>';
+}
+
+// --- LOTE: selección múltiple ------------------------------------------------
+function fcargoToggleTodos(estado){
+  document.querySelectorAll('.fcargo-check:not(:disabled)').forEach(ch => ch.checked = estado);
+}
+
+async function fcargoExportarLote(){
+  const ids = Array.from(document.querySelectorAll('.fcargo-check:checked')).map(ch => ch.value);
+  if(!ids.length){ showToast('Selecciona al menos un cargo.'); return; }
+  showToast('Generando '+ids.length+' PDF'+(ids.length>1?'s':'')+'…');
+
+  let todosItems = [];
+  ids.forEach(cid => { todosItems = todosItems.concat(fcargoAccionesDeCargo(cid)); });
+  await fcargoAsegurarEIDs(todosItems);
+
+  let abiertos = 0, bloqueado = false;
+  for(const cid of ids){
+    const r = fcargoConstruirHTML(cid);
+    if(!r) continue;
+    if(!fcargoAbrirVentana(r.html)){ bloqueado = true; break; }
+    abiertos++;
+  }
+  if(bloqueado){
+    showToast('El navegador bloqueó las ventanas. Habilita las ventanas emergentes para este sitio y reintenta.');
+  } else {
+    showToast(abiertos+' documento'+(abiertos!==1?'s':'')+' abierto'+(abiertos!==1?'s':'')+' en pestañas separadas.');
+  }
+}
+
+// --- EXPORT a PDF (individual) -----------------------------------------------
+function fcargoExportarPDF(){
+  if(!FCARGO_SELECCIONADO){ showToast('Selecciona un cargo primero.'); return; }
+  const r = fcargoConstruirHTML(FCARGO_SELECCIONADO);
+  if(!r){ showToast('El cargo no tiene acciones para exportar.'); return; }
+  showToast('Generando PDF…');
+  fcargoAbrirVentana(r.html);
+}
+
+function fcargoAbrirVentana(html){
+  const W = window.open('', '_blank');
+  if(!W){ showToast('Permite las ventanas emergentes para exportar el PDF.'); return false; }
+  W.document.write(html);
+  W.document.close();
+  return true;
+}
+
+// Construye el HTML completo del PDF para UN cargo (no abre ventana).
+function fcargoConstruirHTML(cargoId){
+  const cargo = (DB.cargos || []).find(c => c.id === cargoId);
+  if(!cargo) return null;
+  const items = fcargoAccionesDeCargo(cargoId);
+  if(!items.length) return null;
+  const personas = fcargoPersonasDeCargo(cargoId);
+
+  const colegioNombre = (DB.colegio && DB.colegio.nombre) || 'Establecimiento';
+  const cargoNombre = escapeHtmlPlan(cargo.nombre || '');
+  const personasTxt = personas.length ? personas.map(escapeHtmlPlan).join(', ') : '';
+  const fecha = new Date().toLocaleDateString('es-CL', {day:'2-digit',month:'long',year:'numeric'});
+
+  const css =
+    '*{box-sizing:border-box;margin:0;padding:0}' +
+    'body{font-family:"DM Sans","Segoe UI",Arial,sans-serif;color:#1A1916;font-size:12.5px;line-height:1.55;background:#fff;padding:0}' +
+    'h1,h2,h3{font-family:"DM Serif Display",Georgia,serif;font-weight:400}' +
+    '.print-btn{position:fixed;top:16px;right:16px;background:#1E3A2F;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;cursor:pointer;font-family:inherit;z-index:10}' +
+    '.page{max-width:920px;margin:0 auto;padding:32px 28px}' +
+    '.doc-head{border-bottom:3px solid #1E3A2F;padding-bottom:16px;margin-bottom:24px}' +
+    '.doc-head .kicker{font-size:11px;font-weight:700;letter-spacing:1.5px;color:#C4962A;text-transform:uppercase}' +
+    '.doc-head h1{font-size:30px;color:#1E3A2F;margin:4px 0 6px}' +
+    '.doc-head .meta{font-size:12px;color:#7A7670}' +
+    '.doc-head .meta strong{color:#1A1916}' +
+    '.ficha-card{border:1px solid #E4E0D8;border-radius:10px;margin-bottom:20px;overflow:hidden;page-break-inside:avoid;box-shadow:0 1px 3px rgba(0,0,0,.05)}' +
+    '.ficha-grid{display:grid;grid-template-columns:240px 1fr}' +
+    '.ficha-side{background:#F4F2EE;padding:20px 18px;border-right:1px solid #E4E0D8}' +
+    '.ficha-side-label{font-size:10px;font-weight:700;letter-spacing:1.2px;color:#1E3A2F;border-bottom:1.5px solid #C4962A;padding-bottom:6px;margin-bottom:14px}' +
+    '.ficha-campo{margin-bottom:13px}' +
+    '.ficha-campo-label{font-size:9.5px;font-weight:700;letter-spacing:.8px;color:#C4962A;text-transform:uppercase;margin-bottom:3px}' +
+    '.ficha-campo-valor{font-size:12px;color:#2A2622;font-weight:500}' +
+    '.ficha-main{padding:20px 22px}' +
+    '.eidcode{display:inline-block;background:#E8EEF5;color:#1E3A6E;border:1px solid #B5D4F4;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:8px}' +
+    '.accion-titulo{font-size:20px;color:#1E3A2F;margin-bottom:6px;line-height:1.25}' +
+    '.accion-desc{font-size:12.5px;color:#5C5A55;margin-bottom:16px;font-style:italic}' +
+    '.eid-block{background:#F0F4F9;border:1px solid #C9D3E5;border-radius:8px;padding:16px}' +
+    '.eid-enunciado-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#1E3A6E;text-transform:uppercase;margin-bottom:6px}' +
+    '.eid-enunciado{font-family:"DM Serif Display",Georgia,serif;font-size:15px;color:#1E3A6E;line-height:1.4;margin-bottom:16px}' +
+    '.eid-nivel{margin-bottom:16px}' +
+    '.eid-nivel:last-child{margin-bottom:0}' +
+    '.eid-nivel-titulo{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#1E3A6E;display:flex;align-items:center;gap:8px;margin-bottom:10px}' +
+    '.eid-nivel-titulo::before{content:"";width:16px;height:2px;background:#1E3A6E;display:inline-block}' +
+    '.eid-nivel-titulo.avanzado{color:#7A5A18}' +
+    '.eid-nivel-titulo.avanzado::before{background:#7A5A18}' +
+    '.marco-eid-criterio-sujeto-line{font-weight:700;color:#1E3A6E;margin:0 0 10px;font-size:12.5px}' +
+    '.marco-eid-mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}' +
+    '.marco-eid-mini-card{background:#fff;border:1px solid #C9D3E5;border-radius:8px;padding:11px 13px}' +
+    '.marco-eid-mini-card.avanzado{border-color:#D4C8A8}' +
+    '.marco-eid-mini-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}' +
+    '.marco-eid-mini-num{width:20px;height:20px;background:#1E3A6E;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}' +
+    '.marco-eid-mini-card.avanzado .marco-eid-mini-num{background:#7A5A18}' +
+    '.marco-eid-mini-verbo{font-size:10px;font-weight:700;color:#1E3A6E;text-transform:uppercase;letter-spacing:.4px}' +
+    '.marco-eid-mini-card.avanzado .marco-eid-mini-verbo{color:#7A5A18}' +
+    '.marco-eid-mini-cuerpo{font-size:11.5px;line-height:1.45;color:#2A2622}' +
+    '.eid-noeid{font-size:12px;color:#7A7670;font-style:italic;padding:10px 0}' +
+    '.foot{margin-top:28px;padding-top:14px;border-top:1px solid #E4E0D8;font-size:10px;color:#9A968F;text-align:center}' +
+    '@media print{.print-btn{display:none}.page{padding:0}body{font-size:11.5px}.ficha-card{box-shadow:none}}';
+
+  const fichasHTML = items.map(({ac, obj, area}) => {
+    const eids = fcargoEIDsCache[ac.id] || [];
+    const eid = eids.length ? eids[0] : null;
+    const meses = (ac.meses_activos || []).map(m => fmtMes(m, true)).join(' · ') || '—';
+    const dimSub = eid ? [eid.dimension, eid.subdimension].filter(Boolean).join(' · ') : '';
+
+    let side = '<div class="ficha-side"><div class="ficha-side-label">FICHA DE LA ACCIÓN</div>';
+    if(area.nombre) side += '<div class="ficha-campo"><div class="ficha-campo-label">Área</div><div class="ficha-campo-valor">'+escapeHtmlPlan(area.nombre)+'</div></div>';
+    if(obj.nombre)  side += '<div class="ficha-campo"><div class="ficha-campo-label">Objetivo</div><div class="ficha-campo-valor">'+escapeHtmlPlan(obj.nombre)+'</div></div>';
+    side += '<div class="ficha-campo"><div class="ficha-campo-label">Período de evaluación</div><div class="ficha-campo-valor">'+meses+'</div></div>';
+    if(ac.formula_cumplimiento) side += '<div class="ficha-campo"><div class="ficha-campo-label">Fórmula de cumplimiento</div><div class="ficha-campo-valor">'+escapeHtmlPlan(ac.formula_cumplimiento)+'</div></div>';
+    if(ac.evidencia_esperada)   side += '<div class="ficha-campo"><div class="ficha-campo-label">Evidencia</div><div class="ficha-campo-valor">'+escapeHtmlPlan(ac.evidencia_esperada)+'</div></div>';
+    if(typeof ac.ponderador === 'number') side += '<div class="ficha-campo"><div class="ficha-campo-label">Ponderador</div><div class="ficha-campo-valor">'+(ac.ponderador*100).toFixed(0)+'%</div></div>';
+    side += '</div>';
+
+    let mainHtml = '<div class="ficha-main">';
+    if(eid) mainHtml += '<div class="eidcode">EID '+escapeHtmlPlan(eid.codigo)+(dimSub?' · '+escapeHtmlPlan(dimSub):'')+'</div>';
+    mainHtml += '<h2 class="accion-titulo">'+escapeHtmlPlan(ac.nombre)+'</h2>';
+    if(ac.descripcion) mainHtml += '<div class="accion-desc">'+escapeHtmlPlan(ac.descripcion)+'</div>';
+    if(eid){
+      mainHtml += '<div class="eid-block">' +
+        '<div class="eid-enunciado-label">Estándar Indicativo de Desempeño '+escapeHtmlPlan(eid.codigo)+(eid.dimension?' · '+escapeHtmlPlan(eid.dimension):'')+'</div>' +
+        '<div class="eid-enunciado">'+escapeHtmlPlan(eid.enunciado)+'</div>' +
+        '<div class="eid-nivel"><div class="eid-nivel-titulo">Criterio satisfactorio · lo esperado</div>'+fcargoRenderCriterio(eid.nivel_satisfactorio, false)+'</div>' +
+        (eid.nivel_avanzado ? '<div class="eid-nivel"><div class="eid-nivel-titulo avanzado">Criterio avanzado · lo destacado</div>'+fcargoRenderCriterio(eid.nivel_avanzado, true)+'</div>' : '') +
+      '</div>';
+    } else {
+      mainHtml += '<div class="eid-noeid">Esta acción no tiene un Estándar Indicativo de Desempeño (EID) mapeado todavía.</div>';
+    }
+    mainHtml += '</div>';
+
+    return '<div class="ficha-card"><div class="ficha-grid">'+side+mainHtml+'</div></div>';
+  }).join('');
+
+  const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
+    '<title>Funciones y estándares — '+cargoNombre+'</title>' +
+    '<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">' +
+    '<style>'+css+'</style></head><body>' +
+    '<button class="print-btn" onclick="window.print()">Imprimir / Guardar PDF</button>' +
+    '<div class="page">' +
+      '<div class="doc-head">' +
+        '<div class="kicker">Funciones y estándares de desempeño</div>' +
+        '<h1>'+cargoNombre+'</h1>' +
+        '<div class="meta"><strong>'+escapeHtmlPlan(colegioNombre)+'</strong>'+(personasTxt?' · '+personasTxt:'')+' · '+fecha+'</div>' +
+      '</div>' +
+      fichasHTML +
+      '<div class="foot">Estándares Indicativos de Desempeño · MINEDUC · Decreto 27/2020 — Generado por Gestión Estratégica</div>' +
+    '</div></body></html>';
+
+  return { html, cargoNombre: cargo.nombre || '' };
+}
+
 
 /* ====================== UTILS ====================== */
 function escapeHtmlPlan(s){
