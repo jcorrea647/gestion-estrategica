@@ -13194,16 +13194,33 @@ let FCARGO_SELECCIONADO = '';      // cargo_id activo en el panel
 let fcargoEIDsCache = {};          // { accionId: [eids] } — acumulativo
 let fcargoCitasCache = {};         // { accionId: {pei:[...], pme:[...]} } — citas textuales PEI/PME
 
-// Lee de microacciones.brechas_data (lo que la IA ya generó al analizar la acción)
-// y extrae SOLO las citas textuales del PEI y del Análisis PME, agrupadas por
-// documento. NO invoca la IA ni toca PLAN_STATE: es solo lectura de lo guardado.
-// Si la acción nunca se analizó, devuelve {pei:[], pme:[]}.
+// Extrae las citas PEI/PME de un objeto brechas_data (helper compartido).
+function fcargoExtraerCitas(brechasData){
+  const pei = [], pme = [];
+  const vistoPei = new Set(), vistoPme = new Set();
+  const brechas = (brechasData && Array.isArray(brechasData.brechas)) ? brechasData.brechas : [];
+  brechas.forEach(b => {
+    const cita = (b.cita_textual || '').toString().trim();
+    if(!cita) return;
+    const doc = (b.fuente_doc || '').toString().trim().toUpperCase();
+    if(doc === 'PEI' && !vistoPei.has(cita)){ vistoPei.add(cita); pei.push(cita); }
+    else if((doc === 'PME_2025' || doc === 'FASE_2026') && !vistoPme.has(cita)){ vistoPme.add(cita); pme.push(cita); }
+  });
+  return { pei, pme };
+}
+
+// Obtiene las citas textuales del PEI y del Análisis PME para una acción.
+// 1) Primero busca lo ya guardado en microacciones.brechas_data (instantáneo).
+// 2) Si no hay, invoca la edge function generar-brecha-avanzado (misma que usa
+//    el wizard) para generarlas con IA. NO toca PLAN_STATE: hace su propio fetch.
+// Devuelve {pei:[...], pme:[...]} (vacío si el colegio no tiene documentos cargados).
 async function fcargoCargarCitas(colegioId, accionId){
   if(fcargoCitasCache[accionId] !== undefined) return fcargoCitasCache[accionId];
   const vacio = { pei: [], pme: [] };
+
+  // 1) Lo ya guardado
   try{
-    // Tomar la brecha más reciente guardada para esta acción (cualquier mes/banda)
-    const { data, error } = await sb.from('microacciones')
+    const { data } = await sb.from('microacciones')
       .select('brechas_data, updated_at')
       .eq('colegio_id', colegioId)
       .eq('accion_id', accionId)
@@ -13211,22 +13228,38 @@ async function fcargoCargarCitas(colegioId, accionId){
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if(error || !data || !data.brechas_data){ fcargoCitasCache[accionId] = vacio; return vacio; }
-    const brechas = Array.isArray(data.brechas_data.brechas) ? data.brechas_data.brechas : [];
-    const pei = [], pme = [];
-    const vistoPei = new Set(), vistoPme = new Set();
-    brechas.forEach(b => {
-      const cita = (b.cita_textual || '').toString().trim();
-      if(!cita) return;
-      const doc = (b.fuente_doc || '').toString().trim().toUpperCase();
-      if(doc === 'PEI' && !vistoPei.has(cita)){ vistoPei.add(cita); pei.push(cita); }
-      else if((doc === 'PME_2025' || doc === 'FASE_2026') && !vistoPme.has(cita)){ vistoPme.add(cita); pme.push(cita); }
+    if(data && data.brechas_data){
+      const res = fcargoExtraerCitas(data.brechas_data);
+      if(res.pei.length || res.pme.length){ fcargoCitasCache[accionId] = res; return res; }
+    }
+  }catch(e){ console.warn('[fcargoCargarCitas] lookup guardado:', e.message); }
+
+  // 2) Generar con IA (sin tocar PLAN_STATE). Mismo endpoint/headers que el wizard.
+  try{
+    const ac = (DB.acciones || []).find(a => a.id === accionId) || {};
+    const resp = await fetch(PLAN_BRECHA_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (sb.supabaseKey || '')
+      },
+      body: JSON.stringify({
+        colegio_id: colegioId,
+        accion_id: accionId,
+        accion_nombre: ac.nombre || '',
+        accion_descripcion: ac.descripcion || '',
+        mes: (ac.meses_activos && ac.meses_activos[0]) || '',
+        pct: null,
+        banda: ''
+      })
     });
-    const res = { pei, pme };
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const res = fcargoExtraerCitas(data);
     fcargoCitasCache[accionId] = res;
     return res;
   }catch(e){
-    console.warn('[fcargoCargarCitas]', e.message);
+    console.warn('[fcargoCargarCitas] IA:', e.message);
     fcargoCitasCache[accionId] = vacio;
     return vacio;
   }
@@ -13499,7 +13532,7 @@ function fcargoToggleTodos(estado){
 async function fcargoExportarLote(){
   const ids = Array.from(document.querySelectorAll('.fcargo-check:checked')).map(ch => ch.value);
   if(!ids.length){ showToast('Selecciona al menos un cargo.'); return; }
-  showToast('Generando '+ids.length+' PDF'+(ids.length>1?'s':'')+'…');
+  showToast('Preparando '+ids.length+' PDF'+(ids.length>1?'s':'')+' (puede tardar si hay análisis nuevos)…');
 
   let todosItems = [];
   ids.forEach(cid => { todosItems = todosItems.concat(fcargoAccionesDeCargo(cid)); });
@@ -13520,11 +13553,12 @@ async function fcargoExportarLote(){
 }
 
 // --- EXPORT a PDF (individual) -----------------------------------------------
-function fcargoExportarPDF(){
+async function fcargoExportarPDF(){
   if(!FCARGO_SELECCIONADO){ showToast('Selecciona un cargo primero.'); return; }
+  showToast('Preparando PDF (puede tardar si hay análisis nuevos)…');
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(FCARGO_SELECCIONADO));
   const r = fcargoConstruirHTML(FCARGO_SELECCIONADO);
   if(!r){ showToast('El cargo no tiene acciones para exportar.'); return; }
-  showToast('Generando PDF…');
   fcargoAbrirVentana(r.html);
 }
 
