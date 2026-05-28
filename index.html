@@ -8320,6 +8320,14 @@ const PLAN_CSS = `
 .fcargo-eid-nivel-titulo.avanzado{color:#7A5A18}
 .fcargo-eid-nivel-titulo.avanzado::before{background:#7A5A18}
 .fcargo-eid-noeid{font-size:12.5px;color:var(--muted);font-style:italic;padding:8px 0}
+.fcargo-peipme-block{margin-top:16px;background:#FAF7F1;border:1px solid #E4D9C2;border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px}
+.fcargo-peipme-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#854F0B;text-transform:uppercase;margin-bottom:10px}
+.fcargo-peipme-cita{display:flex;gap:10px;align-items:flex-start;margin-bottom:9px}
+.fcargo-peipme-cita:last-child{margin-bottom:0}
+.fcargo-peipme-tag{flex-shrink:0;font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:4px;text-transform:uppercase;margin-top:2px}
+.fcargo-peipme-tag-pei{background:#E8F5EE;color:#1E3A2F}
+.fcargo-peipme-tag-pme{background:#E6F1FB;color:#0C447C}
+.fcargo-peipme-texto{font-size:12.5px;line-height:1.5;color:#3A352B;font-style:italic}
 @media (max-width:760px){.fcargo-ficha-grid{grid-template-columns:1fr}.fcargo-ficha-side{border-right:none;border-bottom:1px solid var(--border)}}
 
 /* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
@@ -13184,6 +13192,66 @@ window.__testVistaActiva = function(){
 
 let FCARGO_SELECCIONADO = '';      // cargo_id activo en el panel
 let fcargoEIDsCache = {};          // { accionId: [eids] } — acumulativo
+let fcargoCitasCache = {};         // { accionId: {pei:[...], pme:[...]} } — citas textuales PEI/PME
+
+// Lee de microacciones.brechas_data (lo que la IA ya generó al analizar la acción)
+// y extrae SOLO las citas textuales del PEI y del Análisis PME, agrupadas por
+// documento. NO invoca la IA ni toca PLAN_STATE: es solo lectura de lo guardado.
+// Si la acción nunca se analizó, devuelve {pei:[], pme:[]}.
+async function fcargoCargarCitas(colegioId, accionId){
+  if(fcargoCitasCache[accionId] !== undefined) return fcargoCitasCache[accionId];
+  const vacio = { pei: [], pme: [] };
+  try{
+    // Tomar la brecha más reciente guardada para esta acción (cualquier mes/banda)
+    const { data, error } = await sb.from('microacciones')
+      .select('brechas_data, updated_at')
+      .eq('colegio_id', colegioId)
+      .eq('accion_id', accionId)
+      .not('brechas_data', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if(error || !data || !data.brechas_data){ fcargoCitasCache[accionId] = vacio; return vacio; }
+    const brechas = Array.isArray(data.brechas_data.brechas) ? data.brechas_data.brechas : [];
+    const pei = [], pme = [];
+    const vistoPei = new Set(), vistoPme = new Set();
+    brechas.forEach(b => {
+      const cita = (b.cita_textual || '').toString().trim();
+      if(!cita) return;
+      const doc = (b.fuente_doc || '').toString().trim().toUpperCase();
+      if(doc === 'PEI' && !vistoPei.has(cita)){ vistoPei.add(cita); pei.push(cita); }
+      else if((doc === 'PME_2025' || doc === 'FASE_2026') && !vistoPme.has(cita)){ vistoPme.add(cita); pme.push(cita); }
+    });
+    const res = { pei, pme };
+    fcargoCitasCache[accionId] = res;
+    return res;
+  }catch(e){
+    console.warn('[fcargoCargarCitas]', e.message);
+    fcargoCitasCache[accionId] = vacio;
+    return vacio;
+  }
+}
+
+// HTML del bloque combinado de citas PEI + PME (versión limpia, solo citas).
+// Sirve tanto para pantalla como para PDF (clases neutras inline). Devuelve ''
+// si no hay ninguna cita.
+function fcargoBloqueCitas(citas, paraPDF){
+  if(!citas || ((!citas.pei || !citas.pei.length) && (!citas.pme || !citas.pme.length))) return '';
+  const items = [];
+  (citas.pei || []).forEach(c => items.push({ doc: 'PEI', label: 'PEI', texto: c }));
+  (citas.pme || []).forEach(c => items.push({ doc: 'PME', label: 'Análisis PME', texto: c }));
+  const cls = paraPDF ? 'pei-pme' : 'fcargo-peipme';
+  const lis = items.map(it =>
+    '<div class="'+cls+'-cita">' +
+      '<span class="'+cls+'-tag '+cls+'-tag-'+(it.doc==='PEI'?'pei':'pme')+'">'+it.label+'</span>' +
+      '<span class="'+cls+'-texto">«'+escapeHtmlPlan(it.texto)+'»</span>' +
+    '</div>'
+  ).join('');
+  return '<div class="'+cls+'-block">' +
+    '<div class="'+cls+'-label">QUÉ DICEN EL PEI Y EL ANÁLISIS PME</div>' +
+    lis +
+  '</div>';
+}
 
 // --- Helpers de formato de criterio (autocontenidos) -------------------------
 function fcargoExtraerVerbo(texto){
@@ -13364,10 +13432,13 @@ async function fcargoPintarContenido(cargoId){
 }
 
 async function fcargoAsegurarEIDs(items){
-  const pend = items.filter(({ac}) => fcargoEIDsCache[ac.id] === undefined).map(({ac}) => ac);
-  await Promise.all(pend.map(async ac => {
-    fcargoEIDsCache[ac.id] = await planCargarEIDsAccion(ac.nombre) || [];
-  }));
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  const pendEID = items.filter(({ac}) => fcargoEIDsCache[ac.id] === undefined).map(({ac}) => ac);
+  const pendCitas = items.filter(({ac}) => fcargoCitasCache[ac.id] === undefined).map(({ac}) => ac);
+  await Promise.all([
+    ...pendEID.map(async ac => { fcargoEIDsCache[ac.id] = await planCargarEIDsAccion(ac.nombre) || []; }),
+    ...pendCitas.map(async ac => { await fcargoCargarCitas(colId, ac.id); })
+  ]);
 }
 
 function fcargoFichaAccion(ac, obj, area, eids){
@@ -13410,6 +13481,7 @@ function fcargoFichaAccion(ac, obj, area, eids){
   } else {
     der += '<div class="fcargo-eid-noeid">Esta acción no tiene un Estándar Indicativo de Desempeño (EID) mapeado todavía.</div>';
   }
+  der += fcargoBloqueCitas(fcargoCitasCache[ac.id], false);
   der += '</div>';
 
   return '<div class="fcargo-ficha-card"><div class="fcargo-ficha-grid">'+side+der+'</div></div>';
@@ -13519,7 +13591,17 @@ function fcargoConstruirHTML(cargoId){
     '.marco-eid-mini-card.avanzado .marco-eid-mini-verbo{color:#7A5A18}' +
     '.marco-eid-mini-cuerpo{font-size:11.5px;line-height:1.45;color:#2A2622}' +
     '.eid-noeid{font-size:12px;color:#7A7670;font-style:italic;padding:10px 0}' +
+    '.pei-pme-block{margin-top:16px;background:#FAF7F1;border:1px solid #E4D9C2;border-left:4px solid #C4962A;border-radius:8px;padding:14px 16px}' +
+    '.pei-pme-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#854F0B;text-transform:uppercase;margin-bottom:10px}' +
+    '.pei-pme-cita{display:flex;gap:10px;align-items:flex-start;margin-bottom:9px}' +
+    '.pei-pme-cita:last-child{margin-bottom:0}' +
+    '.pei-pme-tag{flex-shrink:0;font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:4px;text-transform:uppercase;margin-top:1px}' +
+    '.pei-pme-tag-pei{background:#E8F5EE;color:#1E3A2F}' +
+    '.pei-pme-tag-pme{background:#E6F1FB;color:#0C447C}' +
+    '.pei-pme-texto{font-size:11.5px;line-height:1.5;color:#3A352B;font-style:italic}' +
     '.foot{margin-top:28px;padding-top:14px;border-top:1px solid #E4E0D8;font-size:10px;color:#9A968F;text-align:center}' +
+    '.ficha-card{page-break-after:always;break-after:page}' +
+    '.ficha-card:last-of-type{page-break-after:auto;break-after:auto}' +
     '@media print{.print-btn{display:none}.page{padding:0}body{font-size:11.5px}.ficha-card{box-shadow:none}}';
 
   const fichasHTML = items.map(({ac, obj, area}) => {
@@ -13551,6 +13633,7 @@ function fcargoConstruirHTML(cargoId){
     } else {
       mainHtml += '<div class="eid-noeid">Esta acción no tiene un Estándar Indicativo de Desempeño (EID) mapeado todavía.</div>';
     }
+    mainHtml += fcargoBloqueCitas(fcargoCitasCache[ac.id], true);
     mainHtml += '</div>';
 
     return '<div class="ficha-card"><div class="ficha-grid">'+side+mainHtml+'</div></div>';
