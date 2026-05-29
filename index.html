@@ -8345,7 +8345,27 @@ const PLAN_CSS = `
 .fcargo-gen-btn:hover{filter:brightness(.97)}
 .fcargo-gen-btn.pdf{background:#1E3A2F;color:#fff;border-color:#1E3A2F}
 .fcargo-gen-btn.regen{background:var(--surface2);color:var(--accent)}
+.fcargo-gen-btn.generar{background:#0C447C;color:#fff;border-color:#0C447C}
 @media (max-width:640px){.fcargo-doc-row{flex-wrap:wrap}.fcargo-doc-btns{width:100%}.fcargo-gen-btn{flex:1}}
+/* Listado unificado de funciones por cargo */
+.fcargo-row-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;transition:border-color .15s}
+.fcargo-row-card:hover{border-color:#2D5A42}
+.fcargo-row-card.abierto{border-color:#2D5A42}
+.fcargo-row-head{display:flex;align-items:center;gap:12px;padding:12px 14px}
+.fcargo-check{width:15px;height:15px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
+.fcargo-row-chevron{font-style:normal;font-size:14px;color:var(--muted);flex-shrink:0;width:14px}
+.fcargo-row-info{flex:1;cursor:pointer;min-width:0}
+.fcargo-row-nombre{font-size:14px;font-weight:600;color:var(--text)}
+.fcargo-row-meta{font-size:11.5px;color:var(--muted);margin-top:1px}
+.fcargo-badge{font-size:11px;padding:3px 9px;border-radius:6px;flex-shrink:0;display:inline-flex;align-items:center;gap:5px;font-weight:600}
+.fcargo-badge.ok{background:#E1F5EE;color:#0F6E56}
+.fcargo-badge.pend{background:var(--surface2);color:var(--muted)}
+.fcargo-badge .dot{width:6px;height:6px;border-radius:50%;background:#1D9E75;display:inline-block}
+.fcargo-row-btns{display:flex;gap:6px;flex-shrink:0}
+.fcargo-row-body{border-top:0;background:var(--surface2)}
+.fcargo-row-card.abierto .fcargo-row-body{border-top:1px solid var(--border);padding:12px 14px}
+.fcargo-doc-frame{width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;display:block}
+@media (max-width:640px){.fcargo-row-head{flex-wrap:wrap}.fcargo-row-btns{width:100%}.fcargo-row-btns .fcargo-gen-btn{flex:1}}
 
 /* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
 .marco-sintesis{
@@ -13416,73 +13436,163 @@ function fcargoPersonasDeCargo(cargoId){
 }
 
 // --- Render principal del panel ----------------------------------------------
+// Mapa colegio→{cargo_id: {firma, updated_at}} de lo ya guardado (para estados).
+let fcargoGuardadosMap = {};
+let fcargoExpandido = '';   // cargo_id actualmente desplegado en el acordeón
+
+// Lee de fcargo_documentos qué cargos ya tienen documento guardado.
+async function fcargoCargarGuardados(){
+  fcargoGuardadosMap = {};
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  try{
+    const { data } = await sb.from('fcargo_documentos')
+      .select('cargo_id, firma, updated_at')
+      .eq('colegio_id', colId);
+    (data || []).forEach(d => { fcargoGuardadosMap[d.cargo_id] = { firma: d.firma, updated_at: d.updated_at }; });
+  }catch(e){ console.warn('[fcargoCargarGuardados]', e.message); }
+}
+
 async function renderFuncionesCargo(){
   const host = document.getElementById('mainContent');
   if(!host) return;
 
-  const cargos = _cargosOrdenados();
-  const loteChecks = cargos.map(c => {
-    const n = fcargoAccionesDeCargo(c.id).length;
-    const dis = n === 0;
-    return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;'+(dis?'opacity:.45':'cursor:pointer')+'">' +
-      '<input type="checkbox" class="fcargo-check" value="'+c.id+'"'+(dis?' disabled':'')+' onchange="fcargoOnCheck()" style="accent-color:var(--accent);width:14px;height:14px">' +
-      '<span>'+escapeHtmlPlan(c.nombre)+'</span>' +
-      '<span style="margin-left:auto;color:var(--muted);font-size:10px">'+n+'</span>' +
-    '</label>';
-  }).join('');
-
   host.innerHTML =
     '<div class="page-header">' +
       '<div class="page-title">Funciones por cargo</div>' +
-      '<div class="page-sub">Marca un cargo para ver en detalle sus metas y los estándares de desempeño (EID) que le corresponden. Marca varios para generar sus PDFs en lote.</div>' +
+      '<div class="page-sub">Los cargos ya generados se cargan al instante; haz clic en uno para desplegar su documento. Marca varios y genera sus PDFs en lote (cada uno en su archivo). Solo «Generar» o «Regenerar» consultan la IA.</div>' +
     '</div>' +
-    '<div class="card" style="margin-bottom:18px;padding:16px 18px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
+    '<div class="card" style="margin-bottom:14px;padding:14px 16px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
         '<div style="font-size:13px;font-weight:600;color:var(--accent)">Cargos</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(true)">Seleccionar todos</button>' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(false)">Limpiar</button>' +
-          '<button class="btn btn-primary btn-sm" onclick="fcargoExportarLote()">Generar PDF de seleccionados</button>' +
+          '<button class="btn btn-primary btn-sm" id="fcargoBtnLote" onclick="fcargoExportarLote()">Generar PDF de seleccionados</button>' +
         '</div>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">'+loteChecks+'</div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-top:10px">El número junto a cada cargo indica cuántas acciones tiene asignadas. Marca <strong>uno</strong> para verlo en detalle abajo, o <strong>varios</strong> para exportarlos juntos (cada uno se abre en una pestaña distinta).</div>' +
     '</div>' +
-    '<div id="fcargoContenido">' +
-      (FCARGO_SELECCIONADO ? '<div class="fcargo-loading">Cargando metas y estándares…</div>'
-                           : '<div class="fcargo-empty">Marca un cargo arriba para ver sus funciones en detalle.</div>') +
-    '</div>' +
-    '<div style="margin-top:26px">' +
-      '<div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:12px">PDFs generados</div>' +
-      '<div id="fcargoGenerados"><div class="fcargo-empty" style="padding:24px">Cargando…</div></div>' +
-    '</div>';
+    '<div id="fcargoLista"><div class="fcargo-empty" style="padding:24px">Cargando…</div></div>';
 
-  // Si había un cargo seleccionado, re-marcar su checkbox
-  if(FCARGO_SELECCIONADO){
-    const chk = host.querySelector('.fcargo-check[value="'+FCARGO_SELECCIONADO+'"]');
-    if(chk) chk.checked = true;
-    await fcargoPintarContenido(FCARGO_SELECCIONADO);
-  }
-
-  // Cargar la lista de cargos ya generados
-  fcargoRenderGenerados();
+  await fcargoCargarGuardados();
+  fcargoPintarLista();
 }
 
-// Se llama al marcar/desmarcar cualquier checkbox de cargo.
-// 1 marcado → muestra su detalle. 0 o varios → no muestra detalle individual.
-function fcargoOnCheck(){
-  const marcados = Array.from(document.querySelectorAll('.fcargo-check:checked')).map(ch => ch.value);
-  const cont = document.getElementById('fcargoContenido');
-  if(marcados.length === 1){
-    FCARGO_SELECCIONADO = marcados[0];
-    if(cont) cont.innerHTML = '<div class="fcargo-loading">Cargando metas y estándares…</div>';
-    fcargoPintarContenido(FCARGO_SELECCIONADO);
-  } else {
-    FCARGO_SELECCIONADO = '';
-    if(cont) cont.innerHTML = marcados.length === 0
-      ? '<div class="fcargo-empty">Marca un cargo arriba para ver sus funciones en detalle.</div>'
-      : '<div class="fcargo-empty">'+marcados.length+' cargos seleccionados. Usa <strong>Generar PDF de seleccionados</strong> para exportarlos. Marca solo uno si quieres verlo en detalle aquí.</div>';
+// Pinta el listado unificado: una fila por cargo con checkbox, estado y acciones.
+function fcargoPintarLista(){
+  const cont = document.getElementById('fcargoLista');
+  if(!cont) return;
+  const cargos = _cargosOrdenados().filter(c => fcargoAccionesDeCargo(c.id).length > 0);
+
+  if(!cargos.length){
+    cont.innerHTML = '<div class="fcargo-empty" style="padding:24px">No hay cargos con acciones asignadas. Asigna responsables a las acciones del plan.</div>';
+    return;
   }
+
+  cont.innerHTML = cargos.map(c => {
+    const n = fcargoAccionesDeCargo(c.id).length;
+    const g = fcargoGuardadosMap[c.id];
+    const generado = !!g;
+    const abierto = fcargoExpandido === c.id;
+    const fechaTxt = generado && g.updated_at
+      ? new Date(g.updated_at).toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+      : '';
+    const meta = generado ? (n+' '+(n===1?'acción':'acciones')+' · generado '+fechaTxt)
+                          : (n+' '+(n===1?'acción':'acciones')+' · sin generar');
+
+    const estado = generado
+      ? '<span class="fcargo-badge ok"><i class="dot"></i>Generado</span>'
+      : '<span class="fcargo-badge pend">Pendiente</span>';
+
+    const botones = generado
+      ? '<button class="fcargo-gen-btn pdf" onclick="event.stopPropagation();fcargoDescargarPDF(\''+c.id+'\')">Descargar PDF</button>' +
+        '<button class="fcargo-gen-btn regen" title="Vuelve a generar consultando el PEI/PME y actualiza el archivo" onclick="event.stopPropagation();fcargoRegenerarCargo(\''+c.id+'\')">Regenerar</button>'
+      : '<button class="fcargo-gen-btn generar" onclick="event.stopPropagation();fcargoGenerarCargo(\''+c.id+'\')">Generar</button>';
+
+    return '<div class="fcargo-row-card'+(abierto?' abierto':'')+'" data-cargo="'+c.id+'">' +
+      '<div class="fcargo-row-head">' +
+        '<input type="checkbox" class="fcargo-check" value="'+c.id+'" onclick="event.stopPropagation()" onchange="fcargoActualizarBotonLote()">' +
+        '<i class="fcargo-row-chevron">'+(abierto?'▾':'▸')+'</i>' +
+        '<div class="fcargo-row-info" onclick="fcargoToggleAcordeon(\''+c.id+'\')">' +
+          '<div class="fcargo-row-nombre">'+escapeHtmlPlan(c.nombre)+'</div>' +
+          '<div class="fcargo-row-meta">'+meta+'</div>' +
+        '</div>' +
+        estado +
+        '<div class="fcargo-row-btns">'+botones+'</div>' +
+      '</div>' +
+      '<div class="fcargo-row-body" id="fcargoBody-'+c.id+'">' +
+        (abierto ? '<div class="fcargo-loading" style="padding:18px">Cargando documento…</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  fcargoActualizarBotonLote();
+  if(fcargoExpandido) fcargoCargarAcordeon(fcargoExpandido);
+}
+
+// Actualiza el contador del botón de lote según checkboxes marcados.
+function fcargoActualizarBotonLote(){
+  const btn = document.getElementById('fcargoBtnLote');
+  if(!btn) return;
+  const n = document.querySelectorAll('.fcargo-check:checked').length;
+  btn.textContent = n > 0 ? 'Generar PDF de seleccionados ('+n+')' : 'Generar PDF de seleccionados';
+}
+
+// Despliega/colapsa el acordeón de un cargo.
+function fcargoToggleAcordeon(cargoId){
+  if(fcargoExpandido === cargoId){ fcargoExpandido = ''; fcargoPintarLista(); return; }
+  fcargoExpandido = cargoId;
+  fcargoPintarLista();
+}
+
+// Carga el documento del cargo dentro del acordeón, en un iframe aislado.
+// Si NO está generado, NO llama a la IA: muestra invitación a generar.
+async function fcargoCargarAcordeon(cargoId){
+  const body = document.getElementById('fcargoBody-'+cargoId);
+  if(!body) return;
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+
+  // Solo mostrar si ya está guardado (ver es gratis). Si no, invitar a generar.
+  if(!fcargoGuardadosMap[cargoId]){
+    body.innerHTML = '<div class="fcargo-empty" style="padding:18px">Este cargo aún no tiene documento. Usa <strong>Generar</strong> para crearlo (consulta la IA una vez y queda guardado).</div>';
+    return;
+  }
+
+  const guardado = await fcargoLeerGuardado(colId, cargoId);
+  if(!guardado || !guardado.html){
+    body.innerHTML = '<div class="fcargo-empty" style="padding:18px">No se pudo cargar el documento guardado.</div>';
+    return;
+  }
+  // iframe aislado: el CSS del documento no contamina la app.
+  const iframe = document.createElement('iframe');
+  iframe.className = 'fcargo-doc-frame';
+  iframe.setAttribute('title', 'Documento del cargo');
+  body.innerHTML = '';
+  body.appendChild(iframe);
+  iframe.srcdoc = guardado.html;
+  iframe.onload = () => {
+    try{
+      const h = iframe.contentDocument.body.scrollHeight;
+      iframe.style.height = Math.min(Math.max(h, 200), 900) + 'px';
+    }catch(e){ iframe.style.height = '600px'; }
+  };
+}
+
+// Marca/desmarca todos los checkboxes.
+function fcargoToggleTodos(estado){
+  document.querySelectorAll('.fcargo-check').forEach(ch => { ch.checked = !!estado; });
+  fcargoActualizarBotonLote();
+}
+
+// Genera (primera vez) el documento de un cargo: consulta IA, guarda y despliega.
+async function fcargoGenerarCargo(cargoId){
+  const cargo = (DB.cargos || []).find(c => c.id === cargoId);
+  showToast('Generando '+(cargo?cargo.nombre:'cargo')+'… (puede tardar unos segundos)');
+  const r = await fcargoObtenerHTML(cargoId, false);
+  if(!r){ showToast('El cargo no tiene acciones para generar.'); return; }
+  await fcargoCargarGuardados();
+  fcargoExpandido = cargoId;       // dejarlo desplegado tras generar
+  fcargoPintarLista();
+  showToast('Documento generado y guardado.');
 }
 
 async function fcargoPintarContenido(cargoId){
@@ -13577,10 +13687,6 @@ function fcargoFichaCampo(label, valor){
 }
 
 // --- LOTE: selección múltiple ------------------------------------------------
-function fcargoToggleTodos(estado){
-  document.querySelectorAll('.fcargo-check:not(:disabled)').forEach(ch => ch.checked = estado);
-}
-
 // --- PERSISTENCIA DEL HTML POR CARGO (tabla fcargo_documentos) ---------------
 // Calcula una "firma" de las acciones del cargo: si cambia (acción agregada/
 // editada/quitada, EID o citas distintas), la firma cambia y se regenera solo.
@@ -13656,7 +13762,7 @@ async function fcargoObtenerHTML(cargoId, forzar){
   const r = fcargoConstruirHTML(cargoId);
   if(!r) return null;
   await fcargoGuardar(colId, cargoId, r.html, firmaActual);
-  if(typeof fcargoRenderGenerados === 'function') fcargoRenderGenerados();
+  if(typeof fcargoGuardadosMap !== 'undefined') fcargoGuardadosMap[cargoId] = { firma: firmaActual, updated_at: new Date().toISOString() };
   return { html: r.html, reusado: false };
 }
 
@@ -13678,6 +13784,8 @@ async function fcargoExportarLote(){
   } else {
     showToast(abiertos+' documento'+(abiertos!==1?'s':'')+' abierto'+(abiertos!==1?'s':'')+(reusados?' ('+reusados+' guardado'+(reusados!==1?'s':'')+')':'')+'.');
   }
+  await fcargoCargarGuardados();
+  fcargoPintarLista();
 }
 
 // --- EXPORT a PDF (individual) -----------------------------------------------
@@ -13839,7 +13947,9 @@ async function fcargoRegenerarCargo(cargoId){
   fcargoAccionesDeCargo(cargoId).forEach(({ac}) => { delete fcargoCitasCache[ac.id]; });
   const r = await fcargoObtenerHTML(cargoId, true); // forzar
   if(r){ showToast('Documento regenerado. Ya puedes descargarlo actualizado.'); }
-  fcargoRenderGenerados();
+  await fcargoCargarGuardados();
+  fcargoExpandido = cargoId;
+  fcargoPintarLista();
 }
 
 
@@ -13930,7 +14040,8 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
     '.resumen-accion-nombre{font-weight:700;color:#1E3A2F;font-size:10px;margin-bottom:2px}' +
     '.resumen-accion-desc{font-size:8.5px;color:#6B6760;line-height:1.3}' +
     '.resumen-mes-vacio{color:#C8C3B8}' +
-    '.resumen-mes-na{color:#D8D3C8;font-size:8px}' +
+    '.resumen-mes-na{color:#FFFFFF;font-size:8px}' +
+    '.resumen-mes-activo{color:#1E3A2F;font-weight:700;font-size:12px;line-height:1}' +
     '.resumen-totalrow td{background:#1E3A2F!important;color:#fff;font-weight:700;border-color:#1E3A2F}' +
     '.resumen-pct-alto{color:#1A7A3C}.resumen-pct-medio{color:#B8860B}.resumen-pct-bajo{color:#B0413E}' +
     '.resumen-leyenda{font-size:8.5px;color:#9A968F;margin-top:10px}' +
@@ -13953,10 +14064,12 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
   function fcargoCeldaMes(ac, mm){
     // ¿la acción se evalúa este mes?
     const activa = (ac.meses_activos || []).some(m => (m.split('-')[1] === mm));
-    if(!activa) return '<td class="col-mes"><span class="resumen-mes-na">—</span></td>';
+    // Mes NO activo: celda limpia y vacía (sin guión tenue).
+    if(!activa) return '<td class="col-mes"></td>';
     // buscar el % de ese mes (cualquier año que termine en -mm)
     const seg = (DB.seguimiento || []).filter(s => s.accion_id === ac.id && !s.pendiente && (s.mes||'').split('-')[1] === mm);
-    if(!seg.length) return '<td class="col-mes"><span class="resumen-mes-vacio">·</span></td>';
+    // Mes activo SIN dato aún: marcador visible (punto sólido).
+    if(!seg.length) return '<td class="col-mes"><span class="resumen-mes-activo">&#9679;</span></td>';
     const pct = Math.round(seg.reduce((a,x)=>a+parseFloat(x.porcentaje),0)/seg.length);
     return '<td class="col-mes"><span class="'+fcargoPctClase(pct)+'">'+pct+'%</span></td>';
   }
@@ -13992,7 +14105,7 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
         '<th>Total</th></tr></thead>' +
       '<tbody>'+filasResumen+filaTotalCargo+'</tbody>' +
     '</table>' +
-    '<div class="resumen-leyenda">«—» la acción no se evalúa ese mes · «·» evaluación pendiente o sin registro · El % de logro proviene del seguimiento mensual registrado en la plataforma.</div>' +
+    '<div class="resumen-leyenda"><span style="color:#1E3A2F;font-weight:700">&#9679;</span> mes de evaluación (sin registro aún) · <span style="color:#1A7A3C;font-weight:700">90%</span> porcentaje de logro evaluado · celda en blanco: la acción no se evalúa ese mes. El % proviene del seguimiento mensual registrado en la plataforma.</div>' +
   '</div>';
 
   // cargoBar reutilizable (la hoja-resumen y cada ficha lo usan)
