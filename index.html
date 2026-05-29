@@ -13601,23 +13601,23 @@ function fcargoConstruirHTML(cargoId){
     '.doc-head-meta strong{color:#1A1916;display:block;font-size:11px}' +
     // Ficha: layout APILADO a todo el ancho (sin columna lateral con vacios)
     '.ficha-card{border:1px solid #E4E0D8;border-radius:10px;overflow:hidden;page-break-inside:avoid;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:18px}' +
-    '.ficha-titulo-row{background:#1E3A2F;color:#fff;padding:12px 18px}' +
+    '.ficha-titulo-row{background:#1E3A2F;color:#fff;padding:9px 16px}' +
     '.ficha-titulo-row .eidcode{display:inline-block;background:rgba(255,255,255,.15);color:#F0E2BE;border:1px solid rgba(240,226,190,.4);border-radius:4px;padding:1px 8px;font-size:9px;font-weight:700;letter-spacing:.5px;margin-bottom:5px}' +
-    '.ficha-titulo-row .accion-titulo{font-size:18px;color:#fff;margin:0;line-height:1.15}' +
-    '.ficha-titulo-row .accion-desc{font-size:10.5px;color:rgba(255,255,255,.8);margin-top:4px;font-style:italic;line-height:1.4}' +
-    '.ficha-body{padding:14px 18px}' +
+    '.ficha-titulo-row .accion-titulo{font-size:17px;color:#fff;margin:0;line-height:1.1}' +
+    '.ficha-titulo-row .accion-desc{font-size:10px;color:rgba(255,255,255,.8);margin-top:3px;font-style:italic;line-height:1.35}' +
+    '.ficha-body{padding:11px 16px}' +
     // Franja de datos de la ficha en columnas horizontales
-    '.ficha-datos{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;background:#F7F5F0;border:1px solid #ECE7DD;border-radius:8px;padding:12px 16px;margin-bottom:14px}' +
-    '.ficha-dato-label{font-size:8.5px;font-weight:700;letter-spacing:.6px;color:#A07818;text-transform:uppercase;margin-bottom:2px}' +
-    '.ficha-dato-valor{font-size:10.5px;color:#2A2622;font-weight:500;line-height:1.35}' +
+    '.ficha-datos{display:grid;grid-template-columns:repeat(3,1fr);gap:7px 18px;background:#F7F5F0;border:1px solid #ECE7DD;border-radius:8px;padding:10px 14px;margin-bottom:11px}' +
+    '.ficha-dato-label{font-size:8.5px;font-weight:700;letter-spacing:.6px;color:#A07818;text-transform:uppercase;margin-bottom:1px}' +
+    '.ficha-dato-valor{font-size:10px;color:#2A2622;font-weight:500;line-height:1.3}' +
     '.ficha-dato-full{grid-column:1 / -1}' +
     // EID a todo el ancho
-    '.eid-block{background:#F0F4F9;border:1px solid #C9D3E5;border-radius:8px;padding:14px 16px}' +
-    '.eid-enunciado-label{font-size:9px;font-weight:700;letter-spacing:.7px;color:#1E3A6E;text-transform:uppercase;margin-bottom:5px}' +
-    '.eid-enunciado{font-family:"DM Serif Display",Georgia,serif;font-size:14px;color:#1E3A6E;line-height:1.35;margin-bottom:14px}' +
-    '.eid-nivel{margin-bottom:14px}' +
+    '.eid-block{background:#F0F4F9;border:1px solid #C9D3E5;border-radius:8px;padding:11px 14px}' +
+    '.eid-enunciado-label{font-size:9px;font-weight:700;letter-spacing:.7px;color:#1E3A6E;text-transform:uppercase;margin-bottom:4px}' +
+    '.eid-enunciado{font-family:"DM Serif Display",Georgia,serif;font-size:13px;color:#1E3A6E;line-height:1.3;margin-bottom:10px}' +
+    '.eid-nivel{margin-bottom:10px}' +
     '.eid-nivel:last-child{margin-bottom:0}' +
-    '.eid-nivel-titulo{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#1E3A6E;display:flex;align-items:center;gap:8px;margin-bottom:9px}' +
+    '.eid-nivel-titulo{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#1E3A6E;display:flex;align-items:center;gap:8px;margin-bottom:7px}' +
     '.eid-nivel-titulo::before{content:"";width:16px;height:2px;background:#1E3A6E;display:inline-block}' +
     '.eid-nivel-titulo.avanzado{color:#7A5A18}' +
     '.eid-nivel-titulo.avanzado::before{background:#7A5A18}' +
@@ -13669,7 +13669,6 @@ function fcargoConstruirHTML(cargoId){
 
     // Cabecera verde con título de la acción
     let titulo = '<div class="ficha-titulo-row">' +
-      (eid ? '<div class="eidcode">EID '+escapeHtmlPlan(eid.codigo)+(dimSub?' · '+escapeHtmlPlan(dimSub):'')+'</div>' : '') +
       '<h2 class="accion-titulo">'+escapeHtmlPlan(ac.nombre)+'</h2>' +
       (ac.descripcion ? '<div class="accion-desc">'+escapeHtmlPlan(ac.descripcion)+'</div>' : '') +
     '</div>';
@@ -13709,15 +13708,7 @@ function fcargoConstruirHTML(cargoId){
     '<style>'+css+'</style></head><body>' +
     '<button class="print-btn" onclick="window.print()">Imprimir / Guardar PDF</button>' +
     '<div class="page">' +
-      '<div class="doc-head">' +
-        '<div class="doc-head-left">' +
-          '<div class="kicker">Funciones y estándares de desempeño</div>' +
-          '<h1>'+cargoNombre+'</h1>' +
-        '</div>' +
-        '<div class="doc-head-meta"><strong>'+escapeHtmlPlan(colegioNombre)+'</strong>'+(personasTxt?personasTxt+'<br>':'')+fecha+'</div>' +
-      '</div>' +
       fichasHTML +
-      '<div class="foot">Estándares Indicativos de Desempeño · MINEDUC · Decreto 27/2020 — Generado por Gestión Estratégica</div>' +
     '</div></body></html>';
 
   return { html, cargoNombre: cargo.nombre || '' };
