@@ -13231,11 +13231,15 @@ function fcargoExtraerCitas(brechasData){
 // 2) Si no hay, invoca la edge function generar-brecha-avanzado (misma que usa
 //    el wizard) para generarlas con IA. NO toca PLAN_STATE: hace su propio fetch.
 // Devuelve {pei:[...], pme:[...]} (vacío si el colegio no tiene documentos cargados).
-async function fcargoCargarCitas(colegioId, accionId){
+async function fcargoCargarCitas(colegioId, accionId, permitirIA){
   if(fcargoCitasCache[accionId] !== undefined) return fcargoCitasCache[accionId];
   const vacio = { pei: [], pme: [] };
 
-  // 1) Lo ya guardado
+  // 1) Lo ya guardado (instantáneo, gratis). SIEMPRE se intenta primero.
+  //    OJO: puede haber varias filas por (colegio_id, accion_id) por versiones,
+  //    y la MÁS reciente a veces está vacía mientras una previa SÍ tiene las
+  //    citas. Por eso filtramos a las que tienen brechas_data y tomamos la más
+  //    reciente DE ENTRE ESAS — así no regeneramos algo que ya existe.
   try{
     const { data } = await sb.from('microacciones')
       .select('brechas_data, updated_at')
@@ -13251,7 +13255,12 @@ async function fcargoCargarCitas(colegioId, accionId){
     }
   }catch(e){ console.warn('[fcargoCargarCitas] lookup guardado:', e.message); }
 
+  // Si NO se permite IA (estamos solo navegando/viendo el cargo), parar aquí.
+  // No cacheamos 'vacio' para que una futura exportación sí pueda generar.
+  if(!permitirIA) return vacio;
+
   // 2) Generar con IA (sin tocar PLAN_STATE). Mismo endpoint/headers que el wizard.
+  //    Solo se llega aquí al EXPORTAR o REGENERAR, nunca al solo navegar.
   try{
     const ac = (DB.acciones || []).find(a => a.id === accionId) || {};
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
@@ -13274,10 +13283,31 @@ async function fcargoCargarCitas(colegioId, accionId){
     const data = await resp.json();
     const res = fcargoExtraerCitas(data);
     fcargoCitasCache[accionId] = res;
+    // GUARDAR en Supabase para no volver a pagar por lo mismo en la próxima carga.
+    // IMPORTANTE: la tabla puede tener varias filas por (colegio_id, accion_id)
+    // (versiones/meses), así que escribimos SOLO en la fila más reciente —
+    // la misma que lee el paso 1 (order by updated_at desc, limit 1).
+    if(res.pei.length || res.pme.length){
+      try{
+        const { data: fila } = await sb.from('microacciones')
+          .select('id')
+          .eq('colegio_id', colegioId)
+          .eq('accion_id', accionId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if(fila && fila.id){
+          await sb.from('microacciones')
+            .update({ brechas_data: data, updated_at: new Date().toISOString() })
+            .eq('id', fila.id);
+        }
+      }catch(e){ console.warn('[fcargoCargarCitas] guardar brechas_data:', e.message); }
+    }
     return res;
   }catch(e){
     console.warn('[fcargoCargarCitas] IA:', e.message);
-    fcargoCitasCache[accionId] = vacio;
+    // NO cachear 'vacio' tras un error: si fue un 500 transitorio, queremos poder
+    // reintentar luego en vez de quedar pegados sin citas (y sin volver a pagar de más).
     return vacio;
   }
 }
@@ -13467,7 +13497,7 @@ async function fcargoPintarContenido(cargoId){
     return;
   }
 
-  await fcargoAsegurarEIDs(items);
+  await fcargoAsegurarEIDs(items, false);
 
   let html =
     '<div class="fcargo-head-card">' +
@@ -13486,13 +13516,13 @@ async function fcargoPintarContenido(cargoId){
   cont.innerHTML = html;
 }
 
-async function fcargoAsegurarEIDs(items){
+async function fcargoAsegurarEIDs(items, permitirIA){
   const colId = DB.colegio?.id || SESSION.colegioActivo;
   const pendEID = items.filter(({ac}) => fcargoEIDsCache[ac.id] === undefined).map(({ac}) => ac);
   const pendCitas = items.filter(({ac}) => fcargoCitasCache[ac.id] === undefined).map(({ac}) => ac);
   await Promise.all([
     ...pendEID.map(async ac => { fcargoEIDsCache[ac.id] = await planCargarEIDsAccion(ac.nombre) || []; }),
-    ...pendCitas.map(async ac => { await fcargoCargarCitas(colId, ac.id); })
+    ...pendCitas.map(async ac => { await fcargoCargarCitas(colId, ac.id, !!permitirIA); })
   ]);
 }
 
@@ -13609,15 +13639,20 @@ async function fcargoGuardar(colegioId, cargoId, html, firma){
 // forzar=true regenera siempre (botón "Regenerar").
 async function fcargoObtenerHTML(cargoId, forzar){
   const colId = DB.colegio?.id || SESSION.colegioActivo;
-  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId));
   const firmaActual = fcargoFirmaCargo(cargoId);
 
+  // 1) Si NO se fuerza, intentar reusar el PDF ya guardado (cero llamadas a IA).
   if(!forzar){
     const guardado = await fcargoLeerGuardado(colId, cargoId);
     if(guardado && guardado.firma === firmaActual && guardado.html){
       return { html: guardado.html, reusado: true };
     }
   }
+
+  // 2) Hay que construir el documento: aquí SÍ se permite generar con IA las
+  //    citas que falten (solo en exportación/regeneración, nunca al navegar).
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId), true);
+
   const r = fcargoConstruirHTML(cargoId);
   if(!r) return null;
   await fcargoGuardar(colId, cargoId, r.html, firmaActual);
@@ -13743,7 +13778,7 @@ function fcargoFirmaAccion(ac){
 // Exporta a PDF UNA acción de un cargo
 async function fcargoExportarAccion(cargoId, accionId){
   showToast('Preparando PDF de la acción…');
-  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId).filter(({ac}) => ac.id === accionId));
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId).filter(({ac}) => ac.id === accionId), true);
   const r = fcargoConstruirHTML(cargoId, accionId);
   if(!r){ showToast('No se pudo generar la acción.'); return; }
   fcargoAbrirVentana(r.html);
