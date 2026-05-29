@@ -13247,42 +13247,42 @@ function fcargoExtraerCitas(brechasData){
 }
 
 // Obtiene las citas textuales del PEI y del Análisis PME para una acción.
-// 1) Primero busca lo ya guardado en microacciones.brechas_data (instantáneo).
-// 2) Si no hay, invoca la edge function generar-brecha-avanzado (misma que usa
-//    el wizard) para generarlas con IA. NO toca PLAN_STATE: hace su propio fetch.
-// Devuelve {pei:[...], pme:[...]} (vacío si el colegio no tiene documentos cargados).
-async function fcargoCargarCitas(colegioId, accionId, permitirIA){
+// LECTURA PURA: lee de la tabla accion_citas (una fila por colegio+acción).
+// NUNCA llama a la IA. La generación se hace aparte (fcargoGenerarCitasAccion),
+// solo desde el botón "Generar citas faltantes" o "Regenerar".
+// Devuelve {pei:[...], pme:[...]} (vacío si esa acción aún no tiene citas).
+async function fcargoCargarCitas(colegioId, accionId){
   if(fcargoCitasCache[accionId] !== undefined) return fcargoCitasCache[accionId];
   const vacio = { pei: [], pme: [] };
-
-  // 1) Lo ya guardado (instantáneo, gratis). SIEMPRE se intenta primero.
-  //    OJO: puede haber varias filas por (colegio_id, accion_id) por versiones,
-  //    y la MÁS reciente a veces está vacía mientras una previa SÍ tiene las
-  //    citas. Por eso filtramos a las que tienen brechas_data y tomamos la más
-  //    reciente DE ENTRE ESAS — así no regeneramos algo que ya existe.
   try{
-    const { data } = await sb.from('microacciones')
-      .select('brechas_data, updated_at')
+    const { data } = await sb.from('accion_citas')
+      .select('citas_data')
       .eq('colegio_id', colegioId)
       .eq('accion_id', accionId)
-      .not('brechas_data', 'is', null)
-      .order('updated_at', { ascending: false })
-      .limit(1)
       .maybeSingle();
-    if(data && data.brechas_data){
-      const res = fcargoExtraerCitas(data.brechas_data);
-      if(res.pei.length || res.pme.length){ fcargoCitasCache[accionId] = res; return res; }
+    if(data && data.citas_data){
+      const res = fcargoExtraerCitas(data.citas_data);
+      fcargoCitasCache[accionId] = res;
+      return res;
     }
-  }catch(e){ console.warn('[fcargoCargarCitas] lookup guardado:', e.message); }
+  }catch(e){ console.warn('[fcargoCargarCitas]', e.message); }
+  return vacio;
+}
 
-  // Si NO se permite IA (estamos solo navegando/viendo el cargo), parar aquí.
-  // No cacheamos 'vacio' para que una futura exportación sí pueda generar.
-  if(!permitirIA) return vacio;
-
-  // 2) Generar con IA (sin tocar PLAN_STATE). Mismo endpoint/headers que el wizard.
-  //    Solo se llega aquí al EXPORTAR o REGENERAR, nunca al solo navegar.
+// Genera con IA las citas de UNA acción y las guarda en accion_citas (upsert).
+// Es el ÚNICO punto que llama a la edge function. Devuelve true si guardó citas.
+// forzar=false: si ya existe fila, no regenera (evita gasto). forzar=true: regenera.
+async function fcargoGenerarCitasAccion(colegioId, accionId, forzar){
+  // ¿Ya existe? Si no se fuerza, no gastar.
+  if(!forzar){
+    try{
+      const { data } = await sb.from('accion_citas')
+        .select('id').eq('colegio_id', colegioId).eq('accion_id', accionId).maybeSingle();
+      if(data && data.id) return true; // ya estaba, no se gasta
+    }catch(e){ /* sigue a generar */ }
+  }
+  const ac = (DB.acciones || []).find(a => a.id === accionId) || {};
   try{
-    const ac = (DB.acciones || []).find(a => a.id === accionId) || {};
     const resp = await fetch(PLAN_BRECHA_FN_URL, {
       method: 'POST',
       headers: {
@@ -13294,7 +13294,6 @@ async function fcargoCargarCitas(colegioId, accionId, permitirIA){
         accion_id: accionId,
         accion_nombre: ac.nombre || '',
         accion_descripcion: ac.descripcion || '',
-        mes: (ac.meses_activos && ac.meses_activos[0]) || '',
         pct: null,
         banda: ''
       })
@@ -13302,34 +13301,59 @@ async function fcargoCargarCitas(colegioId, accionId, permitirIA){
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     const res = fcargoExtraerCitas(data);
+    // Guardar SIEMPRE el resultado (upsert por colegio+accion), aunque venga vacío,
+    // para no reintentar infinitamente acciones que el PEI no menciona.
+    try{
+      await sb.from('accion_citas')
+        .upsert({ colegio_id: colegioId, accion_id: accionId, citas_data: data, updated_at: new Date().toISOString() },
+                { onConflict: 'colegio_id,accion_id' });
+    }catch(e){ console.warn('[fcargoGenerarCitasAccion] guardar:', e.message); }
     fcargoCitasCache[accionId] = res;
-    // GUARDAR en Supabase para no volver a pagar por lo mismo en la próxima carga.
-    // IMPORTANTE: la tabla puede tener varias filas por (colegio_id, accion_id)
-    // (versiones/meses), así que escribimos SOLO en la fila más reciente —
-    // la misma que lee el paso 1 (order by updated_at desc, limit 1).
-    if(res.pei.length || res.pme.length){
-      try{
-        const { data: fila } = await sb.from('microacciones')
-          .select('id')
-          .eq('colegio_id', colegioId)
-          .eq('accion_id', accionId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if(fila && fila.id){
-          await sb.from('microacciones')
-            .update({ brechas_data: data, updated_at: new Date().toISOString() })
-            .eq('id', fila.id);
-        }
-      }catch(e){ console.warn('[fcargoCargarCitas] guardar brechas_data:', e.message); }
-    }
-    return res;
+    return !!(res.pei.length || res.pme.length);
   }catch(e){
-    console.warn('[fcargoCargarCitas] IA:', e.message);
-    // NO cachear 'vacio' tras un error: si fue un 500 transitorio, queremos poder
-    // reintentar luego en vez de quedar pegados sin citas (y sin volver a pagar de más).
-    return vacio;
+    console.warn('[fcargoGenerarCitasAccion] IA:', e.message);
+    return false;
   }
+}
+
+// Junta todas las acciones ÚNICAS del colegio que están asignadas a algún cargo.
+function fcargoTodasAccionesAsignadas(){
+  const cargos = _cargosOrdenados();
+  const ids = new Set();
+  cargos.forEach(c => fcargoAccionesDeCargo(c.id).forEach(({ac}) => ids.add(ac.id)));
+  return Array.from(ids);
+}
+
+// Botón "Generar citas faltantes": genera solo las acciones del colegio que aún
+// no tienen fila en accion_citas. Las que ya tienen, se saltan (gratis).
+async function fcargoGenerarCitasFaltantes(){
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  if(!colId){ showToast('Selecciona un colegio primero.'); return; }
+  const todas = fcargoTodasAccionesAsignadas();
+  if(!todas.length){ showToast('No hay acciones asignadas a cargos.'); return; }
+
+  // Cuáles ya tienen citas
+  let yaTienen = new Set();
+  try{
+    const { data } = await sb.from('accion_citas').select('accion_id').eq('colegio_id', colId);
+    (data || []).forEach(d => yaTienen.add(d.accion_id));
+  }catch(e){ console.warn('[citasFaltantes] lookup:', e.message); }
+
+  const faltantes = todas.filter(id => !yaTienen.has(id));
+  if(!faltantes.length){ showToast('Todas las acciones ya tienen sus citas. Nada que generar.'); return; }
+
+  if(!confirm('Se generarán las citas PEI/PME de '+faltantes.length+' acción(es) con IA. Esto consume créditos una sola vez por acción. ¿Continuar?')) return;
+
+  const btn = document.getElementById('fcargoBtnCitas');
+  let hechas = 0, conCitas = 0;
+  for(const accId of faltantes){
+    if(btn) btn.textContent = 'Generando citas '+(hechas+1)+' de '+faltantes.length+'…';
+    const ok = await fcargoGenerarCitasAccion(colId, accId, false);
+    if(ok) conCitas++;
+    hechas++;
+  }
+  if(btn) btn.textContent = 'Generar citas faltantes';
+  showToast('Listo: '+hechas+' acción(es) procesada(s), '+conCitas+' con citas encontradas. Ya puedes generar los PDFs sin costo.');
 }
 
 // HTML del bloque combinado de citas PEI + PME (versión limpia, solo citas).
@@ -13467,6 +13491,7 @@ async function renderFuncionesCargo(){
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(true)">Seleccionar todos</button>' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(false)">Limpiar</button>' +
+          '<button class="btn btn-outline btn-sm" id="fcargoBtnCitas" onclick="fcargoGenerarCitasFaltantes()" title="Genera con IA las citas PEI/PME de las acciones que aún no las tienen. Una sola vez por acción.">Generar citas faltantes</button>' +
           '<button class="btn btn-primary btn-sm" id="fcargoBtnLote" onclick="fcargoExportarLote()">Generar PDF de seleccionados</button>' +
         '</div>' +
       '</div>' +
@@ -13583,16 +13608,33 @@ function fcargoToggleTodos(estado){
   fcargoActualizarBotonLote();
 }
 
-// Genera (primera vez) el documento de un cargo: consulta IA, guarda y despliega.
+// Genera el DOCUMENTO de un cargo (arma el PDF). NO llama a la IA: usa las
+// citas que ya existan en accion_citas. Si faltan citas de algunas acciones,
+// avisa para que el usuario use "Generar citas faltantes" si quiere incluirlas.
 async function fcargoGenerarCargo(cargoId){
   const cargo = (DB.cargos || []).find(c => c.id === cargoId);
-  showToast('Generando '+(cargo?cargo.nombre:'cargo')+'… (puede tardar unos segundos)');
+  showToast('Armando documento de '+(cargo?cargo.nombre:'cargo')+'…');
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+
+  // ¿Cuántas acciones del cargo no tienen citas aún?
+  const accs = fcargoAccionesDeCargo(cargoId).map(({ac}) => ac.id);
+  let sinCitas = 0;
+  try{
+    const { data } = await sb.from('accion_citas').select('accion_id').eq('colegio_id', colId).in('accion_id', accs.length?accs:['_']);
+    const con = new Set((data||[]).map(d => d.accion_id));
+    sinCitas = accs.filter(id => !con.has(id)).length;
+  }catch(e){ /* no bloquear */ }
+
   const r = await fcargoObtenerHTML(cargoId, false);
   if(!r){ showToast('El cargo no tiene acciones para generar.'); return; }
   await fcargoCargarGuardados();
-  fcargoExpandido = cargoId;       // dejarlo desplegado tras generar
+  fcargoExpandido = cargoId;
   fcargoPintarLista();
-  showToast('Documento generado y guardado.');
+  if(sinCitas > 0){
+    showToast('Documento generado. '+sinCitas+' acción(es) aún sin citas PEI/PME — usa «Generar citas faltantes» si quieres incluirlas.');
+  } else {
+    showToast('Documento generado y guardado.');
+  }
 }
 
 async function fcargoPintarContenido(cargoId){
@@ -13607,7 +13649,7 @@ async function fcargoPintarContenido(cargoId){
     return;
   }
 
-  await fcargoAsegurarEIDs(items, false);
+  await fcargoAsegurarEIDs(items);
 
   let html =
     '<div class="fcargo-head-card">' +
@@ -13626,13 +13668,13 @@ async function fcargoPintarContenido(cargoId){
   cont.innerHTML = html;
 }
 
-async function fcargoAsegurarEIDs(items, permitirIA){
+async function fcargoAsegurarEIDs(items){
   const colId = DB.colegio?.id || SESSION.colegioActivo;
   const pendEID = items.filter(({ac}) => fcargoEIDsCache[ac.id] === undefined).map(({ac}) => ac);
   const pendCitas = items.filter(({ac}) => fcargoCitasCache[ac.id] === undefined).map(({ac}) => ac);
   await Promise.all([
     ...pendEID.map(async ac => { fcargoEIDsCache[ac.id] = await planCargarEIDsAccion(ac.nombre) || []; }),
-    ...pendCitas.map(async ac => { await fcargoCargarCitas(colId, ac.id, !!permitirIA); })
+    ...pendCitas.map(async ac => { await fcargoCargarCitas(colId, ac.id); })
   ]);
 }
 
@@ -13755,9 +13797,9 @@ async function fcargoObtenerHTML(cargoId, forzar){
     }
   }
 
-  // 2) Hay que construir el documento: aquí SÍ se permite generar con IA las
-  //    citas que falten (solo en exportación/regeneración, nunca al navegar).
-  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId), true);
+  // 2) Construir el documento. Las citas se LEEN de accion_citas (nunca se
+  //    generan aquí). Si una acción no tiene citas, el PDF las omite.
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId));
 
   const r = fcargoConstruirHTML(cargoId);
   if(!r) return null;
@@ -13886,7 +13928,7 @@ function fcargoFirmaAccion(ac){
 // Exporta a PDF UNA acción de un cargo
 async function fcargoExportarAccion(cargoId, accionId){
   showToast('Preparando PDF de la acción…');
-  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId).filter(({ac}) => ac.id === accionId), true);
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId).filter(({ac}) => ac.id === accionId));
   const r = fcargoConstruirHTML(cargoId, accionId);
   if(!r){ showToast('No se pudo generar la acción.'); return; }
   fcargoAbrirVentana(r.html);
@@ -13941,12 +13983,23 @@ async function fcargoRenderGenerados(){
 }
 
 // Regenera el documento de un cargo: limpia caché de citas, fuerza nueva generación y guarda
+// Regenera un cargo: vuelve a generar con IA las citas de SUS acciones
+// (forzando, sobrescribe accion_citas) y reconstruye el PDF. Esto SÍ gasta.
 async function fcargoRegenerarCargo(cargoId){
   const cargo = (DB.cargos || []).find(c => c.id === cargoId);
-  showToast('Regenerando '+(cargo?cargo.nombre:'cargo')+'…');
-  fcargoAccionesDeCargo(cargoId).forEach(({ac}) => { delete fcargoCitasCache[ac.id]; });
-  const r = await fcargoObtenerHTML(cargoId, true); // forzar
-  if(r){ showToast('Documento regenerado. Ya puedes descargarlo actualizado.'); }
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  const accs = fcargoAccionesDeCargo(cargoId).map(({ac}) => ac.id);
+  if(!confirm('Regenerar las citas PEI/PME de las '+accs.length+' acción(es) de '+(cargo?cargo.nombre:'este cargo')+' con IA. Esto consume créditos. ¿Continuar?')) return;
+  showToast('Regenerando citas de '+(cargo?cargo.nombre:'cargo')+'…');
+  let i = 0;
+  for(const accId of accs){
+    i++;
+    showToast('Regenerando cita '+i+' de '+accs.length+'…');
+    delete fcargoCitasCache[accId];
+    await fcargoGenerarCitasAccion(colId, accId, true); // forzar
+  }
+  const r = await fcargoObtenerHTML(cargoId, true); // forzar rearmado del PDF
+  if(r){ showToast('Documento regenerado con citas actualizadas.'); }
   await fcargoCargarGuardados();
   fcargoExpandido = cargoId;
   fcargoPintarLista();
