@@ -8333,6 +8333,24 @@ const PLAN_CSS = `
 .fcargo-peipme-tag-pme{background:#E6F1FB;color:#0C447C}
 .fcargo-peipme-texto{font-size:12.5px;line-height:1.5;color:#3A352B;font-style:italic}
 @media (max-width:760px){.fcargo-ficha-grid{grid-template-columns:1fr}.fcargo-ficha-side{border-right:none;border-bottom:1px solid var(--border)}}
+/* Cargos generados — acordeón verde */
+.fcargo-gen-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.fcargo-gen-head{display:flex;align-items:center;gap:10px;padding:13px 16px;background:linear-gradient(135deg,#1E3A2F 0%,#2D5A42 100%);color:#fff;cursor:pointer;user-select:none;transition:filter .15s}
+.fcargo-gen-head:hover{filter:brightness(1.08)}
+.fcargo-gen-arrow{font-size:10px;opacity:.85;width:12px}
+.fcargo-gen-nombre{font-weight:700;font-size:14px}
+.fcargo-gen-meta{margin-left:auto;font-size:11px;color:rgba(255,255,255,.7)}
+.fcargo-gen-body{background:var(--surface);padding:6px 8px}
+.fcargo-gen-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-bottom:1px solid var(--border)}
+.fcargo-gen-row:last-child{border-bottom:none}
+.fcargo-gen-acc-nombre{font-size:13px;color:var(--text);flex:1;min-width:0}
+.fcargo-gen-acc-btns{display:flex;gap:6px;flex-shrink:0}
+.fcargo-gen-btn{border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+.fcargo-gen-btn:hover{filter:brightness(.97)}
+.fcargo-gen-btn.pdf{background:#1E3A2F;color:#fff;border-color:#1E3A2F}
+.fcargo-gen-btn.word{background:#1E4A7C;color:#fff;border-color:#1E4A7C}
+.fcargo-gen-btn.regen{background:var(--surface2);color:var(--accent)}
+@media (max-width:640px){.fcargo-gen-row{flex-direction:column;align-items:flex-start;gap:6px}.fcargo-gen-meta{display:none}}
 
 /* === SÍNTESIS DEL MARCO (tarjeta puente entre EID y marcos individuales) === */
 .marco-sintesis{
@@ -13408,6 +13426,10 @@ async function renderFuncionesCargo(){
     '<div id="fcargoContenido">' +
       (FCARGO_SELECCIONADO ? '<div class="fcargo-loading">Cargando metas y estándares…</div>'
                            : '<div class="fcargo-empty">Marca un cargo arriba para ver sus funciones en detalle.</div>') +
+    '</div>' +
+    '<div style="margin-top:26px">' +
+      '<div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:12px">Cargos generados</div>' +
+      '<div id="fcargoGenerados"><div class="fcargo-empty" style="padding:24px">Cargando…</div></div>' +
     '</div>';
 
   // Si había un cargo seleccionado, re-marcar su checkbox
@@ -13416,6 +13438,9 @@ async function renderFuncionesCargo(){
     if(chk) chk.checked = true;
     await fcargoPintarContenido(FCARGO_SELECCIONADO);
   }
+
+  // Cargar la lista de cargos ya generados
+  fcargoRenderGenerados();
 }
 
 // Se llama al marcar/desmarcar cualquier checkbox de cargo.
@@ -13591,6 +13616,7 @@ async function fcargoObtenerHTML(cargoId, forzar){
   const r = fcargoConstruirHTML(cargoId);
   if(!r) return null;
   await fcargoGuardar(colId, cargoId, r.html, firmaActual);
+  if(typeof fcargoRenderGenerados === 'function') fcargoRenderGenerados();
   return { html: r.html, reusado: false };
 }
 
@@ -13640,12 +13666,109 @@ function fcargoAbrirVentana(html){
   return true;
 }
 
+// ---- ACCIÓN INDIVIDUAL: firma, exportar PDF, regenerar ----------------------
+// Firma de UNA acción (para detectar si cambió y regenerar solo si hace falta)
+function fcargoFirmaAccion(ac){
+  const eid = (fcargoEIDsCache[ac.id] || [])[0];
+  const citas = fcargoCitasCache[ac.id] || {pei:[],pme:[]};
+  const str = [ac.id, ac.nombre, ac.descripcion, ac.formula_cumplimiento, ac.evidencia_esperada,
+    ac.ponderador, (ac.meses_activos||[]).join(','), eid?eid.codigo:'',
+    (citas.pei||[]).length, (citas.pme||[]).length].join('|');
+  let h=0; for(let i=0;i<str.length;i++){ h=((h<<5)-h+str.charCodeAt(i))|0; }
+  return 'a1:'+(h>>>0).toString(36);
+}
+
+// Exporta a PDF UNA acción de un cargo
+async function fcargoExportarAccion(cargoId, accionId){
+  showToast('Preparando PDF de la acción…');
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId).filter(({ac}) => ac.id === accionId));
+  const r = fcargoConstruirHTML(cargoId, accionId);
+  if(!r){ showToast('No se pudo generar la acción.'); return; }
+  fcargoAbrirVentana(r.html);
+}
+
+// Regenera UNA acción: limpia su caché de citas (vuelve a pedir a la IA) y exporta
+async function fcargoRegenerarAccion(cargoId, accionId){
+  showToast('Regenerando acción…');
+  delete fcargoCitasCache[accionId];
+  await fcargoExportarAccion(cargoId, accionId);
+  fcargoRenderGenerados(); // refrescar lista por si cambió algo
+}
+
+// ---- SECCIÓN DESPLEGABLE: cargos ya generados -------------------------------
+let FCARGO_ABIERTOS = {}; // { cargoId: true } acordeones abiertos
+
+// Carga desde BD los cargos que ya tienen documento guardado y los muestra
+async function fcargoRenderGenerados(){
+  const cont = document.getElementById('fcargoGenerados');
+  if(!cont) return;
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  let guardados = [];
+  try{
+    const { data } = await sb.from('fcargo_documentos')
+      .select('cargo_id, updated_at').eq('colegio_id', colId)
+      .order('updated_at', { ascending: false });
+    guardados = data || [];
+  }catch(e){ console.warn('[fcargo generados]', e.message); }
+
+  if(!guardados.length){
+    cont.innerHTML = '<div class="fcargo-empty" style="padding:24px">Aún no hay cargos generados. Genera el PDF de un cargo y aparecerá aquí para volver a abrirlo o exportarlo por acción.</div>';
+    return;
+  }
+
+  cont.innerHTML = guardados.map(g => {
+    const cargo = (DB.cargos || []).find(c => c.id === g.cargo_id);
+    if(!cargo) return '';
+    const items = fcargoAccionesDeCargo(g.cargo_id);
+    const abierto = !!FCARGO_ABIERTOS[g.cargo_id];
+    const fechaTxt = g.updated_at ? new Date(g.updated_at).toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'numeric'}) : '';
+    return '<div class="fcargo-gen-card">' +
+      '<div class="fcargo-gen-head'+(abierto?' abierto':'')+'" onclick="fcargoToggleGen(\''+g.cargo_id+'\')">' +
+        '<span class="fcargo-gen-arrow">'+(abierto?'▼':'▶')+'</span>' +
+        '<span class="fcargo-gen-nombre">'+escapeHtmlPlan(cargo.nombre)+'</span>' +
+        '<span class="fcargo-gen-meta">'+items.length+' '+(items.length===1?'acción':'acciones')+' · generado '+fechaTxt+'</span>' +
+      '</div>' +
+      (abierto ? '<div class="fcargo-gen-body">' +
+        items.map(({ac}) =>
+          '<div class="fcargo-gen-row">' +
+            '<span class="fcargo-gen-acc-nombre">'+escapeHtmlPlan(ac.nombre)+'</span>' +
+            '<span class="fcargo-gen-acc-btns">' +
+              '<button class="fcargo-gen-btn pdf" onclick="fcargoExportarAccion(\''+g.cargo_id+'\',\''+ac.id+'\')">PDF</button>' +
+              '<button class="fcargo-gen-btn word" onclick="fcargoExportarAccionWord(\''+g.cargo_id+'\',\''+ac.id+'\')">Word</button>' +
+              '<button class="fcargo-gen-btn regen" onclick="fcargoRegenerarAccion(\''+g.cargo_id+'\',\''+ac.id+'\')" title="Regenera esta acción (vuelve a consultar el PEI/PME)">Regenerar</button>' +
+            '</span>' +
+          '</div>'
+        ).join('') +
+      '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function fcargoToggleGen(cargoId){
+  FCARGO_ABIERTOS[cargoId] = !FCARGO_ABIERTOS[cargoId];
+  if(FCARGO_ABIERTOS[cargoId]){
+    // asegurar EIDs/citas del cargo al abrir (para que las firmas y exports funcionen)
+    fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId)).then(fcargoRenderGenerados);
+  } else {
+    fcargoRenderGenerados();
+  }
+}
+
+// Placeholder Word (lo implementamos después): por ahora exporta PDF
+function fcargoExportarAccionWord(cargoId, accionId){
+  showToast('La exportación a Word estará disponible pronto. Por ahora se genera el PDF.');
+  fcargoExportarAccion(cargoId, accionId);
+}
+
+
 // Construye el HTML completo del PDF para UN cargo (no abre ventana).
-function fcargoConstruirHTML(cargoId){
+function fcargoConstruirHTML(cargoId, accionIdFiltro){
   const cargo = (DB.cargos || []).find(c => c.id === cargoId);
   if(!cargo) return null;
-  const items = fcargoAccionesDeCargo(cargoId);
+  let items = fcargoAccionesDeCargo(cargoId);
+  if(accionIdFiltro) items = items.filter(({ac}) => ac.id === accionIdFiltro);
   if(!items.length) return null;
+  const soloAccion = !!accionIdFiltro;
   const personas = fcargoPersonasDeCargo(cargoId);
 
   const colegioNombre = (DB.colegio && DB.colegio.nombre) || 'Establecimiento';
@@ -13799,19 +13922,17 @@ function fcargoConstruirHTML(cargoId){
 
   const cargoBar = cargoBarFn();
 
-  const fichasHTML = items.map(({ac, obj, area}) => {
+  // Construye el HTML de UNA ficha (reutilizable para cargo completo y acción individual)
+  function fcargoBuildFicha(ac, obj, area, barra){
     const eids = fcargoEIDsCache[ac.id] || [];
     const eid = eids.length ? eids[0] : null;
     const meses = (ac.meses_activos || []).map(m => fmtMes(m, true)).join(' · ') || '—';
-    const dimSub = eid ? [eid.dimension, eid.subdimension].filter(Boolean).join(' · ') : '';
 
-    // Cabecera verde con título de la acción
     let titulo = '<div class="ficha-titulo-row">' +
       '<h2 class="accion-titulo">'+escapeHtmlPlan(ac.nombre)+'</h2>' +
       (ac.descripcion ? '<div class="accion-desc">'+escapeHtmlPlan(ac.descripcion)+'</div>' : '') +
     '</div>';
 
-    // Franja de datos en columnas
     const dato = (label, valor, full) => '<div'+(full?' class="ficha-dato-full"':'')+'><div class="ficha-dato-label">'+label+'</div><div class="ficha-dato-valor">'+valor+'</div></div>';
     let datos = '<div class="ficha-datos">';
     if(area.nombre) datos += dato('Área', escapeHtmlPlan(area.nombre));
@@ -13822,7 +13943,6 @@ function fcargoConstruirHTML(cargoId){
     if(ac.evidencia_esperada) datos += dato('Evidencia', escapeHtmlPlan(ac.evidencia_esperada), true);
     datos += '</div>';
 
-    // Cuerpo: EID + citas
     let cuerpo = '<div class="ficha-body">' + datos;
     if(eid){
       cuerpo += '<div class="eid-block">' +
@@ -13837,8 +13957,12 @@ function fcargoConstruirHTML(cargoId){
     cuerpo += fcargoBloqueCitas(fcargoCitasCache[ac.id], true);
     cuerpo += '</div>';
 
-    return '<div class="ficha-card">'+cargoBar+titulo+cuerpo+'</div>';
-  }).join('');
+    return '<div class="ficha-card">'+barra+titulo+cuerpo+'</div>';
+  }
+  // exponer para construir acción individual fuera de esta función
+  fcargoBuildFicha._css = css;
+
+  const fichasHTML = items.map(({ac, obj, area}) => fcargoBuildFicha(ac, obj, area, cargoBar)).join('');
 
   const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
     '<title>Funciones y estándares — '+cargoNombre+'</title>' +
@@ -13846,7 +13970,7 @@ function fcargoConstruirHTML(cargoId){
     '<style>'+css+'</style></head><body>' +
     '<button class="print-btn" onclick="window.print()">Imprimir / Guardar PDF</button>' +
     '<div class="page">' +
-      hojaResumen +
+      (soloAccion ? '' : hojaResumen) +
       fichasHTML +
     '</div></body></html>';
 
