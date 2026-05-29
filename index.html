@@ -13636,7 +13636,47 @@ function fcargoConstruirHTML(cargoId){
     '.foot{margin-top:28px;padding-top:14px;border-top:1px solid #E4E0D8;font-size:10px;color:#9A968F;text-align:center}' +
     '.ficha-card{page-break-after:always;break-after:page}' +
     '.ficha-card:last-of-type{page-break-after:auto;break-after:auto}' +
-    '@media print{.print-btn{display:none}.page{padding:0}body{font-size:11.5px}.ficha-card{box-shadow:none}}';
+    // --- Ajuste a HOJA CARTA: cada acción cabe en una página ---
+    '@page{size:letter;margin:12mm}' +
+    '@media print{' +
+      '.print-btn{display:none}' +
+      '.page{padding:0;max-width:none;margin:0}' +
+      'body{font-size:10.5px;line-height:1.4}' +
+      '.doc-head{margin-bottom:10px;padding-bottom:8px}' +
+      '.doc-head h1{font-size:18px;margin:2px 0 3px}' +
+      '.doc-head .kicker{font-size:9px}' +
+      '.doc-head .meta{font-size:10px}' +
+      '.foot{display:none}' +
+      '.ficha-card{box-shadow:none;border:1px solid #D8D2C6;margin:0;page-break-after:always;break-after:page;page-break-inside:avoid}' +
+      '.ficha-card:last-of-type{page-break-after:auto;break-after:auto}' +
+      '.ficha-grid{grid-template-columns:200px 1fr}' +
+      '.ficha-side{padding:12px 12px}' +
+      '.ficha-side-label{font-size:9px;margin-bottom:9px;padding-bottom:4px}' +
+      '.ficha-campo{margin-bottom:8px}' +
+      '.ficha-campo-label{font-size:8px;margin-bottom:1px}' +
+      '.ficha-campo-valor{font-size:10px}' +
+      '.ficha-main{padding:11px 13px}' +
+      '.eidcode{font-size:9px;margin-bottom:4px;padding:1px 7px}' +
+      '.accion-titulo{font-size:15px;margin-bottom:3px;line-height:1.15}' +
+      '.accion-desc{font-size:9.5px;margin-bottom:7px;line-height:1.35}' +
+      '.eid-block{padding:9px}' +
+      '.eid-enunciado-label{font-size:8.5px;margin-bottom:3px}' +
+      '.eid-enunciado{font-size:11.5px;margin-bottom:8px;line-height:1.28}' +
+      '.eid-nivel{margin-bottom:8px}' +
+      '.eid-nivel-titulo{font-size:9.5px;margin-bottom:5px}' +
+      '.marco-eid-mini-grid{gap:5px}' +
+      '.marco-eid-mini-card{padding:6px 8px;border-radius:6px}' +
+      '.marco-eid-mini-head{margin-bottom:2px}' +
+      '.marco-eid-mini-num{width:15px;height:15px;font-size:8.5px}' +
+      '.marco-eid-mini-verbo{font-size:8.5px}' +
+      '.marco-eid-mini-cuerpo{font-size:9px;line-height:1.28}' +
+      '.marco-eid-criterio-sujeto-line{font-size:9.5px;margin-bottom:5px}' +
+      '.pei-pme-block{margin-top:8px;padding:8px 10px}' +
+      '.pei-pme-label{font-size:8px;margin-bottom:5px}' +
+      '.pei-pme-cita{margin-bottom:4px;gap:6px}' +
+      '.pei-pme-tag{font-size:7.5px;padding:1px 5px}' +
+      '.pei-pme-texto{font-size:9px;line-height:1.3}' +
+    '}';
 
   const fichasHTML = items.map(({ac, obj, area}) => {
     const eids = fcargoEIDsCache[ac.id] || [];
