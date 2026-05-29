@@ -13378,14 +13378,11 @@ async function renderFuncionesCargo(){
   if(!host) return;
 
   const cargos = _cargosOrdenados();
-  const opts = '<option value="">— Selecciona un cargo —</option>' +
-    cargos.map(c => '<option value="'+c.id+'"'+(FCARGO_SELECCIONADO===c.id?' selected':'')+'>'+escapeHtmlPlan(c.nombre)+'</option>').join('');
-
   const loteChecks = cargos.map(c => {
     const n = fcargoAccionesDeCargo(c.id).length;
     const dis = n === 0;
     return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;'+(dis?'opacity:.45':'cursor:pointer')+'">' +
-      '<input type="checkbox" class="fcargo-check" value="'+c.id+'"'+(dis?' disabled':'')+' style="accent-color:var(--accent);width:14px;height:14px">' +
+      '<input type="checkbox" class="fcargo-check" value="'+c.id+'"'+(dis?' disabled':'')+' onchange="fcargoOnCheck()" style="accent-color:var(--accent);width:14px;height:14px">' +
       '<span>'+escapeHtmlPlan(c.nombre)+'</span>' +
       '<span style="margin-left:auto;color:var(--muted);font-size:10px">'+n+'</span>' +
     '</label>';
@@ -13394,48 +13391,48 @@ async function renderFuncionesCargo(){
   host.innerHTML =
     '<div class="page-header">' +
       '<div class="page-title">Funciones por cargo</div>' +
-      '<div class="page-sub">Selecciona un cargo para ver sus metas y los estándares de desempeño (EID) que le corresponden, en nivel satisfactorio y avanzado. Puedes exportar la ficha en PDF para enviarla a cada persona.</div>' +
+      '<div class="page-sub">Marca un cargo para ver en detalle sus metas y los estándares de desempeño (EID) que le corresponden. Marca varios para generar sus PDFs en lote.</div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:18px;padding:16px 18px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
-        '<div style="font-size:13px;font-weight:600;color:var(--accent)">Generar PDFs en lote</div>' +
+        '<div style="font-size:13px;font-weight:600;color:var(--accent)">Cargos</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(true)">Seleccionar todos</button>' +
           '<button class="btn btn-outline btn-sm" onclick="fcargoToggleTodos(false)">Limpiar</button>' +
-          '<button class="btn btn-primary btn-sm" onclick="fcargoExportarLote()">Generar seleccionados</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="fcargoExportarLote()">Generar PDF de seleccionados</button>' +
         '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">'+loteChecks+'</div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-top:10px">El número junto a cada cargo indica cuántas acciones tiene asignadas. Cada cargo se abre en una pestaña distinta; el navegador debe permitir ventanas emergentes.</div>' +
-    '</div>' +
-    '<div class="card" style="margin-bottom:18px;padding:16px 18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">' +
-      '<div style="flex:1;min-width:240px">' +
-        '<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600;letter-spacing:.4px">VER UN CARGO EN DETALLE</label>' +
-        '<select id="fcargoSelect" class="form-input" style="width:100%;max-width:440px" onchange="fcargoOnSelect(this.value)">'+opts+'</select>' +
-      '</div>' +
-      '<button id="fcargoBtnPDF" class="btn btn-primary btn-sm" style="display:none" onclick="fcargoExportarPDF()">Exportar este cargo a PDF</button>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:10px">El número junto a cada cargo indica cuántas acciones tiene asignadas. Marca <strong>uno</strong> para verlo en detalle abajo, o <strong>varios</strong> para exportarlos juntos (cada uno se abre en una pestaña distinta).</div>' +
     '</div>' +
     '<div id="fcargoContenido">' +
       (FCARGO_SELECCIONADO ? '<div class="fcargo-loading">Cargando metas y estándares…</div>'
-                           : '<div class="fcargo-empty">Elige un cargo en el selector para ver sus funciones en detalle.</div>') +
+                           : '<div class="fcargo-empty">Marca un cargo arriba para ver sus funciones en detalle.</div>') +
     '</div>';
 
+  // Si había un cargo seleccionado, re-marcar su checkbox
   if(FCARGO_SELECCIONADO){
+    const chk = host.querySelector('.fcargo-check[value="'+FCARGO_SELECCIONADO+'"]');
+    if(chk) chk.checked = true;
     await fcargoPintarContenido(FCARGO_SELECCIONADO);
   }
 }
 
-function fcargoOnSelect(cargoId){
-  FCARGO_SELECCIONADO = cargoId || '';
+// Se llama al marcar/desmarcar cualquier checkbox de cargo.
+// 1 marcado → muestra su detalle. 0 o varios → no muestra detalle individual.
+function fcargoOnCheck(){
+  const marcados = Array.from(document.querySelectorAll('.fcargo-check:checked')).map(ch => ch.value);
   const cont = document.getElementById('fcargoContenido');
-  const btn  = document.getElementById('fcargoBtnPDF');
-  if(!FCARGO_SELECCIONADO){
-    if(cont) cont.innerHTML = '<div class="fcargo-empty">Elige un cargo en el selector para ver sus funciones en detalle.</div>';
-    if(btn)  btn.style.display = 'none';
-    return;
+  if(marcados.length === 1){
+    FCARGO_SELECCIONADO = marcados[0];
+    if(cont) cont.innerHTML = '<div class="fcargo-loading">Cargando metas y estándares…</div>';
+    fcargoPintarContenido(FCARGO_SELECCIONADO);
+  } else {
+    FCARGO_SELECCIONADO = '';
+    if(cont) cont.innerHTML = marcados.length === 0
+      ? '<div class="fcargo-empty">Marca un cargo arriba para ver sus funciones en detalle.</div>'
+      : '<div class="fcargo-empty">'+marcados.length+' cargos seleccionados. Usa <strong>Generar PDF de seleccionados</strong> para exportarlos. Marca solo uno si quieres verlo en detalle aquí.</div>';
   }
-  if(cont) cont.innerHTML = '<div class="fcargo-loading">Cargando metas y estándares…</div>';
-  fcargoPintarContenido(FCARGO_SELECCIONADO);
 }
 
 async function fcargoPintarContenido(cargoId){
@@ -13443,12 +13440,10 @@ async function fcargoPintarContenido(cargoId){
   const items = fcargoAccionesDeCargo(cargoId);
   const personas = fcargoPersonasDeCargo(cargoId);
   const cont = document.getElementById('fcargoContenido');
-  const btn  = document.getElementById('fcargoBtnPDF');
   if(!cont) return;
 
   if(items.length === 0){
     cont.innerHTML = '<div class="fcargo-empty">El cargo <strong>'+escapeHtmlPlan(cargo?.nombre||'')+'</strong> no tiene acciones asignadas todavía. Asigna responsables con este cargo a una o más acciones del plan.</div>';
-    if(btn) btn.style.display = 'none';
     return;
   }
 
@@ -13460,12 +13455,15 @@ async function fcargoPintarContenido(cargoId){
       '<div class="fcargo-head-nombre">'+escapeHtmlPlan(cargo?.nombre||'')+'</div>' +
       (personas.length ? '<div class="fcargo-head-personas"><span>Personas:</span> '+personas.map(p=>escapeHtmlPlan(p)).join(', ')+'</div>' : '') +
       '<div class="fcargo-head-resumen">'+items.length+' '+(items.length===1?'acción asignada':'acciones asignadas')+'</div>' +
+      '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" style="background:#fff;color:#1E3A2F" onclick="fcargoExportarPDF()">Exportar este cargo a PDF</button>' +
+        '<button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4)" onclick="fcargoRegenerar()" title="Vuelve a generar el documento con la IA y lo guarda (úsalo si cambió el PEI/PME)">Regenerar</button>' +
+      '</div>' +
     '</div>';
 
   html += items.map(({ac, obj, area}) => fcargoFichaAccion(ac, obj, area, fcargoEIDsCache[ac.id])).join('');
 
   cont.innerHTML = html;
-  if(btn) btn.style.display = '';
 }
 
 async function fcargoAsegurarEIDs(items){
@@ -13533,37 +13531,105 @@ function fcargoToggleTodos(estado){
   document.querySelectorAll('.fcargo-check:not(:disabled)').forEach(ch => ch.checked = estado);
 }
 
+// --- PERSISTENCIA DEL HTML POR CARGO (tabla fcargo_documentos) ---------------
+// Calcula una "firma" de las acciones del cargo: si cambia (acción agregada/
+// editada/quitada, EID o citas distintas), la firma cambia y se regenera solo.
+function fcargoFirmaCargo(cargoId){
+  const items = fcargoAccionesDeCargo(cargoId);
+  const partes = items.map(({ac}) => {
+    const eid = (fcargoEIDsCache[ac.id] || [])[0];
+    const citas = fcargoCitasCache[ac.id] || {pei:[],pme:[]};
+    return [
+      ac.id,
+      ac.nombre, ac.descripcion, ac.formula_cumplimiento, ac.evidencia_esperada,
+      ac.ponderador, (ac.meses_activos||[]).join(','),
+      eid ? eid.codigo : '',
+      (citas.pei||[]).length, (citas.pme||[]).length
+    ].join('|');
+  });
+  // hash simple y estable
+  const str = partes.sort().join('§');
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
+  return 'v1:'+items.length+':'+(h>>>0).toString(36);
+}
+
+// Lee el documento guardado del cargo (o null)
+async function fcargoLeerGuardado(colegioId, cargoId){
+  try{
+    const { data } = await sb.from('fcargo_documentos')
+      .select('html, firma, updated_at')
+      .eq('colegio_id', colegioId).eq('cargo_id', cargoId)
+      .maybeSingle();
+    return data || null;
+  }catch(e){ console.warn('[fcargo guardado] leer:', e.message); return null; }
+}
+
+// Guarda (upsert) el documento del cargo
+async function fcargoGuardar(colegioId, cargoId, html, firma){
+  try{
+    await sb.from('fcargo_documentos')
+      .upsert({ colegio_id: colegioId, cargo_id: cargoId, html, firma, updated_at: new Date().toISOString() },
+              { onConflict: 'colegio_id,cargo_id' });
+  }catch(e){ console.warn('[fcargo guardado] guardar:', e.message); }
+}
+
+// Orquesta: devuelve el HTML del cargo. Si hay guardado con la misma firma, lo
+// reusa (instantáneo). Si no existe o la firma cambió, lo genera y lo guarda.
+// forzar=true regenera siempre (botón "Regenerar").
+async function fcargoObtenerHTML(cargoId, forzar){
+  const colId = DB.colegio?.id || SESSION.colegioActivo;
+  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId));
+  const firmaActual = fcargoFirmaCargo(cargoId);
+
+  if(!forzar){
+    const guardado = await fcargoLeerGuardado(colId, cargoId);
+    if(guardado && guardado.firma === firmaActual && guardado.html){
+      return { html: guardado.html, reusado: true };
+    }
+  }
+  const r = fcargoConstruirHTML(cargoId);
+  if(!r) return null;
+  await fcargoGuardar(colId, cargoId, r.html, firmaActual);
+  return { html: r.html, reusado: false };
+}
+
 async function fcargoExportarLote(){
   const ids = Array.from(document.querySelectorAll('.fcargo-check:checked')).map(ch => ch.value);
   if(!ids.length){ showToast('Selecciona al menos un cargo.'); return; }
-  showToast('Preparando '+ids.length+' PDF'+(ids.length>1?'s':'')+' (puede tardar si hay análisis nuevos)…');
+  showToast('Preparando '+ids.length+' PDF'+(ids.length>1?'s':'')+'…');
 
-  let todosItems = [];
-  ids.forEach(cid => { todosItems = todosItems.concat(fcargoAccionesDeCargo(cid)); });
-  await fcargoAsegurarEIDs(todosItems);
-
-  let abiertos = 0, bloqueado = false;
+  let abiertos = 0, bloqueado = false, reusados = 0;
   for(const cid of ids){
-    const r = fcargoConstruirHTML(cid);
+    const r = await fcargoObtenerHTML(cid, false);
     if(!r) continue;
+    if(r.reusado) reusados++;
     if(!fcargoAbrirVentana(r.html)){ bloqueado = true; break; }
     abiertos++;
   }
   if(bloqueado){
     showToast('El navegador bloqueó las ventanas. Habilita las ventanas emergentes para este sitio y reintenta.');
   } else {
-    showToast(abiertos+' documento'+(abiertos!==1?'s':'')+' abierto'+(abiertos!==1?'s':'')+' en pestañas separadas.');
+    showToast(abiertos+' documento'+(abiertos!==1?'s':'')+' abierto'+(abiertos!==1?'s':'')+(reusados?' ('+reusados+' guardado'+(reusados!==1?'s':'')+')':'')+'.');
   }
 }
 
 // --- EXPORT a PDF (individual) -----------------------------------------------
-async function fcargoExportarPDF(){
+async function fcargoExportarPDF(forzar){
   if(!FCARGO_SELECCIONADO){ showToast('Selecciona un cargo primero.'); return; }
-  showToast('Preparando PDF (puede tardar si hay análisis nuevos)…');
-  await fcargoAsegurarEIDs(fcargoAccionesDeCargo(FCARGO_SELECCIONADO));
-  const r = fcargoConstruirHTML(FCARGO_SELECCIONADO);
+  showToast(forzar ? 'Regenerando…' : 'Preparando PDF…');
+  const r = await fcargoObtenerHTML(FCARGO_SELECCIONADO, !!forzar);
   if(!r){ showToast('El cargo no tiene acciones para exportar.'); return; }
+  if(forzar) showToast('Documento regenerado y guardado.');
   fcargoAbrirVentana(r.html);
+}
+
+// Botón "Regenerar": fuerza regeneración aunque haya guardado
+async function fcargoRegenerar(){
+  if(!FCARGO_SELECCIONADO){ showToast('Selecciona un cargo primero.'); return; }
+  // limpiar caché de citas de este cargo para volver a pedirlas a la IA
+  fcargoAccionesDeCargo(FCARGO_SELECCIONADO).forEach(({ac}) => { delete fcargoCitasCache[ac.id]; });
+  await fcargoExportarPDF(true);
 }
 
 function fcargoAbrirVentana(html){
