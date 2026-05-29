@@ -13590,13 +13590,23 @@ async function fcargoLeerGuardado(colegioId, cargoId){
   }catch(e){ console.warn('[fcargo guardado] leer:', e.message); return null; }
 }
 
-// Guarda (upsert) el documento del cargo
+// Guarda (upsert) el documento del cargo. Devuelve true si guardó, false si falló.
 async function fcargoGuardar(colegioId, cargoId, html, firma){
   try{
-    await sb.from('fcargo_documentos')
+    const { error } = await sb.from('fcargo_documentos')
       .upsert({ colegio_id: colegioId, cargo_id: cargoId, html, firma, updated_at: new Date().toISOString() },
               { onConflict: 'colegio_id,cargo_id' });
-  }catch(e){ console.warn('[fcargo guardado] guardar:', e.message); }
+    if(error){
+      console.warn('[fcargo guardado]', error.message);
+      if(/does not exist|relation/i.test(error.message)){
+        showToast('Falta crear la tabla fcargo_documentos en Supabase para guardar los cargos.');
+      } else {
+        showToast('No se pudo guardar el cargo: '+error.message);
+      }
+      return false;
+    }
+    return true;
+  }catch(e){ console.warn('[fcargo guardado] guardar:', e.message); return false; }
 }
 
 // Orquesta: devuelve el HTML del cargo. Si hay guardado con la misma firma, lo
@@ -13836,10 +13846,11 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
     '.resumen-sub{font-size:10.5px;color:#7A7670;margin-bottom:16px}' +
     '.resumen-tabla{width:100%;border-collapse:collapse;font-size:9.5px}' +
     '.resumen-tabla th{background:#1E3A2F;color:#fff;font-weight:600;padding:7px 5px;text-align:center;border:1px solid #1E3A2F;font-size:8.5px;text-transform:uppercase;letter-spacing:.3px}' +
-    '.resumen-tabla th.col-accion{text-align:left;width:34%}' +
+    '.resumen-tabla th.col-accion{text-align:left;width:46%}' +
     '.resumen-tabla td{border:1px solid #DCD7CC;padding:6px 6px;vertical-align:top}' +
     '.resumen-tabla td.col-accion{text-align:left}' +
-    '.resumen-tabla td.col-mes{text-align:center;font-weight:600;width:7%}' +
+    '.resumen-tabla td.col-mes{text-align:center;font-weight:600;width:5%;padding-left:2px;padding-right:2px}' +
+    '.resumen-tabla th:not(.col-accion){width:5%;padding-left:2px;padding-right:2px}' +
     '.resumen-tabla td.col-total{text-align:center;font-weight:700;background:#F4F2EE}' +
     '.resumen-tabla tr:nth-child(even) td{background:#FAF9F6}' +
     '.resumen-tabla tr:nth-child(even) td.col-total{background:#EFEBE1}' +
