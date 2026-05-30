@@ -13353,7 +13353,18 @@ async function fcargoGenerarCitasFaltantes(){
     hechas++;
   }
   if(btn) btn.textContent = 'Generar citas faltantes';
-  showToast('Listo: '+hechas+' acción(es) procesada(s), '+conCitas+' con citas encontradas. Ya puedes generar los PDFs sin costo.');
+
+  // Las citas cambiaron → los PDFs guardados quedaron desactualizados.
+  // Los borramos para que se rearmen automáticamente (con las citas nuevas)
+  // la próxima vez que se vean o descarguen. NO usa IA: solo invalida el caché.
+  try{
+    await sb.from('fcargo_documentos').delete().eq('colegio_id', colId);
+  }catch(e){ console.warn('[citasFaltantes] invalidar PDFs:', e.message); }
+
+  await fcargoCargarGuardados();
+  fcargoExpandido = '';
+  fcargoPintarLista();
+  showToast('Listo: '+conCitas+' acción(es) con citas. Los documentos se actualizarán solos al verlos o descargarlos.');
 }
 
 // HTML del bloque combinado de citas PEI + PME (versión limpia, solo citas).
@@ -13530,7 +13541,7 @@ function fcargoPintarLista(){
 
     const botones = generado
       ? '<button class="fcargo-gen-btn pdf" onclick="event.stopPropagation();fcargoDescargarPDF(\''+c.id+'\')">Descargar PDF</button>' +
-        '<button class="fcargo-gen-btn regen" title="Vuelve a generar consultando el PEI/PME y actualiza el archivo" onclick="event.stopPropagation();fcargoRegenerarCargo(\''+c.id+'\')">Regenerar</button>'
+        '<button class="fcargo-gen-btn regen" title="Vuelve a generar las citas con IA y actualiza el documento. Úsalo si cambió el PEI/PME." onclick="event.stopPropagation();fcargoRegenerarCargo(\''+c.id+'\')">Regenerar</button>'
       : '<button class="fcargo-gen-btn generar" onclick="event.stopPropagation();fcargoGenerarCargo(\''+c.id+'\')">Generar</button>';
 
     return '<div class="fcargo-row-card'+(abierto?' abierto':'')+'" data-cargo="'+c.id+'">' +
@@ -14003,6 +14014,17 @@ async function fcargoRegenerarCargo(cargoId){
   await fcargoCargarGuardados();
   fcargoExpandido = cargoId;
   fcargoPintarLista();
+}
+
+// Rearma el PDF de un cargo leyendo las citas que YA existen en accion_citas.
+// NO llama a la IA. Uso interno: tras generar citas, los PDFs se rearman solos
+// al verse/descargarse porque fcargoGenerarCitasFaltantes invalida los guardados.
+async function fcargoRearmarPDF(cargoId){
+  fcargoAccionesDeCargo(cargoId).forEach(({ac}) => { delete fcargoCitasCache[ac.id]; });
+  const r = await fcargoObtenerHTML(cargoId, true);
+  await fcargoCargarGuardados();
+  fcargoPintarLista();
+  return r;
 }
 
 
