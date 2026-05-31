@@ -13776,10 +13776,10 @@ function fcargoFirmaCargo(cargoId){
   const str = partes.sort().join('§');
   let h = 0;
   for(let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
-  // v2: incluye la línea "Responsables" en la ficha. Bumpear el prefijo
-  // invalida los documentos guardados con v1 y fuerza su reconstrucción
+  // v3: ficha sin ponderador, con línea "Responsables". Bumpear el prefijo
+  // invalida los documentos guardados anteriores y fuerza su reconstrucción
   // (que LEE citas de la BD, NO llama a la IA → no gasta créditos).
-  return 'v2:'+items.length+':'+(h>>>0).toString(36);
+  return 'v3:'+items.length+':'+(h>>>0).toString(36);
 }
 
 // Lee el documento guardado del cargo (o null)
@@ -14232,7 +14232,6 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
     // mostrando todos los roles que comparten la acción.
     const _cargosResp = [...new Set(getResps(ac.id).map(r => (r.cargo||'').trim()).filter(Boolean))];
     if(_cargosResp.length) datos += dato('Responsables', _cargosResp.map(escapeHtmlPlan).join(' · '));
-    if(typeof ac.ponderador === 'number') datos += dato('Ponderador', (ac.ponderador*100).toFixed(0)+'%');
     if(obj.nombre) datos += dato('Objetivo', escapeHtmlPlan(obj.nombre), true);
     if(ac.formula_cumplimiento) datos += dato('Fórmula de cumplimiento', escapeHtmlPlan(ac.formula_cumplimiento), true);
     if(ac.evidencia_esperada) datos += dato('Evidencia', escapeHtmlPlan(ac.evidencia_esperada), true);
