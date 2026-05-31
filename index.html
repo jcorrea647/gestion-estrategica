@@ -14209,6 +14209,10 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
     let datos = '<div class="ficha-datos">';
     if(area.nombre) datos += dato('Área', escapeHtmlPlan(area.nombre));
     datos += dato('Período de evaluación', meses);
+    // Responsables de la acción (cargos), sin repetir. Fomenta el trabajo en equipo
+    // mostrando todos los roles que comparten la acción.
+    const _cargosResp = [...new Set(getResps(ac.id).map(r => (r.cargo||'').trim()).filter(Boolean))];
+    if(_cargosResp.length) datos += dato('Responsables', _cargosResp.map(escapeHtmlPlan).join(' · '));
     if(typeof ac.ponderador === 'number') datos += dato('Ponderador', (ac.ponderador*100).toFixed(0)+'%');
     if(obj.nombre) datos += dato('Objetivo', escapeHtmlPlan(obj.nombre), true);
     if(ac.formula_cumplimiento) datos += dato('Fórmula de cumplimiento', escapeHtmlPlan(ac.formula_cumplimiento), true);
