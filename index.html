@@ -13593,11 +13593,27 @@ async function fcargoCargarAcordeon(cargoId){
     return;
   }
 
-  const guardado = await fcargoLeerGuardado(colId, cargoId);
+  let guardado = await fcargoLeerGuardado(colId, cargoId);
   if(!guardado || !guardado.html){
     body.innerHTML = '<div class="fcargo-empty" style="padding:18px">No se pudo cargar el documento guardado.</div>';
     return;
   }
+  // Si la firma guardada quedó obsoleta (p.ej. cambió el formato del documento
+  // o los responsables), reconstruir el HTML aquí mismo. Esto LEE las citas de
+  // la BD (accion_citas) y NO llama a la IA → no gasta créditos. Así el cargo
+  // refleja el formato actual sin que el usuario tenga que regenerar a mano.
+  try{
+    const firmaActual = fcargoFirmaCargo(cargoId);
+    if(guardado.firma !== firmaActual){
+      await fcargoAsegurarEIDs(fcargoAccionesDeCargo(cargoId));
+      const r = fcargoConstruirHTML(cargoId);
+      if(r && r.html){
+        await fcargoGuardar(colId, cargoId, r.html, firmaActual);
+        if(typeof fcargoGuardadosMap !== 'undefined') fcargoGuardadosMap[cargoId] = { firma: firmaActual, updated_at: new Date().toISOString() };
+        guardado = { html: r.html, firma: firmaActual };
+      }
+    }
+  }catch(e){ console.warn('[fcargo reconstrucción auto]', e.message); }
   // iframe aislado: el CSS del documento no contamina la app.
   const iframe = document.createElement('iframe');
   iframe.className = 'fcargo-doc-frame';
@@ -13760,7 +13776,10 @@ function fcargoFirmaCargo(cargoId){
   const str = partes.sort().join('§');
   let h = 0;
   for(let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
-  return 'v1:'+items.length+':'+(h>>>0).toString(36);
+  // v2: incluye la línea "Responsables" en la ficha. Bumpear el prefijo
+  // invalida los documentos guardados con v1 y fuerza su reconstrucción
+  // (que LEE citas de la BD, NO llama a la IA → no gasta créditos).
+  return 'v2:'+items.length+':'+(h>>>0).toString(36);
 }
 
 // Lee el documento guardado del cargo (o null)
