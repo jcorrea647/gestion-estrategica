@@ -6031,7 +6031,7 @@ function generarPDFReunion() {
   if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
   if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
   html+='</div>';
-  if(partes.length){html+='<div class="participantes-r">';partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});html+='</div>';}
+  if(partes.length){html+='<div class="participantes-r">';partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){var _r=(DB.responsables||[]).find(function(x){return (x.nombre||'').trim().toLowerCase()===(p.nombre||'').trim().toLowerCase();});var _cargo=_r&&_r.cargo?_r.cargo:'';html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(_cargo?'<span class="pr-cargo">'+_cargo+'</span>':'')+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});html+='</div>';}
   html+='</div>';
 
   // COMENTARIOS GENERALES
