@@ -13907,43 +13907,84 @@ function fcargoCargarHtml2pdf(){
 }
 
 // Genera y descarga un PDF real (.pdf) del cargo completo (con hoja resumen).
+// ============================================================
+// REEMPLAZO DE fcargoDescargarPDF  (para index.html de "gestion")
+// ------------------------------------------------------------
+// Arregla DOS cosas:
+//   1) PDF vacío: el contenedor se renderiza VISIBLE (no a left:-9999px,
+//      que html2canvas a veces captura en blanco), se espera a que las
+//      fuentes carguen (document.fonts.ready) y a que el layout pinte,
+//      y se fuerza regenerar el HTML (forzar=true) para no reutilizar un
+//      HTML guardado vacío de corridas anteriores.
+//   2) Nombre del archivo: ahora es "Funciones <Cargo> <Colegio>.pdf"
+//      (ej. "Funciones UTP Liceo 7.pdf"), tomando el colegio de DB.colegio.
+//
+// Reemplaza la función fcargoDescargarPDF completa por esta.
+// ============================================================
 async function fcargoDescargarPDF(cargoId){
   const cargo = (DB.cargos || []).find(c => c.id === cargoId);
   if(!cargo){ showToast('Cargo no encontrado.'); return; }
   showToast('Generando PDF de '+cargo.nombre+'…');
+
+  let cont = null;
   try{
     await fcargoCargarHtml2pdf();
-    // Obtener el HTML (usa guardado si la firma coincide; si no, genera y guarda)
-    const r = await fcargoObtenerHTML(cargoId, false);
-    if(!r){ showToast('El cargo no tiene acciones.'); return; }
 
-    // Extraer solo el <body> del HTML para renderizar en un contenedor oculto
-    const doc = new DOMParser().parseFromString(r.html, 'text/html');
-    // pasar los <style> y el contenido
-    const styles = Array.from(doc.querySelectorAll('style')).map(s => s.outerHTML).join('');
-    const pageEl = doc.querySelector('.page');
-    const cont = document.createElement('div');
-    cont.style.cssText = 'position:fixed;left:-9999px;top:0;width:816px;background:#fff';
-    cont.innerHTML = styles + (pageEl ? pageEl.outerHTML : doc.body.innerHTML);
-    // quitar el botón imprimir si vino
-    cont.querySelectorAll('.print-btn').forEach(b => b.remove());
+    // (1) FORZAR regeneración del HTML: no reutilizar un guardado posiblemente
+    //     vacío. Cuesta cero llamadas a IA (las citas se leen de accion_citas).
+    const r = await fcargoObtenerHTML(cargoId, true);
+    if(!r || !r.html){ showToast('El cargo no tiene contenido para exportar.'); return; }
+
+    // Extraer estilos y el .page del HTML generado
+    const docParsed = new DOMParser().parseFromString(r.html, 'text/html');
+    const styles = Array.from(docParsed.querySelectorAll('style')).map(s => s.outerHTML).join('');
+    const pageEl = docParsed.querySelector('.page') || docParsed.body;
+
+    // Validar que realmente haya contenido (evita exportar un PDF en blanco)
+    const textoPlano = (pageEl.textContent || '').replace(/\s+/g,' ').trim();
+    if(textoPlano.length < 20){
+      showToast('El documento se generó sin contenido. Revisa que el cargo tenga acciones con citas.');
+      return;
+    }
+
+    // (2) Contenedor VISIBLE temporal (no left:-9999px). Lo ponemos arriba de
+    //     todo, opaco, para que html2canvas lo capture bien. Se quita al final.
+    cont = document.createElement('div');
+    cont.style.cssText =
+      'position:fixed;left:0;top:0;width:820px;z-index:2147483647;' +
+      'background:#fff;overflow:visible;';
+    cont.innerHTML = styles + (pageEl.outerHTML || '');
+    cont.querySelectorAll('.print-btn, .no-print').forEach(b => b.remove());
     document.body.appendChild(cont);
 
-    const nombreArch = ('Funciones_'+cargo.nombre).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf';
+    // (3) Esperar a que las fuentes web carguen y a que el layout pinte.
+    //     Sin esto, html2canvas suele capturar en blanco.
+    try { if(document.fonts && document.fonts.ready) await document.fonts.ready; } catch(_){}
+    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+    await new Promise(res => setTimeout(res, 250));
+
+    // Nombre: "Funciones <Cargo> <Colegio>.pdf"
+    const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
+    const partes = ['Funciones', cargo.nombre || '', colegioNombre].filter(Boolean).join(' ');
+    // Conservar espacios y tildes legibles; quitar solo caracteres inválidos de archivo
+    const nombreArch = partes.replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim() + '.pdf';
+
     const opt = {
       margin: [10,10,10,10],
       filename: nombreArch,
       image: { type:'jpeg', quality:0.96 },
-      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff' },
+      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff', windowWidth:820 },
       jsPDF: { unit:'mm', format:'letter', orientation:'portrait' },
       pagebreak: { mode:['css','legacy'], before:'.ficha-card', avoid:['.marco-eid-mini-card','.pei-pme-cita'] }
     };
+
     await window.html2pdf().set(opt).from(cont).save();
-    document.body.removeChild(cont);
     showToast('PDF descargado: '+nombreArch);
   }catch(e){
     console.warn('[fcargoDescargarPDF]', e);
     showToast('No se pudo generar el PDF: '+(e.message||e));
+  }finally{
+    if(cont && cont.parentNode) cont.parentNode.removeChild(cont);
   }
 }
 
