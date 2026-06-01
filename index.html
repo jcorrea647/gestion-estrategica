@@ -6031,7 +6031,7 @@ function generarPDFReunion() {
   if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
   if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
   html+='</div>';
-  if(partes.length){html+='<div class="participantes-r">';partes.forEach(function(p){html+='<div class="participante-r">'+p.nombre+(p.correo?' &lt;'+p.correo+'&gt;':'')+'</div>';});html+='</div>';}
+  if(partes.length){html+='<div class="participantes-r">';partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});html+='</div>';}
   html+='</div>';
 
   // COMENTARIOS GENERALES
