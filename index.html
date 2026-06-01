@@ -13921,70 +13921,72 @@ function fcargoCargarHtml2pdf(){
 //
 // Reemplaza la función fcargoDescargarPDF completa por esta.
 // ============================================================
+// ============================================================
+// REEMPLAZO DE fcargoDescargarPDF  (versión que SÍ funciona)
+// ------------------------------------------------------------
+// Cambio de enfoque: en vez de html2pdf/html2canvas (que generaba el PDF
+// en blanco), usa la IMPRESIÓN NATIVA del navegador — el mismo camino del
+// botón "Imprimir / Guardar PDF" que ya comprobamos que renderiza todo el
+// contenido correctamente (incluidas las citas PEI y ANÁLISIS PME).
+//
+// Cómo funciona:
+//   1. Genera el HTML del cargo (forzando, para no reusar uno viejo/vacío).
+//   2. Le pone como <title> "Funciones <Cargo> <Colegio>", que es el nombre
+//      que el navegador sugerirá al guardar como PDF.
+//   3. Abre el documento en una ventana nueva y dispara la impresión.
+//      El usuario elige "Guardar como PDF" en el diálogo.
+//
+// Reemplaza la función fcargoDescargarPDF completa por esta.
+// (Ya NO necesita html2pdf; fcargoCargarHtml2pdf puede quedar sin uso.)
+// ============================================================
 async function fcargoDescargarPDF(cargoId){
   const cargo = (DB.cargos || []).find(c => c.id === cargoId);
   if(!cargo){ showToast('Cargo no encontrado.'); return; }
-  showToast('Generando PDF de '+cargo.nombre+'…');
+  showToast('Preparando documento de '+cargo.nombre+'…');
 
-  let cont = null;
   try{
-    await fcargoCargarHtml2pdf();
-
-    // (1) FORZAR regeneración del HTML: no reutilizar un guardado posiblemente
-    //     vacío. Cuesta cero llamadas a IA (las citas se leen de accion_citas).
+    // Forzar regeneración del HTML para no reutilizar un guardado vacío.
+    // (cero llamadas a IA: las citas se leen de accion_citas)
     const r = await fcargoObtenerHTML(cargoId, true);
     if(!r || !r.html){ showToast('El cargo no tiene contenido para exportar.'); return; }
 
-    // Extraer estilos y el .page del HTML generado
-    const docParsed = new DOMParser().parseFromString(r.html, 'text/html');
-    const styles = Array.from(docParsed.querySelectorAll('style')).map(s => s.outerHTML).join('');
-    const pageEl = docParsed.querySelector('.page') || docParsed.body;
+    // Nombre sugerido para el archivo: "Funciones <Cargo> <Colegio>"
+    const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
+    const tituloDoc = ['Funciones', cargo.nombre || '', colegioNombre]
+      .filter(Boolean).join(' ')
+      .replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
 
-    // Validar que realmente haya contenido (evita exportar un PDF en blanco)
-    const textoPlano = (pageEl.textContent || '').replace(/\s+/g,' ').trim();
-    if(textoPlano.length < 20){
-      showToast('El documento se generó sin contenido. Revisa que el cargo tenga acciones con citas.');
-      return;
+    // Inyectar/reemplazar el <title> del HTML con el nombre deseado: el
+    // navegador usa el <title> como nombre de archivo al "Guardar como PDF".
+    let html = r.html;
+    if(/<title>[\s\S]*?<\/title>/i.test(html)){
+      html = html.replace(/<title>[\s\S]*?<\/title>/i, '<title>'+tituloDoc+'</title>');
+    } else {
+      html = html.replace(/<head>/i, '<head><title>'+tituloDoc+'</title>');
     }
 
-    // (2) Contenedor VISIBLE temporal (no left:-9999px). Lo ponemos arriba de
-    //     todo, opaco, para que html2canvas lo capture bien. Se quita al final.
-    cont = document.createElement('div');
-    cont.style.cssText =
-      'position:fixed;left:0;top:0;width:820px;z-index:2147483647;' +
-      'background:#fff;overflow:visible;';
-    cont.innerHTML = styles + (pageEl.outerHTML || '');
-    cont.querySelectorAll('.print-btn, .no-print').forEach(b => b.remove());
-    document.body.appendChild(cont);
+    // Auto-imprimir al cargar: agregamos un pequeño script y ocultamos el
+    // botón "Imprimir" propio del documento (ya no hace falta).
+    const autoPrint =
+      '<style>.print-btn,.no-print{display:none!important}</style>' +
+      '<script>window.addEventListener("load",function(){' +
+      'try{if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(function(){window.focus();window.print();},300);});}' +
+      'else{setTimeout(function(){window.focus();window.print();},400);}}catch(e){setTimeout(function(){window.print();},400);}' +
+      '});<\/script>';
+    html = html.replace(/<\/body>/i, autoPrint + '</body>');
 
-    // (3) Esperar a que las fuentes web carguen y a que el layout pinte.
-    //     Sin esto, html2canvas suele capturar en blanco.
-    try { if(document.fonts && document.fonts.ready) await document.fonts.ready; } catch(_){}
-    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-    await new Promise(res => setTimeout(res, 250));
-
-    // Nombre: "Funciones <Cargo> <Colegio>.pdf"
-    const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
-    const partes = ['Funciones', cargo.nombre || '', colegioNombre].filter(Boolean).join(' ');
-    // Conservar espacios y tildes legibles; quitar solo caracteres inválidos de archivo
-    const nombreArch = partes.replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim() + '.pdf';
-
-    const opt = {
-      margin: [10,10,10,10],
-      filename: nombreArch,
-      image: { type:'jpeg', quality:0.96 },
-      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff', windowWidth:820 },
-      jsPDF: { unit:'mm', format:'letter', orientation:'portrait' },
-      pagebreak: { mode:['css','legacy'], before:'.ficha-card', avoid:['.marco-eid-mini-card','.pei-pme-cita'] }
-    };
-
-    await window.html2pdf().set(opt).from(cont).save();
-    showToast('PDF descargado: '+nombreArch);
+    // Abrir en ventana nueva (mismo método confiable del botón que ya funciona)
+    const W = window.open('', '_blank');
+    if(!W){
+      showToast('El navegador bloqueó la ventana. Permite las ventanas emergentes para este sitio y reintenta.');
+      return;
+    }
+    W.document.write(html);
+    W.document.close();
+    showToast('Se abrió el documento. Elige "Guardar como PDF" en el diálogo de impresión.');
   }catch(e){
     console.warn('[fcargoDescargarPDF]', e);
-    showToast('No se pudo generar el PDF: '+(e.message||e));
-  }finally{
-    if(cont && cont.parentNode) cont.parentNode.removeChild(cont);
+    showToast('No se pudo preparar el documento: '+(e.message||e));
   }
 }
 
