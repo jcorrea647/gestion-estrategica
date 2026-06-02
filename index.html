@@ -5819,9 +5819,54 @@ async function confirmarCierreReunion() {
   document.getElementById('modalFooter').innerHTML =
     '<button class="btn btn-outline" onclick="closeModal();renderCurrentPanel()">Cerrar</button>' +
     '<button class="btn btn-primary" style="background:#1F4E79" onclick="descargarWordReunion()">📄 Descargar Word</button>' +
-    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>';
+    '<button class="btn btn-primary" onclick="generarPDFReunion()">🖨 Descargar PDF</button>' +
+    '<button class="btn btn-primary" style="background:#D44638" onclick="abrirEmailEnGmail()">📧 Abrir en Gmail</button>';
 
   document.getElementById('modal').style.maxWidth = '560px';
+}
+
+/* =========================================================
+ * "ABRIR EN GMAIL" — Genera URL de Gmail con destinatarios,
+ * CC, asunto y cuerpo precompletados. El usuario adjunta el
+ * Word/PDF manualmente y envía.
+ * ========================================================= */
+function abrirEmailEnGmail(){
+  const reunion = DB.reuniones && DB.reuniones.find(r => r.id === window._reunionActiva);
+  if(!reunion){ showToast('No hay reunión activa'); return; }
+
+  const destinatarios = getDestinatariosEnvio();
+  const copia = (typeof getCopiaEnvio==='function') ? getCopiaEnvio() : [];
+
+  const correosTo = destinatarios.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
+  const correosCc = copia.filter(d => d.correo && d.correo.includes('@')).map(d => d.correo);
+
+  if(!correosTo.length && !correosCc.length){
+    showToast('⚠️ No hay correos válidos en destinatarios ni copia');
+    return;
+  }
+
+  const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
+  const asunto = 'Acta reunión: ' + (reunion.titulo||'Reunión') +
+    (colegioNombre ? ' – ' + colegioNombre : '') +
+    (reunion.fecha ? ' – ' + reunion.fecha : '');
+
+  let cuerpo = 'Estimados/as,\n\n';
+  cuerpo += 'Adjunto el acta de la reunión "' + (reunion.titulo||'') + '"';
+  if(colegioNombre) cuerpo += ' del ' + colegioNombre;
+  if(reunion.fecha) cuerpo += ' realizada el ' + reunion.fecha;
+  cuerpo += '.\n\n';
+  if(reunion.consultor_nombre) cuerpo += 'Consultor responsable: ' + reunion.consultor_nombre + '\n';
+  cuerpo += '\n(Recuerda adjuntar el documento Word o PDF descargado antes de enviar.)\n\n';
+  cuerpo += 'Saludos cordiales.';
+
+  let url = 'https://mail.google.com/mail/?view=cm&fs=1';
+  if(correosTo.length) url += '&to=' + encodeURIComponent(correosTo.join(','));
+  if(correosCc.length) url += '&cc=' + encodeURIComponent(correosCc.join(','));
+  url += '&su=' + encodeURIComponent(asunto);
+  url += '&body=' + encodeURIComponent(cuerpo);
+
+  window.open(url, '_blank');
+  showToast('📧 Abriendo Gmail — recuerda adjuntar el Word/PDF descargado');
 }
 
 /* =========================================================
