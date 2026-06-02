@@ -11711,8 +11711,57 @@ function renderPaso4Constructor(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="plan-btn-back" onclick="planBack()">Volver</button>
-      <button class="plan-btn-next" onclick="planConfirmar()" ${totalPasos===0?'disabled':''}>Guardar plan</button>
+      ${totalPasos===0
+        ? `<button class="plan-btn-next" onclick="planEliminarPlanVacio()" style="background:#dc2626;border-color:#dc2626">Eliminar plan</button>`
+        : `<button class="plan-btn-next" onclick="planConfirmar()">Guardar plan</button>`}
     </div>`;
+}
+
+/* Elimina por completo el plan (BORRADOR o ACTIVA) cuando quedó sin ningún
+   paso. Borra la fila de microacciones (microacciones_pasos cae por cascada),
+   limpia el localStorage y la caché en memoria, y cierra el drawer. Así el
+   plan deja de aparecer en "Mis planes" y en el dashboard. */
+async function planEliminarPlanVacio(){
+  const s = PLAN_STATE;
+  if(!s) return;
+  if(!confirm('Este plan se quedó sin ningún paso.\n\n¿Quieres eliminarlo por completo? Ya no aparecerá en "Mis planes".')) return;
+
+  const idEliminado = s.microaccionId;
+  const accionId = s.accionId, mes = s.mes;
+
+  if(idEliminado){
+    try {
+      // Borrar primero los pasos (por si no hay cascada en la FK) y luego el plan.
+      await sb.from('microacciones_pasos').delete().eq('microaccion_id', idEliminado);
+      const {error} = await sb.from('microacciones').delete().eq('id', idEliminado);
+      if(error){ console.warn('[planEliminarPlanVacio] error DELETE:', error); showToast('Error al eliminar: '+error.message); return; }
+    } catch(e){
+      console.warn('[planEliminarPlanVacio] excepción:', e);
+      showToast('Error al eliminar el plan'); return;
+    }
+  }
+
+  // Limpiar localStorage del borrador asociado
+  planLimpiarLocal();
+
+  // Limpiar caché en memoria
+  if(idEliminado && Array.isArray(DB.microacciones)){
+    DB.microacciones = DB.microacciones.filter(m => m.id !== idEliminado);
+  }
+  if(idEliminado && Array.isArray(DB.pasos)){
+    DB.pasos = DB.pasos.filter(p => p.microaccion_id !== idEliminado);
+  }
+
+  // Cerrar el drawer y refrescar la pantalla de "Mis planes"
+  PLAN_AUTOSAVE_TIMER && clearTimeout(PLAN_AUTOSAVE_TIMER);
+  document.getElementById('planOverlay')?.classList.remove('show');
+  document.getElementById('planDrawer')?.classList.remove('show');
+  document.body.style.overflow='';
+  PLAN_STATE = null;
+  PLAN_LAST_SAVED_HASH = null;
+  if(typeof misPlanesActualizarBadge === 'function') misPlanesActualizarBadge();
+  showToast('Plan eliminado');
+  setTimeout(()=>{ if(typeof showPanel==='function') showPanel('mis-planes'); }, 300);
 }
 
 function planTogglePaso(key, lineaId, pasoIdx){
