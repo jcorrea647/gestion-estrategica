@@ -14093,9 +14093,9 @@ async function fcargoDescargarPDF(cargoId){
     const r = await fcargoObtenerHTML(cargoId, true);
     if(!r || !r.html){ showToast('El cargo no tiene contenido para exportar.'); return; }
 
-    // Nombre sugerido para el archivo: "Acciones por Cargo <Cargo> <Colegio>"
+    // Nombre sugerido para el archivo: "Acciones <Cargo> <Colegio>"
     const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
-    const tituloDoc = ['Acciones por Cargo', cargo.nombre || '', colegioNombre]
+    const tituloDoc = ['Acciones', cargo.nombre || '', colegioNombre]
       .filter(Boolean).join(' ')
       .replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
 
