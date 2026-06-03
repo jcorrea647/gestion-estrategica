@@ -378,6 +378,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
       <span class="colegio-name" id="topColegio"></span>
       <div class="spacer"></div>
       <button class="logout-btn" id="topMapaAccionesBtn" onclick="abrirMapaAcciones()" style="display:none;margin-right:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2)" title="Curaduría institucional de planes pre-computados">🗺 Mapa de Acciones</button>
+      <button class="logout-btn" id="topGrabarReunionBtn" onclick="grabarReunionDesdeTopbar()" style="display:none;margin-right:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2)" title="Grabar la reunión abierta">🎙️ Grabar reunión</button>
       <span class="role-badge" id="topRolBadge" style="margin-right:8px"></span>
       <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:12px" id="topUserName"></span>
       <span class="rbd-badge" id="topRbd"></span>
@@ -1016,6 +1017,9 @@ function setupColegioUI() {
   // Botón Mapa de Acciones: solo visible para superadmin
   const mapaBtn = document.getElementById('topMapaAccionesBtn');
   if(mapaBtn) mapaBtn.style.display = (u.rol === 'superadmin') ? '' : 'none';
+  // Botón Grabar reunión: solo visible para superadmin
+  const grabBtn = document.getElementById('topGrabarReunionBtn');
+  if(grabBtn) grabBtn.style.display = (u.rol === 'superadmin') ? '' : 'none';
   renderSidebar();
   openAreas = new Set(DB.areas.length ? [DB.areas[0].id] : []);
   openObjs = new Set(); filterCargo=''; filterMes='';
@@ -5651,6 +5655,26 @@ let _textoFinal = '';        // acumulado de resultados finales de la sesión
 function toggleGrabacion(){
   if(_grabando) detenerGrabacion();
   else iniciarGrabacion();
+}
+
+/* Atajo desde la barra superior: requiere una reunión ABIERTA.
+ * Abre su modal y arranca la grabación automáticamente. */
+function grabarReunionDesdeTopbar(){
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede grabar reuniones'); return; }
+  // Buscar una reunión abierta: primero la del mes filtrado, si no, cualquiera abierta
+  let reunion = reunionAbiertaDelMes(filterMes);
+  if(!reunion){
+    reunion = (DB.reuniones||[]).slice().reverse().find(function(r){ return !r.cerrada; }) || null;
+  }
+  if(!reunion){
+    showToast('⚠ Abre o crea una reunión primero para poder grabar.');
+    return;
+  }
+  window._editReunionId = reunion.id;
+  window._reunionActiva = reunion.id;
+  openModalReunion(Object.assign({}, reunion, {meses_evaluacion: reunion.meses_evaluacion||[]}));
+  // Esperar a que el modal pinte el textarea y los botones antes de iniciar
+  setTimeout(function(){ iniciarGrabacion(); }, 250);
 }
 
 function iniciarGrabacion(){
