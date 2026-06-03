@@ -5491,7 +5491,12 @@ function openModalReunion(datos) {
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px" id="mesesGrid"><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-03" class="mes-reunion-check" style="accent-color:var(--accent)"> Marzo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-04" class="mes-reunion-check" style="accent-color:var(--accent)"> Abril</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-05" class="mes-reunion-check" style="accent-color:var(--accent)"> Mayo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-06" class="mes-reunion-check" style="accent-color:var(--accent)"> Junio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-07" class="mes-reunion-check" style="accent-color:var(--accent)"> Julio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-08" class="mes-reunion-check" style="accent-color:var(--accent)"> Agosto</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-09" class="mes-reunion-check" style="accent-color:var(--accent)"> Septiembre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-10" class="mes-reunion-check" style="accent-color:var(--accent)"> Octubre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-11" class="mes-reunion-check" style="accent-color:var(--accent)"> Noviembre</label></div>'+
     '<div id="meses-sel-label" style="font-size:11px;color:var(--muted);margin-top:5px">Selecciona al menos un mes</div></div>'+
     '<div class="form-group"><label class="form-label">Comentarios Generales</label>'+
-    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales..." style="min-height:90px">'+(datos.comentarios_generales||'')+'</textarea>'+
+    '<div id="grabadorBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">'+
+      '<button type="button" class="btn btn-outline btn-sm" id="btnGrabar" onclick="toggleGrabacion()">🎙️ Grabar reunión</button>'+
+      '<button type="button" class="btn btn-primary btn-sm" id="btnResumir" style="background:#5B3FB5;border-color:#5B3FB5;display:none" onclick="resumirActaIA()">✨ Resumir con IA</button>'+
+      '<span id="grabEstado" style="font-size:11px;color:var(--muted)">Micrófono detenido</span>'+
+    '</div>'+
+    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales... (o presiona Grabar para dictar la reunión)" style="min-height:120px">'+(datos.comentarios_generales||'')+'</textarea>'+
     '<button type="button" class="btn btn-outline btn-sm" style="margin-top:5px" onclick="guardarComentariosReunion()">Guardar comentarios</button></div>'+
     '<div class="form-group"><label class="form-label">Participantes</label>'+
     renderParticipantesChipsUI(parts)+
@@ -5508,6 +5513,8 @@ function openModalReunion(datos) {
   });
   actualizarLabelMeses();
   if(typeof actualizarContadorChips==='function') actualizarContadorChips();
+  _grabando=false; _recog=null; // reset estado de grabación al abrir el modal
+  if(typeof actualizarUIGrabacion==='function') actualizarUIGrabacion();
 }
 
 /* =========================================================
@@ -5628,6 +5635,139 @@ function actualizarLabelMeses() {
 }
 function getMesesReunion() {
   return [].slice.call(document.querySelectorAll('.mes-reunion-check:checked')).map(function(c){return c.value;});
+}
+
+/* =========================================================
+ * GRABACIÓN DE REUNIÓN — Web Speech API (transcripción en vivo, gratis)
+ * Reinicio automático: el reconocedor de Chrome se corta tras silencios;
+ * lo relanzamos solo mientras el usuario no haya presionado "Detener".
+ * ========================================================= */
+const ACTA_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/procesar-acta-reunion';
+let _recog = null;           // instancia SpeechRecognition
+let _grabando = false;       // estado actual
+let _textoBase = '';         // texto del textarea al iniciar (para no pisarlo)
+let _textoFinal = '';        // acumulado de resultados finales de la sesión
+
+function toggleGrabacion(){
+  if(_grabando) detenerGrabacion();
+  else iniciarGrabacion();
+}
+
+function iniciarGrabacion(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){
+    showToast('⚠ Tu navegador no soporta dictado. Usa Chrome o Edge en computador.');
+    return;
+  }
+  const ta = document.getElementById('r-comentarios');
+  _textoBase = ta && ta.value ? ta.value.trim() : '';
+  _textoFinal = '';
+  _grabando = true;
+
+  _recog = new SR();
+  _recog.lang = 'es-CL';
+  _recog.continuous = true;
+  _recog.interimResults = true;
+
+  _recog.onresult = function(ev){
+    let interim = '';
+    for(let i = ev.resultIndex; i < ev.results.length; i++){
+      const txt = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) _textoFinal += txt + ' ';
+      else interim += txt;
+    }
+    if(ta){
+      const partes = [_textoBase, _textoFinal.trim(), interim.trim()].filter(Boolean);
+      ta.value = partes.join(_textoBase ? '\n' : '');
+      ta.scrollTop = ta.scrollHeight;
+    }
+  };
+
+  _recog.onerror = function(ev){
+    if(ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){
+      showToast('⚠ Debes permitir el acceso al micrófono.');
+      detenerGrabacion();
+    }
+    // 'no-speech' / 'aborted' se ignoran: el onend relanza si seguimos grabando
+  };
+
+  // Reinicio automático: si Chrome corta la sesión y seguimos grabando, relanzamos
+  _recog.onend = function(){
+    if(_grabando){
+      try { _recog.start(); } catch(e){ /* ya iniciando */ }
+    }
+  };
+
+  try { _recog.start(); } catch(e){}
+  actualizarUIGrabacion();
+}
+
+function detenerGrabacion(){
+  _grabando = false;
+  if(_recog){ try { _recog.stop(); } catch(e){} }
+  // Consolidar el texto final en el textarea (sin el interim parcial)
+  const ta = document.getElementById('r-comentarios');
+  if(ta){
+    const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
+    ta.value = partes.join(_textoBase ? '\n' : '');
+  }
+  actualizarUIGrabacion();
+}
+
+function actualizarUIGrabacion(){
+  const btn = document.getElementById('btnGrabar');
+  const est = document.getElementById('grabEstado');
+  const btnRes = document.getElementById('btnResumir');
+  const ta = document.getElementById('r-comentarios');
+  if(_grabando){
+    if(btn){ btn.textContent = '⏹️ Detener'; btn.style.background = '#C0392B'; btn.style.color = '#fff'; btn.style.borderColor = '#C0392B'; }
+    if(est){ est.textContent = '🔴 Grabando… habla con el micrófono cerca'; est.style.color = '#C0392B'; }
+    if(btnRes) btnRes.style.display = 'none';
+  } else {
+    if(btn){ btn.textContent = '🎙️ Grabar reunión'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
+    if(est){ est.textContent = 'Micrófono detenido'; est.style.color = 'var(--muted)'; }
+    // Mostrar "Resumir" solo si hay texto suficiente
+    if(btnRes) btnRes.style.display = (ta && ta.value.trim().length > 20) ? '' : 'none';
+  }
+}
+
+async function resumirActaIA(){
+  const ta = document.getElementById('r-comentarios');
+  const transcripcion = ta ? ta.value.trim() : '';
+  if(transcripcion.length < 20){ showToast('No hay suficiente texto para resumir.'); return; }
+  const btnRes = document.getElementById('btnResumir');
+  if(btnRes){ btnRes.disabled = true; btnRes.textContent = '⏳ Resumiendo...'; }
+  try {
+    const titulo = (document.getElementById('r-titulo')||{}).value || '';
+    const fecha = (document.getElementById('r-fecha')||{}).value || '';
+    const participantes = (typeof getParticipantes === 'function') ? getParticipantes() : [];
+    const resp = await fetch(ACTA_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        colegio: DB.colegio ? DB.colegio.nombre : '',
+        titulo: titulo, fecha: fecha,
+        participantes: participantes,
+        transcripcion: transcripcion
+      })
+    });
+    const result = await resp.json().catch(function(){return {};});
+    if(!resp.ok) throw new Error(result.error || 'Error en el servicio de IA');
+    if(!result.actaTexto) throw new Error('Respuesta vacía de la IA');
+    // Volcamos el acta estructurada conservando la transcripción cruda debajo (Opción A)
+    if(ta){
+      ta.value = result.actaTexto + '\n\n— — — TRANSCRIPCIÓN ORIGINAL — — —\n' + transcripcion;
+    }
+    showToast('✨ Acta generada. Revisa y guarda los comentarios.');
+  } catch(e){
+    if(e.message && e.message.indexOf('Failed to fetch') >= 0){
+      showToast('⚠ La función procesar-acta-reunion aún no está desplegada.');
+    } else {
+      showToast('Error: ' + e.message);
+    }
+  } finally {
+    if(btnRes){ btnRes.disabled = false; btnRes.textContent = '✨ Resumir con IA'; }
+  }
 }
 
 async function guardarComentariosReunion() {
