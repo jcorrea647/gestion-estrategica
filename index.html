@@ -1034,7 +1034,7 @@ function renderSidebar() {
     '<div class="nav-item" onclick="showPanel(\'seguimiento\')" id="nav-seguimiento"><span class="icon">e</span> Ingresar seguimiento</div>' +
     '<div class="nav-item" onclick="showPanel(\'mis-planes\')" id="nav-mis-planes"><span class="icon">p</span> Mis planes <span id="nav-mis-planes-count" style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px;display:none"></span></div>' +
     '<div class="nav-item" onclick="showPanel(\'ver-reuniones\')" id="nav-ver-reuniones"><span class="icon">r</span> Reuniones</div>' +
-    '<div class="nav-item" onclick="showPanel(\'funciones-cargo\')" id="nav-funciones-cargo"><span class="icon">f</span> Funciones por cargo</div>' +
+    '<div class="nav-item" onclick="showPanel(\'funciones-cargo\')" id="nav-funciones-cargo"><span class="icon">f</span> Acciones por Cargo</div>' +
     (cc ? '<div class="nav-item" onclick="showPanel(\'biblioteca\')" id="nav-biblioteca"><span class="icon">b</span> Biblioteca</div>' : '') +
     '<div class="nav-item" onclick="showPanel(\'informes\')" id="nav-informes"><span class="icon">i</span> Informes</div>' +
     '</div>' +
@@ -13641,7 +13641,7 @@ async function renderFuncionesCargo(){
 
   host.innerHTML =
     '<div class="page-header">' +
-      '<div class="page-title">Funciones por cargo</div>' +
+      '<div class="page-title">Acciones por Cargo</div>' +
       '<div class="page-sub">Los cargos ya generados se cargan al instante; haz clic en uno para desplegar su documento. Marca varios y genera sus PDFs en lote (cada uno en su archivo). Solo «Generar» o «Regenerar» consultan la IA.</div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:14px;padding:14px 16px">' +
@@ -14093,9 +14093,9 @@ async function fcargoDescargarPDF(cargoId){
     const r = await fcargoObtenerHTML(cargoId, true);
     if(!r || !r.html){ showToast('El cargo no tiene contenido para exportar.'); return; }
 
-    // Nombre sugerido para el archivo: "Funciones <Cargo> <Colegio>"
+    // Nombre sugerido para el archivo: "Acciones por Cargo <Cargo> <Colegio>"
     const colegioNombre = (DB.colegio && DB.colegio.nombre) ? DB.colegio.nombre : '';
-    const tituloDoc = ['Funciones', cargo.nombre || '', colegioNombre]
+    const tituloDoc = ['Acciones por Cargo', cargo.nombre || '', colegioNombre]
       .filter(Boolean).join(' ')
       .replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
 
@@ -14450,7 +14450,7 @@ function fcargoConstruirHTML(cargoId, accionIdFiltro){
   const fichasHTML = items.map(({ac, obj, area}) => fcargoBuildFicha(ac, obj, area, cargoBar)).join('');
 
   const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
-    '<title>Funciones y estándares — '+cargoNombre+'</title>' +
+    '<title>Acciones por Cargo — '+cargoNombre+'</title>' +
     '<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">' +
     '<style>'+css+'</style></head><body>' +
     '<button class="print-btn" onclick="window.print()">Imprimir / Guardar PDF</button>' +
