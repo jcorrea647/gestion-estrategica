@@ -5517,7 +5517,17 @@ function openModalReunion(datos) {
   });
   actualizarLabelMeses();
   if(typeof actualizarContadorChips==='function') actualizarContadorChips();
-  _grabando=false; _recog=null; // reset estado de grabación al abrir el modal
+  // Grabación en background (Opción B): si NO hay grabación activa, resetear estado.
+  // Si SÍ hay grabación activa, NO tocar _recog y re-sincronizar el textarea visible.
+  if(!_grabando){
+    _recog = null;
+  } else {
+    const taLive = document.getElementById('r-comentarios');
+    if(taLive){
+      const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
+      taLive.value = partes.join(_textoBase ? '\n' : '');
+    }
+  }
   if(typeof actualizarUIGrabacion==='function') actualizarUIGrabacion();
 }
 
@@ -5649,18 +5659,30 @@ function getMesesReunion() {
 const ACTA_FN_URL = 'https://tykbytaymysxgvyvlgah.supabase.co/functions/v1/procesar-acta-reunion';
 let _recog = null;           // instancia SpeechRecognition
 let _grabando = false;       // estado actual
-let _textoBase = '';         // texto del textarea al iniciar (para no pisarlo)
-let _textoFinal = '';        // acumulado de resultados finales de la sesión
+let _textoBase = '';         // texto previo de la reunión al iniciar (para no pisarlo)
+let _textoFinal = '';        // acumulado de resultados finales de la sesión (en memoria)
+let _grabReunionId = null;   // id de la reunión que se está grabando (background)
+
+// Aviso al recargar/cerrar la pestaña con grabación activa (Opción B)
+window.addEventListener('beforeunload', function(e){
+  if(_grabando){ e.preventDefault(); e.returnValue = ''; }
+});
 
 function toggleGrabacion(){
   if(_grabando) detenerGrabacion();
-  else iniciarGrabacion();
+  else {
+    // Iniciar desde el modal: el id de la reunión es el que está en edición
+    _grabReunionId = window._editReunionId || window._reunionActiva || null;
+    iniciarGrabacion();
+  }
 }
 
-/* Atajo desde la barra superior: requiere una reunión ABIERTA.
- * Abre su modal y arranca la grabación automáticamente. */
+/* Atajo/estado desde la barra superior. Es un TOGGLE:
+ * - Si ya hay grabación activa (background), la detiene y autoguarda.
+ * - Si no, busca una reunión ABIERTA, abre su modal e inicia la grabación. */
 function grabarReunionDesdeTopbar(){
   if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede grabar reuniones'); return; }
+  if(_grabando){ detenerGrabacion(); return; }
   // Buscar una reunión abierta: primero la del mes filtrado, si no, cualquiera abierta
   let reunion = reunionAbiertaDelMes(filterMes);
   if(!reunion){
@@ -5672,9 +5694,25 @@ function grabarReunionDesdeTopbar(){
   }
   window._editReunionId = reunion.id;
   window._reunionActiva = reunion.id;
+  _grabReunionId = reunion.id;
   openModalReunion(Object.assign({}, reunion, {meses_evaluacion: reunion.meses_evaluacion||[]}));
   // Esperar a que el modal pinte el textarea y los botones antes de iniciar
   setTimeout(function(){ iniciarGrabacion(); }, 250);
+}
+
+/* Refleja en el botón de la topbar si hay una grabación activa en background */
+function actualizarBotonTopbarGrabacion(){
+  const b = document.getElementById('topGrabarReunionBtn');
+  if(!b) return;
+  if(_grabando){
+    b.innerHTML = '⏹️ Detener grabación';
+    b.style.background = 'rgba(192,57,43,.85)';
+    b.style.borderColor = 'rgba(192,57,43,.9)';
+  } else {
+    b.innerHTML = '🎙️ Grabar reunión';
+    b.style.background = 'rgba(255,255,255,.12)';
+    b.style.borderColor = 'rgba(255,255,255,.2)';
+  }
 }
 
 function iniciarGrabacion(){
@@ -5683,8 +5721,16 @@ function iniciarGrabacion(){
     showToast('⚠ Tu navegador no soporta dictado. Usa Chrome o Edge en computador.');
     return;
   }
+  // Si no se fijó la reunión a grabar, tomar la que esté en edición/activa
+  if(!_grabReunionId) _grabReunionId = window._editReunionId || window._reunionActiva || null;
+  // Texto previo: del textarea si está visible; si no, del registro en memoria/DB
   const ta = document.getElementById('r-comentarios');
-  _textoBase = ta && ta.value ? ta.value.trim() : '';
+  if(ta){
+    _textoBase = ta.value ? ta.value.trim() : '';
+  } else {
+    const r = (DB.reuniones||[]).find(function(x){ return x.id === _grabReunionId; });
+    _textoBase = (r && r.comentarios_generales) ? r.comentarios_generales.trim() : '';
+  }
   _textoFinal = '';
   _grabando = true;
 
@@ -5700,10 +5746,12 @@ function iniciarGrabacion(){
       if(ev.results[i].isFinal) _textoFinal += txt + ' ';
       else interim += txt;
     }
-    if(ta){
+    // Volcar al textarea SOLO si está visible (modal abierto)
+    const taLive = document.getElementById('r-comentarios');
+    if(taLive){
       const partes = [_textoBase, _textoFinal.trim(), interim.trim()].filter(Boolean);
-      ta.value = partes.join(_textoBase ? '\n' : '');
-      ta.scrollTop = ta.scrollHeight;
+      taLive.value = partes.join(_textoBase ? '\n' : '');
+      taLive.scrollTop = taLive.scrollHeight;
     }
   };
 
@@ -5724,18 +5772,43 @@ function iniciarGrabacion(){
 
   try { _recog.start(); } catch(e){}
   actualizarUIGrabacion();
+  actualizarBotonTopbarGrabacion();
+  showToast('🔴 Grabando. Puedes cerrar esta ventana: la grabación sigue.');
 }
 
 function detenerGrabacion(){
   _grabando = false;
   if(_recog){ try { _recog.stop(); } catch(e){} }
-  // Consolidar el texto final en el textarea (sin el interim parcial)
+  // Texto consolidado (sin interim parcial)
+  const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
+  const textoFinal = partes.join(_textoBase ? '\n' : '');
+  // Volcar al textarea si está visible
   const ta = document.getElementById('r-comentarios');
-  if(ta){
-    const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
-    ta.value = partes.join(_textoBase ? '\n' : '');
-  }
+  if(ta) ta.value = textoFinal;
   actualizarUIGrabacion();
+  actualizarBotonTopbarGrabacion();
+  // Autoguardar en BD para no perder lo grabado en background (Opción B)
+  autoguardarGrabacion(textoFinal);
+}
+
+/* Guarda en BD el texto grabado en la reunión correspondiente, aunque el modal
+ * esté cerrado. Minimiza pérdida de datos en grabación de fondo. */
+async function autoguardarGrabacion(texto){
+  const rId = _grabReunionId;
+  if(!rId || !texto || !texto.trim()){ return; }
+  const r = (DB.reuniones||[]).find(function(x){ return x.id === rId; });
+  if(r && r.cerrada){ return; } // no escribir sobre reuniones cerradas
+  try {
+    const { error } = await sb.from('reuniones')
+      .update({ comentarios_generales: texto, updated_at: new Date().toISOString() })
+      .eq('id', rId);
+    if(error){ showToast('Error al guardar lo grabado: ' + error.message); return; }
+    const i = (DB.reuniones||[]).findIndex(function(x){ return x.id === rId; });
+    if(i >= 0) DB.reuniones[i] = Object.assign({}, DB.reuniones[i], { comentarios_generales: texto });
+    showToast('✔ Grabación guardada en la reunión.');
+  } catch(e){
+    showToast('Error al guardar lo grabado.');
+  }
 }
 
 function actualizarUIGrabacion(){
@@ -5745,7 +5818,7 @@ function actualizarUIGrabacion(){
   const ta = document.getElementById('r-comentarios');
   if(_grabando){
     if(btn){ btn.textContent = '⏹️ Detener'; btn.style.background = '#C0392B'; btn.style.color = '#fff'; btn.style.borderColor = '#C0392B'; }
-    if(est){ est.textContent = '🔴 Grabando… habla con el micrófono cerca'; est.style.color = '#C0392B'; }
+    if(est){ est.textContent = '🔴 Grabando… puedes cerrar la ventana y sigue grabando'; est.style.color = '#C0392B'; }
     if(btnRes) btnRes.style.display = 'none';
   } else {
     if(btn){ btn.textContent = '🎙️ Grabar reunión'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
