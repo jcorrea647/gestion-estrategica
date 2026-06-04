@@ -3914,6 +3914,7 @@ function autoBackupReunion(reunion) {
       ['Consultor', reunion.consultor_nombre||'—'],
       ['Meses evaluados', (reunion.meses_evaluacion||[]).map(m=>fmtMes(m)).join(', ')],
       ['Comentarios generales', reunion.comentarios_generales||'—'],
+      ['Transcripción / Acta', reunion.transcripcion_reunion||'—'],
       ['Backup generado', new Date().toLocaleString('es-CL')],
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(info);
@@ -5333,6 +5334,7 @@ async function consultarIAInformes() {
     DB.reuniones.forEach(r=>{
       contexto += 'Reunión: '+r.titulo+' ('+r.fecha+')\n';
       if(r.comentarios_generales) contexto += '  Comentarios: '+r.comentarios_generales+'\n';
+      if(r.transcripcion_reunion) contexto += '  Transcripción/Acta: '+r.transcripcion_reunion+'\n';
     });
   }
 
@@ -5386,7 +5388,7 @@ async function consultarIA() {
         });
       });
     });
-    return '=== REUNIÓN: '+r.titulo+' ===\nFecha: '+r.fecha+'\nMeses evaluados: '+(meses||'—')+'\nConsultor: '+(r.consultor_nombre||'—')+'\nParticipantes: '+(partes||'—')+'\nComentarios generales: '+(r.comentarios_generales||'—')+'\nSeguimiento:\n'+(segsTexto.length?segsTexto.join('\n'):'  (sin seguimiento registrado)');
+    return '=== REUNIÓN: '+r.titulo+' ===\nFecha: '+r.fecha+'\nMeses evaluados: '+(meses||'—')+'\nConsultor: '+(r.consultor_nombre||'—')+'\nParticipantes: '+(partes||'—')+'\nComentarios generales: '+(r.comentarios_generales||'—')+'\nTranscripción/Acta: '+(r.transcripcion_reunion||'—')+'\nSeguimiento:\n'+(segsTexto.length?segsTexto.join('\n'):'  (sin seguimiento registrado)');
   }).join('\n\n');
 
   const prompt = 'Eres un asistente de gestión escolar. Tienes acceso al historial completo de reuniones de mejora del colegio "'+DB.colegio.nombre+'". Responde la siguiente pregunta de forma clara, concisa y en español, citando fechas y datos específicos cuando corresponda.\n\nHISTORIAL DE REUNIONES:\n\n'+contexto+'\n\nPREGUNTA: '+query;
@@ -5469,7 +5471,7 @@ function abrirCrearReunion() {
   window._editReunionId=null;
   const hoy=new Date().toISOString().split('T')[0];
   const mesActual=filterMes||new Date().toISOString().slice(0,7);
-  openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
+  openModalReunion({mes:mesActual,meses_evaluacion:[],fecha:hoy,titulo:'Revision de metas',consultor_nombre:'',consultor_correo:'',comentarios_generales:'',transcripcion_reunion:'',reunion_participantes:[]});
 }
 function abrirEditarReunion() {
   if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede editar reuniones'); return; }
@@ -5495,13 +5497,15 @@ function openModalReunion(datos) {
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px" id="mesesGrid"><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-03" class="mes-reunion-check" style="accent-color:var(--accent)"> Marzo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-04" class="mes-reunion-check" style="accent-color:var(--accent)"> Abril</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-05" class="mes-reunion-check" style="accent-color:var(--accent)"> Mayo</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-06" class="mes-reunion-check" style="accent-color:var(--accent)"> Junio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-07" class="mes-reunion-check" style="accent-color:var(--accent)"> Julio</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-08" class="mes-reunion-check" style="accent-color:var(--accent)"> Agosto</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-09" class="mes-reunion-check" style="accent-color:var(--accent)"> Septiembre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-10" class="mes-reunion-check" style="accent-color:var(--accent)"> Octubre</label><label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;cursor:pointer"><input type="checkbox" value="2026-11" class="mes-reunion-check" style="accent-color:var(--accent)"> Noviembre</label></div>'+
     '<div id="meses-sel-label" style="font-size:11px;color:var(--muted);margin-top:5px">Selecciona al menos un mes</div></div>'+
     '<div class="form-group"><label class="form-label">Comentarios Generales</label>'+
+    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales que escribes a mano..." style="min-height:90px">'+(datos.comentarios_generales||'')+'</textarea>'+
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:5px" onclick="guardarComentariosReunion()">Guardar comentarios</button></div>'+
+    '<div class="form-group"><label class="form-label">Transcripción / Acta de la reunión</label>'+
     '<div id="grabadorBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">'+
       '<button type="button" class="btn btn-outline btn-sm" id="btnGrabar" onclick="toggleGrabacion()">🎙️ Grabar reunión</button>'+
       '<button type="button" class="btn btn-primary btn-sm" id="btnResumir" style="background:#5B3FB5;border-color:#5B3FB5;display:none" onclick="resumirActaIA()">✨ Resumir con IA</button>'+
       '<span id="grabEstado" style="font-size:11px;color:var(--muted)">Micrófono detenido</span>'+
     '</div>'+
-    '<textarea class="form-textarea" id="r-comentarios" placeholder="Comentarios generales... (o presiona Grabar para dictar la reunión)" style="min-height:120px">'+(datos.comentarios_generales||'')+'</textarea>'+
-    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:5px" onclick="guardarComentariosReunion()">Guardar comentarios</button></div>'+
+    '<textarea class="form-textarea" id="r-transcripcion" placeholder="Aquí cae lo que grabas por voz y el resumen de la IA. También puedes editarlo a mano." style="min-height:120px">'+(datos.transcripcion_reunion||'')+'</textarea></div>'+
     '<div class="form-group"><label class="form-label">Participantes</label>'+
     renderParticipantesChipsUI(parts)+
     '</div>';
@@ -5522,7 +5526,7 @@ function openModalReunion(datos) {
   if(!_grabando){
     _recog = null;
   } else {
-    const taLive = document.getElementById('r-comentarios');
+    const taLive = document.getElementById('r-transcripcion');
     if(taLive){
       const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
       taLive.value = partes.join(_textoBase ? '\n' : '');
@@ -5724,12 +5728,12 @@ function iniciarGrabacion(){
   // Si no se fijó la reunión a grabar, tomar la que esté en edición/activa
   if(!_grabReunionId) _grabReunionId = window._editReunionId || window._reunionActiva || null;
   // Texto previo: del textarea si está visible; si no, del registro en memoria/DB
-  const ta = document.getElementById('r-comentarios');
+  const ta = document.getElementById('r-transcripcion');
   if(ta){
     _textoBase = ta.value ? ta.value.trim() : '';
   } else {
     const r = (DB.reuniones||[]).find(function(x){ return x.id === _grabReunionId; });
-    _textoBase = (r && r.comentarios_generales) ? r.comentarios_generales.trim() : '';
+    _textoBase = (r && r.transcripcion_reunion) ? r.transcripcion_reunion.trim() : '';
   }
   _textoFinal = '';
   _grabando = true;
@@ -5747,7 +5751,7 @@ function iniciarGrabacion(){
       else interim += txt;
     }
     // Volcar al textarea SOLO si está visible (modal abierto)
-    const taLive = document.getElementById('r-comentarios');
+    const taLive = document.getElementById('r-transcripcion');
     if(taLive){
       const partes = [_textoBase, _textoFinal.trim(), interim.trim()].filter(Boolean);
       taLive.value = partes.join(_textoBase ? '\n' : '');
@@ -5783,7 +5787,7 @@ function detenerGrabacion(){
   const partes = [_textoBase, _textoFinal.trim()].filter(Boolean);
   const textoFinal = partes.join(_textoBase ? '\n' : '');
   // Volcar al textarea si está visible
-  const ta = document.getElementById('r-comentarios');
+  const ta = document.getElementById('r-transcripcion');
   if(ta) ta.value = textoFinal;
   actualizarUIGrabacion();
   actualizarBotonTopbarGrabacion();
@@ -5800,11 +5804,11 @@ async function autoguardarGrabacion(texto){
   if(r && r.cerrada){ return; } // no escribir sobre reuniones cerradas
   try {
     const { error } = await sb.from('reuniones')
-      .update({ comentarios_generales: texto, updated_at: new Date().toISOString() })
+      .update({ transcripcion_reunion: texto, updated_at: new Date().toISOString() })
       .eq('id', rId);
     if(error){ showToast('Error al guardar lo grabado: ' + error.message); return; }
     const i = (DB.reuniones||[]).findIndex(function(x){ return x.id === rId; });
-    if(i >= 0) DB.reuniones[i] = Object.assign({}, DB.reuniones[i], { comentarios_generales: texto });
+    if(i >= 0) DB.reuniones[i] = Object.assign({}, DB.reuniones[i], { transcripcion_reunion: texto });
     showToast('✔ Grabación guardada en la reunión.');
   } catch(e){
     showToast('Error al guardar lo grabado.');
@@ -5815,7 +5819,7 @@ function actualizarUIGrabacion(){
   const btn = document.getElementById('btnGrabar');
   const est = document.getElementById('grabEstado');
   const btnRes = document.getElementById('btnResumir');
-  const ta = document.getElementById('r-comentarios');
+  const ta = document.getElementById('r-transcripcion');
   if(_grabando){
     if(btn){ btn.textContent = '⏹️ Detener'; btn.style.background = '#C0392B'; btn.style.color = '#fff'; btn.style.borderColor = '#C0392B'; }
     if(est){ est.textContent = '🔴 Grabando… puedes cerrar la ventana y sigue grabando'; est.style.color = '#C0392B'; }
@@ -5829,7 +5833,7 @@ function actualizarUIGrabacion(){
 }
 
 async function resumirActaIA(){
-  const ta = document.getElementById('r-comentarios');
+  const ta = document.getElementById('r-transcripcion');
   const transcripcion = ta ? ta.value.trim() : '';
   if(transcripcion.length < 20){ showToast('No hay suficiente texto para resumir.'); return; }
   const btnRes = document.getElementById('btnResumir');
@@ -5897,10 +5901,11 @@ async function guardarReunion() {
   const consultor=document.getElementById('r-consultor')&&document.getElementById('r-consultor').value.trim();
   const correoC=document.getElementById('r-correo-cons')&&document.getElementById('r-correo-cons').value.trim();
   const comentarios=document.getElementById('r-comentarios')&&document.getElementById('r-comentarios').value.trim();
+  const transcripcion=document.getElementById('r-transcripcion')&&document.getElementById('r-transcripcion').value.trim();
   const participantes=getParticipantes();
   const mesesEval=getMesesReunion();
   const mes=mesesEval.length?mesesEval[0]:filterMes||new Date().toISOString().slice(0,7);
-  const payload={colegio_id:SESSION.colegioActivo,mes:mes,meses_evaluacion:mesesEval,fecha:fecha,titulo:titulo,consultor_nombre:consultor||null,consultor_correo:correoC||null,comentarios_generales:comentarios||null,updated_at:new Date().toISOString()};
+  const payload={colegio_id:SESSION.colegioActivo,mes:mes,meses_evaluacion:mesesEval,fecha:fecha,titulo:titulo,consultor_nombre:consultor||null,consultor_correo:correoC||null,comentarios_generales:comentarios||null,transcripcion_reunion:transcripcion||null,updated_at:new Date().toISOString()};
   var rId=window._editReunionId;
   if(rId){
     var res=await sb.from('reuniones').update(payload).eq('id',rId);
@@ -6243,6 +6248,9 @@ function descargarWordReunion() {
   if(reunion.comentarios_generales) {
     body += `<h2>Comentarios Generales</h2><p>${reunion.comentarios_generales.replace(/\n/g,'<br>')}</p>`;
   }
+  if(reunion.transcripcion_reunion) {
+    body += `<h2>Transcripción / Acta de la Reunión</h2><p>${reunion.transcripcion_reunion.replace(/\n/g,'<br>')}</p>`;
+  }
 
   body += `<h2>Seguimiento por Acción</h2>`;
   if(accionesConSeg.length) {
@@ -6343,6 +6351,12 @@ function generarPDFReunion() {
   html+='<div class="section"><div class="section-title">Comentarios Generales</div>';
   html+=reunion.comentarios_generales?'<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>':'<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
   html+='</div>';
+  // TRANSCRIPCIÓN / ACTA DE LA REUNIÓN
+  if(reunion.transcripcion_reunion){
+    html+='<div class="section"><div class="section-title">Transcripción / Acta de la Reunión</div>';
+    html+='<div class="comentario-box">'+reunion.transcripcion_reunion.replace(/\n/g,'<br>')+'</div>';
+    html+='</div>';
+  }
 
   // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario)
   html+='<div class="section"><div class="section-title">Comentarios Registrados</div>';
