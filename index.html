@@ -5505,7 +5505,7 @@ function openModalReunion(datos) {
       '<button type="button" class="btn btn-primary btn-sm" id="btnResumir" style="background:#5B3FB5;border-color:#5B3FB5;display:none" onclick="resumirActaIA()">✨ Resumir con IA</button>'+
       '<span id="grabEstado" style="font-size:11px;color:var(--muted)">Micrófono detenido</span>'+
     '</div>'+
-    '<textarea class="form-textarea" id="r-transcripcion" placeholder="Aquí cae lo que grabas por voz y el resumen de la IA. También puedes editarlo a mano." style="min-height:120px">'+(datos.transcripcion_reunion||'')+'</textarea></div>'+
+    '<textarea class="form-textarea" id="r-transcripcion" oninput="if(!_grabando&&typeof actualizarUIGrabacion===\'function\')actualizarUIGrabacion()" placeholder="Aquí cae lo que grabas por voz y el resumen de la IA. También puedes editarlo a mano." style="min-height:120px">'+(datos.transcripcion_reunion||'')+'</textarea></div>'+
     '<div class="form-group"><label class="form-label">Participantes</label>'+
     renderParticipantesChipsUI(parts)+
     '</div>';
