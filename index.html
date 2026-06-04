@@ -5837,7 +5837,13 @@ const ENCABEZADO_RESUMEN_IA = '═══ RESUMEN IA ═══';
 
 // Construye lo que se MUESTRA en el textarea de Comentarios: lo manual + (si hay) el resumen IA debajo
 function componerComentariosVista(comentarios, resumenIa){
-  const base = (comentarios||'').trim();
+  // Sanear: si los comentarios ya traen un encabezado embebido (de un guardado
+  // previo defectuoso), quedarse solo con la parte anterior al encabezado para
+  // no duplicar el bloque de resumen.
+  let base = (comentarios||'');
+  const idxBase = base.indexOf(ENCABEZADO_RESUMEN_IA);
+  if(idxBase >= 0) base = base.slice(0, idxBase);
+  base = base.trim();
   const res = (resumenIa||'').trim();
   if(!res) return base;
   return [base, ENCABEZADO_RESUMEN_IA, res].filter(Boolean).join('\n\n');
