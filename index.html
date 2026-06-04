@@ -5855,11 +5855,20 @@ async function resumirActaIA(){
     const result = await resp.json().catch(function(){return {};});
     if(!resp.ok) throw new Error(result.error || 'Error en el servicio de IA');
     if(!result.actaTexto) throw new Error('Respuesta vacía de la IA');
-    // Volcamos el acta estructurada conservando la transcripción cruda debajo (Opción A)
-    if(ta){
-      ta.value = result.actaTexto + '\n\n— — — TRANSCRIPCIÓN ORIGINAL — — —\n' + transcripcion;
+    // El resumen se AGREGA al final de Comentarios Generales, sin borrar lo escrito.
+    // La transcripción queda intacta en su campo.
+    const taCom = document.getElementById('r-comentarios');
+    if(taCom){
+      const encabezado = '═══ RESUMEN IA ═══';
+      const previo = taCom.value.trim();
+      // Si ya había un resumen IA pegado antes, lo reemplazamos en vez de duplicar
+      const idx = previo.indexOf(encabezado);
+      const base = idx >= 0 ? previo.slice(0, idx).trim() : previo;
+      const partes = [base, encabezado, result.actaTexto].filter(Boolean);
+      taCom.value = partes.join('\n\n');
+      taCom.scrollTop = taCom.scrollHeight;
     }
-    showToast('✨ Acta generada. Revisa y guarda los comentarios.');
+    showToast('✨ Resumen IA agregado a Comentarios Generales. Revisa y guarda.');
   } catch(e){
     if(e.message && e.message.indexOf('Failed to fetch') >= 0){
       showToast('⚠ La función procesar-acta-reunion aún no está desplegada.');
