@@ -6303,14 +6303,14 @@ function descargarWordReunion() {
   body += `<div class="dest"><strong>Destinatarios:</strong> ${destHTML}</div>`;
   body += `<div class="dest"><strong>Con copia a:</strong> ${copiaHTML}</div>`;
 
-  if(reunion.comentarios_generales) {
-    body += `<h2>Comentarios Generales</h2><p>${reunion.comentarios_generales.replace(/\n/g,'<br>')}</p>`;
-  }
-  if(reunion.resumen_ia) {
-    body += `<h2>Resumen IA</h2><p>${reunion.resumen_ia.replace(/\n/g,'<br>')}</p>`;
-  }
-  if(reunion.transcripcion_reunion) {
-    body += `<h2>Transcripción / Acta de la Reunión</h2><p>${reunion.transcripcion_reunion.replace(/\n/g,'<br>')}</p>`;
+  if(reunion.comentarios_generales || reunion.resumen_ia) {
+    body += `<h2>Comentarios Generales</h2>`;
+    if(reunion.comentarios_generales) {
+      body += `<p>${reunion.comentarios_generales.replace(/\n/g,'<br>')}</p>`;
+    }
+    if(reunion.resumen_ia) {
+      body += `<p>${reunion.resumen_ia.replace(/\n/g,'<br>')}</p>`;
+    }
   }
 
   body += `<h2>Seguimiento por Acción</h2>`;
@@ -6408,21 +6408,19 @@ function generarPDFReunion() {
   if(partes.length){html+='<div class="participantes-r">';partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){var _r=(DB.responsables||[]).find(function(x){return (x.nombre||'').trim().toLowerCase()===(p.nombre||'').trim().toLowerCase();});var _cargo=_r&&_r.cargo?_r.cargo:'';html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(_cargo?'<span class="pr-cargo">'+_cargo+'</span>':'')+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});html+='</div>';}
   html+='</div>';
 
-  // COMENTARIOS GENERALES
+  // COMENTARIOS GENERALES (incluye el resumen IA, sin título propio)
   html+='<div class="section"><div class="section-title">Comentarios Generales</div>';
-  html+=reunion.comentarios_generales?'<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>':'<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
+  if(reunion.comentarios_generales || reunion.resumen_ia){
+    if(reunion.comentarios_generales){
+      html+='<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>';
+    }
+    if(reunion.resumen_ia){
+      html+='<div class="comentario-box">'+reunion.resumen_ia.replace(/\n/g,'<br>')+'</div>';
+    }
+  } else {
+    html+='<p style="color:#7A7670;font-style:italic">Sin comentarios generales registrados.</p>';
+  }
   html+='</div>';
-  // RESUMEN IA
-  if(reunion.resumen_ia){
-    html+='<div class="section"><div class="section-title">Resumen IA</div>';
-    html+='<div class="comentario-box">'+reunion.resumen_ia.replace(/\n/g,'<br>')+'</div>';
-    html+='</div>';
-  }
-  if(reunion.transcripcion_reunion){
-    html+='<div class="section"><div class="section-title">Transcripción / Acta de la Reunión</div>';
-    html+='<div class="comentario-box">'+reunion.transcripcion_reunion.replace(/\n/g,'<br>')+'</div>';
-    html+='</div>';
-  }
 
   // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario)
   html+='<div class="section"><div class="section-title">Comentarios Registrados</div>';
