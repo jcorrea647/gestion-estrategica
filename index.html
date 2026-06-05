@@ -5502,7 +5502,7 @@ function openModalReunion(datos) {
     '<div class="form-group"><label class="form-label">Transcripción / Acta de la reunión</label>'+
     '<div id="grabadorBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">'+
       '<button type="button" class="btn btn-outline btn-sm" id="btnGrabar" onclick="toggleGrabacion()">🎙️ Grabar reunión</button>'+
-      '<button type="button" class="btn btn-primary btn-sm" id="btnResumir" style="background:#5B3FB5;border-color:#5B3FB5;display:none" onclick="resumirActaIA()">✨ Resumir con IA</button>'+
+      '<button type="button" class="btn btn-primary btn-sm"id="btnResumir" style="background:#5B3FB5;border-color:#5B3FB5" onclick="resumirActaIA()">✨ Resumir con IA</button>'+
       '<span id="grabEstado" style="font-size:11px;color:var(--muted)">Micrófono detenido</span>'+
     '</div>'+
     '<textarea class="form-textarea" id="r-transcripcion" oninput="if(!_grabando&&typeof actualizarUIGrabacion===\'function\')actualizarUIGrabacion()" placeholder="Aquí cae lo que grabas por voz y el resumen de la IA. También puedes editarlo a mano." style="min-height:120px">'+(datos.transcripcion_reunion||'')+'</textarea></div>'+
@@ -5828,7 +5828,13 @@ function actualizarUIGrabacion(){
     if(btn){ btn.textContent = '🎙️ Grabar reunión'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
     if(est){ est.textContent = 'Micrófono detenido'; est.style.color = 'var(--muted)'; }
     // Mostrar "Resumir" solo si hay texto suficiente
-    if(btnRes) btnRes.style.display = (ta && ta.value.trim().length > 20) ? '' : 'none';
+   if(btnRes){
+     btnRes.style.display = '';
+     const hayTexto = ta && ta.value.trim().length > 20;
+     btnRes.disabled = !hayTexto;
+     btnRes.style.opacity = hayTexto ? '1' : '.5';
+     btnRes.title = hayTexto ? '' : 'Graba o escribe la transcripción para poder resumir';
+   }
   }
 }
 
