@@ -6175,7 +6175,10 @@ function abrirEmailEnGmail(){
  * ========================================================= */
 const COPIA_DEFAULT = [
   { nombre: 'Makarenna Bustiman Sepúlveda',  correo: 'mbustiman@cdsprovidencia.cl' },
-  { nombre: 'Alfonso Valenzuela Providencia', correo: 'avalenzuela@cdsprovidencia.cl' }
+  { nombre: 'Alfonso Valenzuela Providencia', correo: 'avalenzuela@cdsprovidencia.cl' },
+  { nombre: 'Ismael Hidalgo',                 correo: 'ihidalgo@estrategica.cl' },
+  { nombre: 'José Miguel Correa',             correo: 'jcorrea@estrategica.cl' },
+  { nombre: 'Niurka Alanis',                  correo: 'nalanis@estrategica.cl' }
 ];
 
 function renderCopiaListHtml(){
@@ -6347,8 +6350,7 @@ function agregarDestExtra() {
 function generarPDFReunion() {
   var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion){showToast('No hay reunion activa');return;}
-  // No cerramos el modal: el PDF se abre en pestaña nueva y queremos
-  // conservar el modal de envío (botón "Abrir en Gmail") al volver.
+  closeModal();
   // Soporta múltiples meses de evaluación (no solo reunion.mes)
   var mesesReunion = (reunion.meses_evaluacion && reunion.meses_evaluacion.length) ? reunion.meses_evaluacion.slice() : (reunion.mes ? [reunion.mes] : []);
   mesesReunion.sort();
