@@ -5134,14 +5134,14 @@ function renderVerReuniones() {
     if(partes.length) {
       html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Participantes</div>';
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-      partes.forEach(function(p){ html += '<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:1px 12px;font-size:12px;line-height:1.3">'+p.nombre+(p.correo?' <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</span>'; });
+      partes.forEach(function(p){ html += '<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-size:12px">'+p.nombre+(p.correo?' <span style="color:var(--muted)">'+p.correo+'</span>':'')+'</span>'; });
       html += '</div></div>';
     }
     // Comentarios generales (editables si reunión abierta)
     const cgVal = componerComentariosVista(selR.comentarios_generales||'', selR.resumen_ia||'');
     if(!selR.cerrada) {
       html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Comentarios generales'+(selR.resumen_ia?' <span style="color:var(--accent2);font-weight:600">· incluye resumen generado con IA</span>':'')+'</div>';
-      html += '<textarea id="vrComentariosGenerales" oninput="marcarCambiosReunion()" placeholder="Sin comentarios — escribe aquí para agregarlos" style="width:100%;min-height:240px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6;font-family:inherit;color:var(--text);resize:vertical;outline:none" onfocus="this.style.borderColor=\'var(--accent)\';this.style.borderLeftColor=\'var(--accent2)\'" onblur="this.style.borderColor=\'var(--border)\';this.style.borderLeftColor=\'var(--accent2)\'">'+escapeHtmlPlan(cgVal)+'</textarea>';
+      html += '<textarea id="vrComentariosGenerales" oninput="marcarCambiosReunion()" placeholder="Sin comentarios — escribe aquí para agregarlos" style="width:100%;min-height:80px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6;font-family:inherit;color:var(--text);resize:vertical;outline:none" onfocus="this.style.borderColor=\'var(--accent)\';this.style.borderLeftColor=\'var(--accent2)\'" onblur="this.style.borderColor=\'var(--border)\';this.style.borderLeftColor=\'var(--accent2)\'">'+escapeHtmlPlan(cgVal)+'</textarea>';
       html += '</div>';
     } else if(cgVal) {
       html += '<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Comentarios generales'+(selR.resumen_ia?' <span style="color:var(--accent2);font-weight:600">· incluye resumen generado con IA</span>':'')+'</div>';
@@ -6347,7 +6347,8 @@ function agregarDestExtra() {
 function generarPDFReunion() {
   var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion){showToast('No hay reunion activa');return;}
-  closeModal();
+  // No cerramos el modal: el PDF se abre en pestaña nueva y queremos
+  // conservar el modal de envío (botón "Abrir en Gmail") al volver.
   // Soporta múltiples meses de evaluación (no solo reunion.mes)
   var mesesReunion = (reunion.meses_evaluacion && reunion.meses_evaluacion.length) ? reunion.meses_evaluacion.slice() : (reunion.mes ? [reunion.mes] : []);
   mesesReunion.sort();
