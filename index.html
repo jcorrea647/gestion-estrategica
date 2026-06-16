@@ -1949,9 +1949,14 @@ function openEvidenceModal(accionId, mes) {
       const fecha = e.created_at ? new Date(e.created_at).toLocaleDateString('es-CL') : '';
       const desc = (e.descripcion || '').trim() || '<span style="color:var(--muted);font-style:italic">Sin descripción</span>';
       const urlSafe = (e.url || '').replace(/"/g, '&quot;');
+      const esArchivo = (e.url || '').indexOf('storage://') === 0;
+      const linkLabel = esArchivo ? ('📎 ' + (e.url.split('/').pop() || 'archivo')) : ('🔗 ' + urlSafe);
+      const linkAttr = esArchivo
+        ? 'href="#" onclick="abrirEvidenciaArchivo(event,\''+urlSafe+'\')"'
+        : 'href="'+urlSafe+'" target="_blank" rel="noopener"';
       listaHTML += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px">';
       listaHTML += '<div style="flex:1;min-width:0">';
-      listaHTML += '<div style="font-size:13px;margin-bottom:4px"><a href="'+urlSafe+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;word-break:break-all">🔗 '+urlSafe+'</a></div>';
+      listaHTML += '<div style="font-size:13px;margin-bottom:4px"><a '+linkAttr+' style="color:var(--accent);text-decoration:none;word-break:break-all">'+linkLabel+'</a></div>';
       listaHTML += '<div style="font-size:12px;color:var(--text)">'+desc+'</div>';
       if(fecha) listaHTML += '<div style="font-size:11px;color:var(--muted);margin-top:4px">Cargada el '+fecha+'</div>';
       listaHTML += '</div>';
@@ -1969,8 +1974,15 @@ function openEvidenceModal(accionId, mes) {
   if(puedeEditar) {
     formHTML = '<div style="border-top:1px solid var(--border);padding-top:14px">'+
       '<div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Agregar nueva evidencia</div>'+
+      '<div class="form-group"><label class="form-label">Descripción (opcional)</label><input class="form-input" id="evDesc" placeholder="Ej: Acta de reunión 15-mayo"></div>'+
       '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..."></div>'+
-      '<div class="form-group" style="margin-bottom:0"><label class="form-label">Descripción (opcional)</label><input class="form-input" id="evDesc" placeholder="Ej: Acta de reunión 15-mayo"></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px"><div style="flex:1;height:1px;background:var(--border)"></div>o<div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+      '<input type="file" id="evFile" style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
+      '<div style="display:flex;gap:8px">'+
+        '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById(\'evFile\').click()">＋ Subir desde mi PC</button>'+
+        '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="abrirDriveParaEvidencia()">＋ Subir desde mi Drive</button>'+
+      '</div>'+
+      '<div id="evUploadStatus" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>'+
       '</div>';
   } else {
     formHTML = '<div style="background:#FDF6E3;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;color:#8B6914">🔒 No hay reunión abierta para '+fmtMes(mes)+'. Solo puedes ver las evidencias; para agregar o eliminar abre una reunión.</div>';
@@ -2006,6 +2018,73 @@ async function saveEvidence(accionId, mes) {
   if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
 }
 
+// ── Subir archivo de evidencia a Supabase Storage ──────────────
+const EV_BUCKET = 'documentos-colegios';
+async function subirArchivoEvidencia(accionId, mes) {
+  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  const input = document.getElementById('evFile');
+  const file = input && input.files && input.files[0];
+  if(!file){ return; }
+  const MAX = 25 * 1024 * 1024; // 25 MB
+  if(file.size > MAX){ showToast('El archivo supera el límite de 25 MB'); input.value=''; return; }
+
+  const status = document.getElementById('evUploadStatus');
+  if(status){ status.style.display='block'; status.textContent='Subiendo archivo…'; }
+
+  // Nombre seguro: sin espacios ni caracteres raros, conservando extensión
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = 'evidencias/'+SESSION.colegioActivo+'/'+accionId+'/'+mes+'/'+Date.now()+'_'+safeName;
+
+  const { error: upErr } = await sb.storage.from(EV_BUCKET).upload(path, file, { upsert:false, contentType:file.type || undefined });
+  if(upErr){
+    if(status){ status.style.display='none'; }
+    showToast('Error al subir: '+upErr.message);
+    input.value='';
+    return;
+  }
+
+  // Guardamos el path interno con prefijo. La URL real (firmada) se genera al abrir.
+  const descCampo = document.getElementById('evDesc');
+  const desc = (descCampo && descCampo.value.trim()) ? descCampo.value.trim() : file.name;
+  const { error: dbErr } = await sb.from('evidencias').insert({
+    accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo
+  });
+  if(dbErr){
+    if(status){ status.style.display='none'; }
+    showToast('Archivo subido pero error al registrar: '+dbErr.message);
+    input.value='';
+    return;
+  }
+
+  // Recargar evidencias
+  const accionIds = (DB.acciones || []).map(function(a){ return a.id; });
+  if(accionIds.length) {
+    const {data:nuevas} = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
+    DB.evidencias = nuevas || [];
+  }
+  showToast('✓ Archivo subido');
+  openEvidenceModal(accionId, mes);
+  if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
+}
+
+// ── Abrir evidencia almacenada (genera URL firmada temporal) ───
+async function abrirEvidenciaArchivo(ev, urlStorage) {
+  if(ev && ev.preventDefault) ev.preventDefault();
+  const path = (urlStorage || '').replace('storage://','');
+  if(!path){ showToast('Ruta de archivo inválida'); return; }
+  const { data, error } = await sb.storage.from(EV_BUCKET).createSignedUrl(path, 3600);
+  if(error || !data || !data.signedUrl){ showToast('No se pudo abrir el archivo: '+(error?error.message:'desconocido')); return; }
+  window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+// ── Atajo: abrir Google Drive para copiar el link manualmente ──
+function abrirDriveParaEvidencia() {
+  window.open('https://drive.google.com/drive/my-drive', '_blank', 'noopener');
+  showToast('Abre tu archivo en Drive, copia el enlace y pégalo en el campo "Link"');
+  const campo = document.getElementById('evUrl');
+  if(campo) campo.focus();
+}
+
 function confirmarEliminarEvidencia(evId, accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta'); return; }
   if(!confirm('¿Eliminar esta evidencia? Esta acción no se puede deshacer.')) return;
@@ -2013,6 +2092,12 @@ function confirmarEliminarEvidencia(evId, accionId, mes) {
 }
 
 async function eliminarEvidencia(evId, accionId, mes) {
+  // Si es un archivo subido, borrarlo también del bucket
+  const ev = (DB.evidencias || []).find(function(e){ return e.id === evId; });
+  if(ev && (ev.url || '').indexOf('storage://') === 0){
+    const path = ev.url.replace('storage://','');
+    try { await sb.storage.from(EV_BUCKET).remove([path]); } catch(e) { /* continúa aunque falle el remove */ }
+  }
   const {error} = await sb.from('evidencias').delete().eq('id', evId);
   if(error){ showToast('Error: '+error.message); return; }
   DB.evidencias = (DB.evidencias || []).filter(function(e){ return e.id !== evId; });
