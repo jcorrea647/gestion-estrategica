@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 <style>
 :root{--bg:#F4F2EE;--surface:#FFF;--surface2:#F9F8F6;--border:#E4E0D8;--text:#1A1916;--muted:#7A7670;--accent:#1E3A2F;--accent2:#2D5A42;--gold:#C4962A;--green:#2E7D52;--yellow:#B8860B;--red:#9B2335;--green-bg:#E8F5EE;--yellow-bg:#FDF6E3;--red-bg:#FCEEED;--r:8px;--shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.05)}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1980,7 +1982,7 @@ function openEvidenceModal(accionId, mes) {
       '<input type="file" id="evFile" style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
       '<div style="display:flex;gap:8px">'+
         '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById(\'evFile\').click()">＋ Subir desde mi PC</button>'+
-        '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="abrirDriveParaEvidencia()">＋ Subir desde mi Drive</button>'+
+        '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="abrirDriveParaEvidencia(\''+accionId+'\',\''+mes+'\')">＋ Subir desde mi Drive</button>'+
       '</div>'+
       '<div id="evUploadStatus" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>'+
       '</div>';
@@ -2077,12 +2079,119 @@ async function abrirEvidenciaArchivo(ev, urlStorage) {
   window.open(data.signedUrl, '_blank', 'noopener');
 }
 
-// ── Atajo: abrir Google Drive para copiar el link manualmente ──
-function abrirDriveParaEvidencia() {
-  window.open('https://drive.google.com/drive/my-drive', '_blank', 'noopener');
-  showToast('Abre tu archivo en Drive, copia el enlace y pégalo en el campo "Link"');
-  const campo = document.getElementById('evUrl');
-  if(campo) campo.focus();
+// ── Google Picker: elegir archivo de Drive y subirlo a la plataforma ──
+// CONFIGURACIÓN: pega aquí tu API Key de Google Cloud (la que empieza con AIza...).
+const GOOGLE_API_KEY = 'PEGA_AQUI_TU_API_KEY';
+const GOOGLE_CLIENT_ID = '1055084847978-3j6iu17tnv0mk20qjqi6dkg4qs797jrl.apps.googleusercontent.com';
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+
+let _gpToken = null;
+let _gpPickerLoaded = false;
+let _gpTokenClient = null;
+
+function _gpCargarPicker() {
+  return new Promise(function(resolve){
+    if(_gpPickerLoaded){ resolve(); return; }
+    gapi.load('picker', function(){ _gpPickerLoaded = true; resolve(); });
+  });
+}
+
+function abrirDriveParaEvidencia(accionId, mes) {
+  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  if(GOOGLE_API_KEY === 'PEGA_AQUI_TU_API_KEY'){ showToast('Falta configurar la API Key de Google en el código'); return; }
+  if(typeof google === 'undefined' || typeof gapi === 'undefined'){ showToast('Las librerías de Google aún no cargan, intenta de nuevo'); return; }
+
+  if(!_gpTokenClient){
+    _gpTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: GOOGLE_SCOPE,
+      callback: function(resp){
+        if(resp && resp.access_token){
+          _gpToken = resp.access_token;
+          _gpMostrarPicker(accionId, mes);
+        } else {
+          showToast('No se pudo autorizar el acceso a Drive');
+        }
+      }
+    });
+  } else {
+    // Actualiza el callback con el accionId/mes vigentes
+    _gpTokenClient.callback = function(resp){
+      if(resp && resp.access_token){ _gpToken = resp.access_token; _gpMostrarPicker(accionId, mes); }
+      else { showToast('No se pudo autorizar el acceso a Drive'); }
+    };
+  }
+  _gpTokenClient.requestAccessToken({ prompt: _gpToken ? '' : 'consent' });
+}
+
+async function _gpMostrarPicker(accionId, mes) {
+  await _gpCargarPicker();
+  const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(false);
+  const picker = new google.picker.PickerBuilder()
+    .setOAuthToken(_gpToken)
+    .setDeveloperKey(GOOGLE_API_KEY)
+    .addView(view)
+    .setCallback(function(data){ _gpPickerCallback(data, accionId, mes); })
+    .build();
+  picker.setVisible(true);
+}
+
+async function _gpPickerCallback(data, accionId, mes) {
+  if(data.action !== google.picker.Action.PICKED) return;
+  const doc = data.docs && data.docs[0];
+  if(!doc) return;
+
+  const status = document.getElementById('evUploadStatus');
+  if(status){ status.style.display='block'; status.textContent='Descargando de Drive y guardando en la plataforma…'; }
+
+  try {
+    const esGoogleDoc = (doc.mimeType || '').indexOf('application/vnd.google-apps') === 0;
+    let blob, fileName = doc.name || 'archivo_drive';
+
+    if(esGoogleDoc){
+      // Documentos nativos de Google (Docs/Sheets/Slides) se exportan a PDF
+      const url = 'https://www.googleapis.com/drive/v3/files/'+doc.id+'/export?mimeType=application/pdf';
+      const r = await fetch(url, { headers:{ 'Authorization':'Bearer '+_gpToken } });
+      if(!r.ok) throw new Error('No se pudo exportar el documento');
+      blob = await r.blob();
+      if(!/\.pdf$/i.test(fileName)) fileName += '.pdf';
+    } else {
+      // Archivos normales (PDF, Word, imágenes, etc.)
+      const url = 'https://www.googleapis.com/drive/v3/files/'+doc.id+'?alt=media';
+      const r = await fetch(url, { headers:{ 'Authorization':'Bearer '+_gpToken } });
+      if(!r.ok) throw new Error('No se pudo descargar el archivo');
+      blob = await r.blob();
+    }
+
+    const MAX = 25 * 1024 * 1024;
+    if(blob.size > MAX){ if(status) status.style.display='none'; showToast('El archivo supera el límite de 25 MB'); return; }
+
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = 'evidencias/'+SESSION.colegioActivo+'/'+accionId+'/'+mes+'/'+Date.now()+'_'+safeName;
+    const { error: upErr } = await sb.storage.from(EV_BUCKET).upload(path, blob, { upsert:false, contentType: blob.type || undefined });
+    if(upErr) throw new Error(upErr.message);
+
+    const descCampo = document.getElementById('evDesc');
+    const desc = (descCampo && descCampo.value.trim()) ? descCampo.value.trim() : fileName;
+    const { error: dbErr } = await sb.from('evidencias').insert({
+      accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo
+    });
+    if(dbErr) throw new Error(dbErr.message);
+
+    const accionIds = (DB.acciones || []).map(function(a){ return a.id; });
+    if(accionIds.length){
+      const {data:nuevas} = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
+      DB.evidencias = nuevas || [];
+    }
+    showToast('✓ Archivo de Drive guardado en la plataforma');
+    openEvidenceModal(accionId, mes);
+    if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
+  } catch(e) {
+    if(status) status.style.display='none';
+    showToast('Error: '+e.message);
+  }
 }
 
 function confirmarEliminarEvidencia(evId, accionId, mes) {
