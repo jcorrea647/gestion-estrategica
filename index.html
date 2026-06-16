@@ -1977,7 +1977,8 @@ function openEvidenceModal(accionId, mes) {
     formHTML = '<div style="border-top:1px solid var(--border);padding-top:14px">'+
       '<div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Agregar nueva evidencia</div>'+
       '<div class="form-group"><label class="form-label">Descripción (opcional)</label><input class="form-input" id="evDesc" placeholder="Ej: Acta de reunión 15-mayo"></div>'+
-      '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..."></div>'+
+      '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..." oninput="document.getElementById(\'evGuardarLinkWrap\').style.display = this.value.trim() ? \'block\' : \'none\'"></div>'+
+      '<div id="evGuardarLinkWrap" style="display:none;margin-bottom:4px"><button type="button" class="btn btn-primary" style="width:100%" onclick="saveEvidence(\''+accionId+'\',\''+mes+'\')">Guardar link</button></div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px"><div style="flex:1;height:1px;background:var(--border)"></div>o<div style="flex:1;height:1px;background:var(--border)"></div></div>'+
       '<input type="file" id="evFile" style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
       '<div style="display:flex;gap:8px">'+
@@ -1990,10 +1991,7 @@ function openEvidenceModal(accionId, mes) {
     formHTML = '<div style="background:#FDF6E3;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;color:#8B6914">🔒 No hay reunión abierta para '+fmtMes(mes)+'. Solo puedes ver las evidencias; para agregar o eliminar abre una reunión.</div>';
   }
 
-  const acciones = puedeEditar
-    ? [{label:'Cerrar',cls:'btn-outline',action:'closeModal()'},
-       {label:'Guardar nueva',cls:'btn-primary',action:'saveEvidence(\''+accionId+'\',\''+mes+'\')'}]
-    : [{label:'Cerrar',cls:'btn-primary',action:'closeModal()'}];
+  const acciones = [{label:'Cerrar',cls:'btn-primary',action:'closeModal()'}];
 
   openModal('Evidencias - '+(ac?.nombre || ''),
     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Mes: <strong>'+fmtMes(mes)+'</strong></div>'+
@@ -2081,7 +2079,7 @@ async function abrirEvidenciaArchivo(ev, urlStorage) {
 
 // ── Google Picker: elegir archivo de Drive y subirlo a la plataforma ──
 // CONFIGURACIÓN: pega aquí tu API Key de Google Cloud (la que empieza con AIza...).
-const GOOGLE_API_KEY = 'AIzaSyA_DvzXi48lTCrbhHExNnR9qHKZ_KL_rZc';
+const GOOGLE_API_KEY = 'PEGA_AQUI_TU_API_KEY';
 const GOOGLE_CLIENT_ID = '1055084847978-3j6iu17tnv0mk20qjqi6dkg4qs797jrl.apps.googleusercontent.com';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
