@@ -1172,6 +1172,25 @@ function puedeEditarSeguimientoMes(mes) {
   return !!reunionAbiertaDelMes(mes);
 }
 
+// Permiso de EVIDENCIAS, desacoplado de los porcentajes.
+// - superadmin: igual que antes (requiere reunión abierta del mes)
+// - director: puede subir/ver/eliminar SIEMPRE, cualquier mes, sin reunión.
+// Los porcentajes NUNCA son editables por director (eso lo garantiza RLS además).
+function puedeSubirEvidencia(mes) {
+  const rol = SESSION.user?.rol;
+  if(rol === 'superadmin') return puedeEditarSeguimientoMes(mes);
+  if(rol === 'director') return true;
+  return false;
+}
+// ¿Esta evidencia la puede eliminar el usuario actual?
+// superadmin: cualquiera de su colegio · director: solo las suyas (creado_por).
+function puedeEliminarEvidencia(ev) {
+  const rol = SESSION.user?.rol;
+  if(rol === 'superadmin') return true;
+  if(rol === 'director') return ev && ev.creado_por === SESSION.user?.id;
+  return false;
+}
+
 // CALCULATIONS
 function getEstado(p) { if(p===null||p===undefined) return 'sin_datos'; return p>=90?'verde':p>=70?'amarillo':'rojo'; }
 
@@ -1941,7 +1960,7 @@ function evidenciasDeAccionMes(accionId, mes) {
 
 function openEvidenceModal(accionId, mes) {
   const ac = DB.acciones.find(a => a.id === accionId);
-  const puedeEditar = puedeEditarSeguimientoMes(mes);
+  const puedeEditar = puedeSubirEvidencia(mes);
   const evidencias = evidenciasDeAccionMes(accionId, mes);
 
   let listaHTML = '';
@@ -1962,7 +1981,7 @@ function openEvidenceModal(accionId, mes) {
       listaHTML += '<div style="font-size:12px;color:var(--text)">'+desc+'</div>';
       if(fecha) listaHTML += '<div style="font-size:11px;color:var(--muted);margin-top:4px">Cargada el '+fecha+'</div>';
       listaHTML += '</div>';
-      if(puedeEditar) {
+      if(puedeEliminarEvidencia(e)) {
         listaHTML += '<button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red);flex-shrink:0" onclick="confirmarEliminarEvidencia(\''+e.id+'\',\''+accionId+'\',\''+mes+'\')" title="Eliminar evidencia">🗑</button>';
       }
       listaHTML += '</div>';
@@ -1988,7 +2007,10 @@ function openEvidenceModal(accionId, mes) {
       '<div id="evUploadStatus" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>'+
       '</div>';
   } else {
-    formHTML = '<div style="background:#FDF6E3;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;color:#8B6914">🔒 No hay reunión abierta para '+fmtMes(mes)+'. Solo puedes ver las evidencias; para agregar o eliminar abre una reunión.</div>';
+    const msgBloqueo = (SESSION.user?.rol === 'superadmin')
+      ? '🔒 No hay reunión abierta para '+fmtMes(mes)+'. Solo puedes ver las evidencias; para agregar o eliminar abre una reunión.'
+      : '🔒 No tienes permiso para agregar evidencias.';
+    formHTML = '<div style="background:#FDF6E3;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;color:#8B6914">'+msgBloqueo+'</div>';
   }
 
   const acciones = [{label:'Cerrar',cls:'btn-primary',action:'closeModal()'}];
@@ -2000,11 +2022,11 @@ function openEvidenceModal(accionId, mes) {
 }
 
 async function saveEvidence(accionId, mes) {
-  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  if(!puedeSubirEvidencia(mes)){ showToast('🔒 No tienes permiso para agregar evidencias'); return; }
   const url = document.getElementById('evUrl')?.value.trim();
   if(!url){ showToast('Ingresa el link'); return; }
   const desc = document.getElementById('evDesc')?.value || '';
-  const {error} = await sb.from('evidencias').insert({accion_id:accionId, mes, url, descripcion:desc});
+  const {error} = await sb.from('evidencias').insert({accion_id:accionId, mes, url, descripcion:desc, colegio_id:SESSION.colegioActivo, creado_por:SESSION.user?.id});
   if(error){ showToast('Error: '+error.message); return; }
   // Recargar evidencias y refrescar el modal
   const accionIds = (DB.acciones || []).map(function(a){ return a.id; });
@@ -2021,7 +2043,7 @@ async function saveEvidence(accionId, mes) {
 // ── Subir archivo de evidencia a Supabase Storage ──────────────
 const EV_BUCKET = 'documentos-colegios';
 async function subirArchivoEvidencia(accionId, mes) {
-  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  if(!puedeSubirEvidencia(mes)){ showToast('🔒 No tienes permiso para agregar evidencias'); return; }
   const input = document.getElementById('evFile');
   const file = input && input.files && input.files[0];
   if(!file){ return; }
@@ -2047,7 +2069,7 @@ async function subirArchivoEvidencia(accionId, mes) {
   const descCampo = document.getElementById('evDesc');
   const desc = (descCampo && descCampo.value.trim()) ? descCampo.value.trim() : file.name;
   const { error: dbErr } = await sb.from('evidencias').insert({
-    accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo
+    accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo, creado_por: SESSION.user?.id
   });
   if(dbErr){
     if(status){ status.style.display='none'; }
@@ -2095,7 +2117,7 @@ function _gpCargarPicker() {
 }
 
 function abrirDriveParaEvidencia(accionId, mes) {
-  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  if(!puedeSubirEvidencia(mes)){ showToast('🔒 No tienes permiso para agregar evidencias'); return; }
   if(GOOGLE_API_KEY === 'PEGA_AQUI_TU_API_KEY'){ showToast('Falta configurar la API Key de Google en el código'); return; }
   if(typeof google === 'undefined' || typeof gapi === 'undefined'){ showToast('Las librerías de Google aún no cargan, intenta de nuevo'); return; }
 
@@ -2174,7 +2196,7 @@ async function _gpPickerCallback(data, accionId, mes) {
     const descCampo = document.getElementById('evDesc');
     const desc = (descCampo && descCampo.value.trim()) ? descCampo.value.trim() : fileName;
     const { error: dbErr } = await sb.from('evidencias').insert({
-      accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo
+      accion_id: accionId, mes, url: 'storage://'+path, descripcion: desc, colegio_id: SESSION.colegioActivo, creado_por: SESSION.user?.id
     });
     if(dbErr) throw new Error(dbErr.message);
 
@@ -2193,7 +2215,8 @@ async function _gpPickerCallback(data, accionId, mes) {
 }
 
 function confirmarEliminarEvidencia(evId, accionId, mes) {
-  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta'); return; }
+  const ev = (DB.evidencias || []).find(function(e){ return e.id === evId; });
+  if(!puedeEliminarEvidencia(ev)){ showToast('🔒 Solo puedes eliminar evidencias que tú agregaste'); return; }
   if(!confirm('¿Eliminar esta evidencia? Esta acción no se puede deshacer.')) return;
   eliminarEvidencia(evId, accionId, mes);
 }
