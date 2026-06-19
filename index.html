@@ -1999,7 +1999,7 @@ function openEvidenceModal(accionId, mes) {
       '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..." oninput="document.getElementById(\'evGuardarLinkWrap\').style.display = this.value.trim() ? \'block\' : \'none\'"></div>'+
       '<div id="evGuardarLinkWrap" style="display:none;margin-bottom:4px"><button type="button" class="btn btn-primary" style="width:100%" onclick="saveEvidence(\''+accionId+'\',\''+mes+'\')">Guardar link</button></div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px"><div style="flex:1;height:1px;background:var(--border)"></div>o<div style="flex:1;height:1px;background:var(--border)"></div></div>'+
-      '<input type="file" id="evFile" style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
+      '<input type="file" id="evFile" multiple style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
       '<div style="display:flex;gap:8px">'+
         '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById(\'evFile\').click()">＋ Subir desde mi PC</button>'+
         '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="abrirDriveParaEvidencia(\''+accionId+'\',\''+mes+'\')">＋ Subir desde mi Drive</button>'+
