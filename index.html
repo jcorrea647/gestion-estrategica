@@ -826,13 +826,14 @@ async function generarInformeComparativo() {
 
   // Cargar datos de cada colegio en paralelo
   const datosColegios = await Promise.all(colegios.map(async col => {
-    const [{data:areas},{data:objetivos},{data:acciones},{data:seguimiento}] = await Promise.all([
+    const [{data:areas},{data:objetivos},{data:acciones},{data:seguimiento},{data:reuniones}] = await Promise.all([
       sb.from('areas').select('*').eq('colegio_id',col.id).order('orden'),
       sb.from('objetivos').select('*,areas!inner(colegio_id)').eq('areas.colegio_id',col.id),
       sb.from('acciones').select('*,objetivos!inner(area_id,areas!inner(colegio_id))').eq('objetivos.areas.colegio_id',col.id),
       sb.from('seguimiento').select('*,acciones!inner(objetivo_id,objetivos!inner(area_id,areas!inner(colegio_id)))').eq('acciones.objetivos.areas.colegio_id',col.id),
+      sb.from('reuniones').select('id,titulo,fecha,comentarios_generales,created_at').eq('colegio_id',col.id).order('fecha'),
     ]);
-    return { colegio:col, areas:areas||[], objetivos:objetivos||[], acciones:acciones||[], seguimiento:seguimiento||[] };
+    return { colegio:col, areas:areas||[], objetivos:objetivos||[], acciones:acciones||[], seguimiento:seguimiento||[], reuniones:reuniones||[] };
   }));
 
   hideLoading();
@@ -893,6 +894,10 @@ async function generarInformeComparativo() {
   body += `<tr style="font-weight:600;background:#E8F0EB"><td>AVANCE GENERAL</td>`;
   datosColegios.forEach(d => { const p=calcGeneralC(d,null),e=estC(p); body += `<td><span class="badge ${e}">${p!==null?p+'%':'—'}</span></td>`; });
   body += `</tr>`;
+  // Fila reuniones registradas
+  body += `<tr style="font-weight:600"><td>Reuniones registradas</td>`;
+  datosColegios.forEach(d => { body += `<td>${(d.reuniones||[]).length}</td>`; });
+  body += `</tr>`;
   areasUnicas.forEach(area => {
     body += `<tr><td style="font-weight:500">${area.nombre}</td>`;
     datosColegios.forEach(d => {
@@ -904,6 +909,25 @@ async function generarInformeComparativo() {
     body += `</tr>`;
   });
   body += `</tbody></table></div>`;
+
+  // DETALLE DE REUNIONES POR COLEGIO
+  body += `<h2>Reuniones registradas</h2>`;
+  datosColegios.forEach(d => {
+    const reus = (d.reuniones||[]).slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+    body += `<div class="card"><div style="font-size:15px;font-weight:700;color:#1E3A2F;margin-bottom:10px">${d.colegio.nombre} <span style="font-size:12px;font-weight:400;color:#7A7670">— ${reus.length} reunión${reus.length!==1?'es':''}</span></div>`;
+    if(!reus.length){
+      body += `<div style="font-size:12px;color:#7A7670">Sin reuniones registradas.</div>`;
+    } else {
+      body += `<table><thead><tr><th style="width:110px">Fecha</th><th style="width:30%">Reunión</th><th>Comentarios generales</th></tr></thead><tbody>`;
+      reus.forEach(r => {
+        const fecha = r.fecha ? new Date(r.fecha+'T00:00:00').toLocaleDateString('es-CL') : '—';
+        const com = (r.comentarios_generales||'').trim();
+        body += `<tr><td style="white-space:nowrap">${fecha}</td><td style="font-weight:500">${r.titulo||'—'}</td><td style="color:#3A3833;line-height:1.5">${com ? com.replace(/</g,'&lt;') : '<span style="color:#7A7670">—</span>'}</td></tr>`;
+      });
+      body += `</tbody></table>`;
+    }
+    body += `</div>`;
+  });
 
   // EVOLUCIÓN MENSUAL
   body += `<h2>Evolución mensual — Avance general</h2><div class="card"><table><thead><tr><th>Colegio</th>`;
@@ -1999,7 +2023,7 @@ function openEvidenceModal(accionId, mes) {
       '<div class="form-group"><label class="form-label">Link (Drive/OneDrive)</label><input class="form-input" id="evUrl" placeholder="https://drive.google.com/..." oninput="document.getElementById(\'evGuardarLinkWrap\').style.display = this.value.trim() ? \'block\' : \'none\'"></div>'+
       '<div id="evGuardarLinkWrap" style="display:none;margin-bottom:4px"><button type="button" class="btn btn-primary" style="width:100%" onclick="saveEvidence(\''+accionId+'\',\''+mes+'\')">Guardar link</button></div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px"><div style="flex:1;height:1px;background:var(--border)"></div>o<div style="flex:1;height:1px;background:var(--border)"></div></div>'+
-      '<input type="file" id="evFile" multiple style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
+      '<input type="file" id="evFile" style="display:none" onchange="subirArchivoEvidencia(\''+accionId+'\',\''+mes+'\')">'+
       '<div style="display:flex;gap:8px">'+
         '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById(\'evFile\').click()">＋ Subir desde mi PC</button>'+
         '<button type="button" class="btn btn-outline" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px" onclick="abrirDriveParaEvidencia(\''+accionId+'\',\''+mes+'\')">＋ Subir desde mi Drive</button>'+
@@ -2101,7 +2125,7 @@ async function abrirEvidenciaArchivo(ev, urlStorage) {
 
 // ── Google Picker: elegir archivo de Drive y subirlo a la plataforma ──
 // CONFIGURACIÓN: pega aquí tu API Key de Google Cloud (la que empieza con AIza...).
-const GOOGLE_API_KEY = 'AIzaSyA_DvzXi48lTCrbhHExNnR9qHKZ_KL_rZc';
+const GOOGLE_API_KEY = 'PEGA_AQUI_TU_API_KEY';
 const GOOGLE_CLIENT_ID = '1055084847978-3j6iu17tnv0mk20qjqi6dkg4qs797jrl.apps.googleusercontent.com';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
