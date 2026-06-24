@@ -359,6 +359,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <span class="role-badge" id="multiRolBadge"></span>
     <div class="spacer"></div>
     <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:8px" id="multiUserName"></span>
+    <button class="logout-btn" id="btnReunionesCorp" onclick="abrirVistaReunionesCorp()" style="margin-right:6px;display:none">📋 Reuniones corporativas</button>
     <button class="logout-btn" onclick="abrirCambioClave()" style="margin-right:6px">🔑 Mi clave</button>
     <button class="logout-btn" onclick="doLogout()">Salir</button>
   </div>
@@ -366,6 +367,26 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <div class="multi-page-title" id="multiTitle">Panel de colegios</div>
     <div class="multi-page-sub" id="multiSubtitle"></div>
     <div class="colegios-grid" id="colegiosGrid"></div>
+  </div>
+</div>
+
+<div id="screenReunionesCorp" class="screen">
+  <div class="multi-topbar">
+    <div class="logo">Gestión Estratégica</div>
+    <span class="role-badge" id="corpRolBadge"></span>
+    <div class="spacer"></div>
+    <span style="color:rgba(255,255,255,.6);font-size:12px;margin-right:8px" id="corpUserName"></span>
+    <button class="logout-btn" onclick="volverAMultiDesdeCorp()">← Volver a colegios</button>
+  </div>
+  <div class="multi-content">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+      <div>
+        <div class="multi-page-title">Reuniones corporativas</div>
+        <div class="multi-page-sub" id="corpSubtitle">Reuniones a nivel corporativo, sin asignar a ningún colegio.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="abrirCrearReunionCorp()">+ Nueva reunión corporativa</button>
+    </div>
+    <div id="corpListado"></div>
   </div>
 </div>
 
@@ -772,6 +793,9 @@ function renderMultiPanel() {
   const rb = document.getElementById('multiRolBadge');
   rb.textContent = ROL_LABELS[u.rol]; rb.className = 'role-badge '+u.rol;
   document.getElementById('multiTitle').textContent = esSostenedor ? 'Mis colegios' : 'Panel de colegios';
+  // El botón de reuniones corporativas solo se muestra para superadmin
+  const btnCorp = document.getElementById('btnReunionesCorp');
+  if(btnCorp) btnCorp.style.display = (u.rol === 'superadmin') ? '' : 'none';
   const c = SESSION.colegios;
   document.getElementById('multiSubtitle').textContent = c.length + ' colegio' + (c.length!==1?'s':'') + ' registrado' + (c.length!==1?'s':'') + (esSostenedor ? ' — selecciona uno o más para generar informes' : '');
 
@@ -1191,9 +1215,11 @@ function hayReunionAbierta() {
   return (DB.reuniones||[]).some(function(r){ return !r.cerrada; });
 }
 function puedeEditarSeguimientoMes(mes) {
-  // Solo superadmin puede editar (Propuesta A)
-  if(!canEditSeguimiento(SESSION.user?.rol)) return false;
-  return !!reunionAbiertaDelMes(mes);
+  // Solo superadmin puede editar. Ya NO se exige reunión abierta:
+  // el superadmin puede modificar porcentajes y comentarios en cualquier
+  // momento, con o sin reunión creada/activa. La RLS de Supabase también
+  // permite el INSERT/UPDATE/DELETE con solo is_superadmin().
+  return canEditSeguimiento(SESSION.user?.rol);
 }
 
 // Permiso de EVIDENCIAS, desacoplado de los porcentajes.
@@ -1680,7 +1706,9 @@ function renderSeguimiento() {
   const reunion = reunionDelMes(mes);
   const reunionAbierta = reunion && !reunion.cerrada;
   const esSuperadmin = SESSION.user?.rol === 'superadmin';
-  const bloqueado = !reunionAbierta || !esSuperadmin;
+  // El superadmin SIEMPRE puede editar porcentajes y comentarios, exista o no
+  // una reunión abierta. El bloqueo solo aplica a roles no superadmin.
+  const bloqueado = !esSuperadmin;
   if(reunion) window._reunionActiva=reunion.id;
   const alertaCrear = hayReunionAbierta();
   let html='<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
@@ -1707,17 +1735,32 @@ function renderSeguimiento() {
 
   // Banner según estado de la reunión del mes
   if(!reunion) {
-    html+='<div class="banner-bloqueo warn">';
-    html+='<div><div class="bb-title">⚠ No hay reunión creada para '+fmtMes(mes)+'</div>';
-    html+='<div class="bb-sub">Para registrar porcentajes, comentarios y evidencias debes crear una reunión que cubra este mes. Usa el botón <strong>"+ Crear Reunion"</strong> arriba a la derecha.</div></div>';
-    html+='</div>';
+    if(esSuperadmin){
+      html+='<div class="banner-bloqueo info" style="background:#E8F0FB;border-color:#1F4E79;color:#1F4E79">';
+      html+='<div><div class="bb-title">ℹ No hay reunión creada para '+fmtMes(mes)+'</div>';
+      html+='<div class="bb-sub">Puedes registrar porcentajes, comentarios y evidencias directamente. Si quieres dejar registro formal de una reunión, usa <strong>"+ Crear Reunion"</strong> arriba a la derecha.</div></div>';
+      html+='</div>';
+    } else {
+      html+='<div class="banner-bloqueo warn">';
+      html+='<div><div class="bb-title">⚠ No hay reunión creada para '+fmtMes(mes)+'</div>';
+      html+='<div class="bb-sub">Para registrar porcentajes, comentarios y evidencias debes crear una reunión que cubra este mes. Usa el botón <strong>"+ Crear Reunion"</strong> arriba a la derecha.</div></div>';
+      html+='</div>';
+    }
   } else if(!reunionAbierta) {
     const fechaCierre = reunion.fecha_cierre ? new Date(reunion.fecha_cierre).toLocaleDateString('es-CL') : '';
-    html+='<div class="banner-bloqueo closed">';
-    html+='<div><div class="bb-title">🔒 Reunión cerrada'+(fechaCierre?' el '+fechaCierre:'')+'</div>';
-    html+='<div class="bb-sub">"'+reunion.titulo+'" — el seguimiento de este mes está bloqueado. Reábrela para modificarlo.</div></div>';
-    html+='<button class="btn-reabrir" onclick="reabrirReunion(\''+reunion.id+'\')">🔓 Reabrir reunión</button>';
-    html+='</div>';
+    if(esSuperadmin){
+      html+='<div class="banner-bloqueo info" style="background:#E8F0FB;border-color:#1F4E79;color:#1F4E79">';
+      html+='<div><div class="bb-title">🔒 Reunión cerrada'+(fechaCierre?' el '+fechaCierre:'')+'</div>';
+      html+='<div class="bb-sub">"'+reunion.titulo+'" está cerrada, pero como superadmin <strong>puedes seguir editando</strong> porcentajes y comentarios. Si prefieres trabajar dentro de la reunión, puedes reabrirla.</div></div>';
+      html+='<button class="btn-reabrir" onclick="reabrirReunion(\''+reunion.id+'\')">🔓 Reabrir reunión</button>';
+      html+='</div>';
+    } else {
+      html+='<div class="banner-bloqueo closed">';
+      html+='<div><div class="bb-title">🔒 Reunión cerrada'+(fechaCierre?' el '+fechaCierre:'')+'</div>';
+      html+='<div class="bb-sub">"'+reunion.titulo+'" — el seguimiento de este mes está bloqueado. Reábrela para modificarlo.</div></div>';
+      html+='<button class="btn-reabrir" onclick="reabrirReunion(\''+reunion.id+'\')">🔓 Reabrir reunión</button>';
+      html+='</div>';
+    }
   } else {
     html+='<div class="reunion-banner">';
     html+='<div><div class="rb-title">'+reunion.titulo+' <span style="font-size:11px;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px;margin-left:6px">ABIERTA</span></div><div class="rb-meta">'+reunion.fecha+' | '+(reunion.consultor_nombre||'Sin consultor')+'</div></div>';
@@ -6831,6 +6874,230 @@ function generarPDFReunion() {
   showToast('Informe generado. Usa Imprimir para guardar como PDF.');
 }
 // MODAL
+// ================================================================
+// REUNIONES CORPORATIVAS (sin colegio asignado · tipo='corporativa')
+// Módulo autónomo: NO depende de SESSION.colegioActivo ni de DB.*
+// Solo acta + participantes + comentarios. Carga propia desde Supabase.
+// ================================================================
+let CORP = { reuniones: [], editId: null };
+
+// Abre la vista de reuniones corporativas (solo superadmin)
+async function abrirVistaReunionesCorp(){
+  if(SESSION.user?.rol !== 'superadmin'){ showToast('🔒 Solo superadmin'); return; }
+  document.getElementById('corpUserName').textContent = SESSION.user.nombre || '';
+  const rb = document.getElementById('corpRolBadge');
+  if(rb){ rb.textContent = ROL_LABELS[SESSION.user.rol]; rb.className = 'role-badge '+SESSION.user.rol; }
+  showScreen('screenReunionesCorp');
+  await cargarReunionesCorp();
+}
+
+function volverAMultiDesdeCorp(){
+  showScreen('screenMulti');
+}
+
+// Carga las reuniones corporativas + sus participantes
+async function cargarReunionesCorp(){
+  const cont = document.getElementById('corpListado');
+  if(cont) cont.innerHTML = '<div class="card"><div class="empty-state"><div class="loading-spinner" style="margin:0 auto"></div></div></div>';
+  const { data, error } = await sb.from('reuniones')
+    .select('*,reunion_participantes(*)')
+    .eq('tipo','corporativa')
+    .order('fecha',{ascending:false});
+  if(error){
+    if(cont) cont.innerHTML = '<div class="card"><div class="empty-state">Error al cargar: '+escapeHtmlPlan(error.message)+'</div></div>';
+    return;
+  }
+  CORP.reuniones = (data||[]).map(r => Object.assign({}, r, {reunion_participantes: r.reunion_participantes||[]}));
+  renderReunionesCorp();
+}
+
+function renderReunionesCorp(){
+  const cont = document.getElementById('corpListado');
+  if(!cont) return;
+  const subt = document.getElementById('corpSubtitle');
+  if(subt) subt.textContent = CORP.reuniones.length + ' reunión' + (CORP.reuniones.length!==1?'es':'') + ' corporativa' + (CORP.reuniones.length!==1?'s':'') + ' — sin asignar a ningún colegio.';
+
+  if(!CORP.reuniones.length){
+    cont.innerHTML = '<div class="card"><div class="empty-state"><div class="icon">📋</div>'+
+      '<div style="font-weight:500;margin-bottom:8px">Sin reuniones corporativas</div>'+
+      '<div style="font-size:12px;margin-bottom:16px">Crea la primera reunión a nivel corporativo.</div>'+
+      '<button class="btn btn-primary btn-sm" onclick="abrirCrearReunionCorp()">+ Crear primera reunión</button>'+
+      '</div></div>';
+    return;
+  }
+
+  let html = '';
+  CORP.reuniones.forEach(function(r){
+    const parts = (r.reunion_participantes||[]).slice().sort(function(a,b){return (a.orden||0)-(b.orden||0);});
+    const fechaTxt = r.fecha ? new Date(r.fecha+'T00:00:00').toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+    const partsTxt = parts.length ? parts.map(function(p){return escapeHtmlPlan(p.nombre);}).join(', ') : 'Sin participantes';
+    html += '<div class="card" style="margin-bottom:14px">'+
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:220px">'+
+          '<div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px">'+escapeHtmlPlan(r.titulo||'(sin título)')+'</div>'+
+          '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">📅 '+fechaTxt+(r.consultor_nombre?' · 👤 '+escapeHtmlPlan(r.consultor_nombre):'')+'</div>'+
+          '<div style="font-size:12px;color:var(--muted)"><strong>Participantes:</strong> '+partsTxt+'</div>'+
+          (r.comentarios_generales ? '<div style="font-size:12px;color:var(--text);margin-top:8px;white-space:pre-wrap;background:var(--surface2);border-radius:6px;padding:8px 10px">'+escapeHtmlPlan(r.comentarios_generales)+'</div>' : '')+
+        '</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+          '<button class="btn btn-outline btn-sm" onclick="abrirEditarReunionCorp(\''+r.id+'\')">✏️ Editar</button>'+
+          '<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:#f8717155" onclick="eliminarReunionCorp(\''+r.id+'\')">🗑️ Eliminar</button>'+
+        '</div>'+
+      '</div></div>';
+  });
+  cont.innerHTML = html;
+}
+
+// Modal de crear/editar reunión corporativa (solo título, fecha, consultor, participantes, comentarios)
+function abrirCrearReunionCorp(){
+  CORP.editId = null;
+  const hoy = new Date().toISOString().split('T')[0];
+  openModalReunionCorp({titulo:'',fecha:hoy,consultor_nombre:'',consultor_correo:'',comentarios_generales:'',reunion_participantes:[]});
+}
+
+function abrirEditarReunionCorp(id){
+  const r = CORP.reuniones.find(function(x){return x.id===id;});
+  if(!r){ showToast('Reunión no encontrada'); return; }
+  CORP.editId = id;
+  openModalReunionCorp(r);
+}
+
+function openModalReunionCorp(datos){
+  const parts = (datos.reunion_participantes||[]).slice().sort(function(a,b){return (a.orden||0)-(b.orden||0);});
+  let partsHtml = '';
+  parts.forEach(function(p){ partsHtml += corpPartRow(p.nombre, p.correo); });
+
+  const modalEl = document.getElementById('modal');
+  if(modalEl) modalEl.style.maxWidth = '640px';
+  document.getElementById('modalTitle').textContent = CORP.editId ? 'Editar reunión corporativa' : 'Nueva reunión corporativa';
+  document.getElementById('modalBody').innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      '<div class="form-group"><label class="form-label">Título</label><input class="form-input" id="corp-titulo" value="'+escapeHtmlAttr(datos.titulo||'')+'"></div>'+
+      '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="corp-fecha" type="date" value="'+escapeHtmlAttr(datos.fecha||'')+'"></div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      '<div class="form-group"><label class="form-label">Consultor responsable</label><input class="form-input" id="corp-consultor" placeholder="Nombre" value="'+escapeHtmlAttr(datos.consultor_nombre||'')+'"></div>'+
+      '<div class="form-group"><label class="form-label">Correo consultor</label><input class="form-input" id="corp-correo" type="email" placeholder="correo@ejemplo.cl" value="'+escapeHtmlAttr(datos.consultor_correo||'')+'"></div>'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">Comentarios / Acta</label>'+
+      '<textarea class="form-textarea" id="corp-comentarios" placeholder="Acta, acuerdos y comentarios de la reunión..." style="min-height:120px">'+escapeHtmlPlan(datos.comentarios_generales||'')+'</textarea></div>'+
+    '<div class="form-group"><label class="form-label">Participantes</label>'+
+      '<div id="corpPartContainer">'+partsHtml+'</div>'+
+      '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="corpAgregarPart()">+ Agregar participante</button>'+
+    '</div>';
+  document.getElementById('modalFooter').innerHTML =
+    '<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-primary" onclick="guardarReunionCorp()">Guardar</button>';
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+
+function corpPartRow(nombre, correo){
+  return '<div class="part-row" data-corp-row="1" style="display:flex;gap:8px;margin-bottom:6px">'+
+    '<input class="form-input" placeholder="Nombre" value="'+escapeHtmlAttr(nombre||'')+'" style="flex:1.2" data-corp-nombre="1">'+
+    '<input class="form-input" placeholder="Correo (opcional)" type="email" value="'+escapeHtmlAttr(correo||'')+'" style="flex:1.5" data-corp-correo="1">'+
+    '<button class="remove-part" onclick="this.closest(\'.part-row\').remove()" title="Eliminar">x</button>'+
+  '</div>';
+}
+
+function corpAgregarPart(){
+  const cont = document.getElementById('corpPartContainer');
+  if(cont) cont.insertAdjacentHTML('beforeend', corpPartRow('',''));
+}
+
+function corpGetParticipantes(){
+  const lista = [];
+  document.querySelectorAll('#corpPartContainer .part-row').forEach(function(row){
+    const nb = row.querySelector('[data-corp-nombre]');
+    const cb = row.querySelector('[data-corp-correo]');
+    const nombre = nb ? nb.value.trim() : '';
+    const correo = cb ? cb.value.trim() : '';
+    if(nombre) lista.push({nombre:nombre, correo:correo||null});
+  });
+  return lista;
+}
+
+async function guardarReunionCorp(){
+  const titulo = document.getElementById('corp-titulo')?.value.trim();
+  const fecha  = document.getElementById('corp-fecha')?.value;
+  if(!titulo || !fecha){ showToast('Completa título y fecha'); return; }
+
+  const consultor = document.getElementById('corp-consultor')?.value.trim();
+  const correo    = document.getElementById('corp-correo')?.value.trim();
+  const comentarios = document.getElementById('corp-comentarios')?.value.trim();
+  const participantes = corpGetParticipantes();
+  // mes se deriva de la fecha (columna NOT NULL); formato YYYY-MM
+  const mes = (fecha||'').slice(0,7);
+
+  const payload = {
+    colegio_id: null,
+    tipo: 'corporativa',
+    mes: mes,
+    meses_evaluacion: [],
+    fecha: fecha,
+    titulo: titulo,
+    consultor_nombre: consultor || null,
+    consultor_correo: correo || null,
+    comentarios_generales: comentarios || null,
+    updated_at: new Date().toISOString()
+  };
+
+  const btn = document.querySelector('#modalFooter .btn-primary');
+  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  let rId = CORP.editId;
+  try {
+    if(rId){
+      const { error } = await sb.from('reuniones').update(payload).eq('id', rId);
+      if(error) throw error;
+    } else {
+      const { data, error } = await sb.from('reuniones').insert(payload).select().single();
+      if(error) throw error;
+      rId = data.id;
+    }
+    // Reescribir participantes
+    await sb.from('reunion_participantes').delete().eq('reunion_id', rId);
+    if(participantes.length){
+      const { error: ep } = await sb.from('reunion_participantes')
+        .insert(participantes.map(function(p,i){return {reunion_id:rId, nombre:p.nombre, correo:p.correo, orden:i};}));
+      if(ep) throw ep;
+    }
+    closeModal();
+    showToast('✓ Reunión corporativa guardada');
+    await cargarReunionesCorp();
+  } catch(err){
+    console.error('[guardarReunionCorp] Error:', err);
+    showToast('Error al guardar: ' + (err.message||err));
+    if(btn){ btn.disabled = false; btn.textContent = 'Guardar'; }
+  }
+}
+
+function eliminarReunionCorp(id){
+  const r = CORP.reuniones.find(function(x){return x.id===id;});
+  if(!r){ showToast('Reunión no encontrada'); return; }
+  openModal('Eliminar reunión corporativa',
+    '<div style="font-size:13px;color:var(--text);line-height:1.5">¿Seguro que quieres eliminar <strong>'+escapeHtmlPlan(r.titulo||'(sin título)')+'</strong>? Esta acción no se puede deshacer.</div>',
+    [{label:'Cancelar',cls:'btn-outline',action:'closeModal()'},
+     {label:'Sí, eliminar',cls:'btn-primary',action:"confirmarEliminarReunionCorp('"+id+"')"}]);
+}
+
+async function confirmarEliminarReunionCorp(id){
+  const btn = document.querySelector('#modalFooter .btn-primary');
+  if(btn){ btn.disabled = true; btn.textContent = 'Eliminando...'; }
+  try {
+    await sb.from('reunion_participantes').delete().eq('reunion_id', id);
+    const { error } = await sb.from('reuniones').delete().eq('id', id);
+    if(error) throw error;
+    closeModal();
+    showToast('✓ Reunión eliminada');
+    await cargarReunionesCorp();
+  } catch(err){
+    console.error('[confirmarEliminarReunionCorp] Error:', err);
+    showToast('Error al eliminar: ' + (err.message||err));
+    if(btn){ btn.disabled = false; btn.textContent = 'Sí, eliminar'; }
+  }
+}
+
+
 function openModal(title,body,btns){
   document.getElementById('modalTitle').textContent=title;
   document.getElementById('modalBody').innerHTML=body;
