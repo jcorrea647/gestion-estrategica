@@ -1783,7 +1783,8 @@ function renderSeguimiento() {
       const seg=DB.seguimiento.find(s=>s.accion_id===ac.id&&s.mes===mes);
       const resps=getResps(ac.id), est=seg?getEstado(seg.porcentaje):'sin_datos';
       const isPend=seg?.pendiente===true;
-      const semLabel=seg?(isPend?seg.porcentaje+'% P':seg.porcentaje+'%'):'-';
+      const _pctNull = !seg || seg.porcentaje===null || seg.porcentaje===undefined;
+      const semLabel = !seg ? '-' : (isPend ? (_pctNull ? 'P' : seg.porcentaje+'% P') : (_pctNull ? '-' : seg.porcentaje+'%'));
       html+='<tr><td><div style="display:flex;align-items:flex-start;gap:6px">';
       html+='<button class="info-btn" onclick="mostrarInfoAccion(event,\''+ac.id+'\')" title="Ver fórmula y evidencia">+</button>';
       html+='<div><div class="accion-name">'+ac.nombre+'</div>'+acDesc(ac)+'</div></div></td>';
@@ -1993,13 +1994,24 @@ async function guardarSeg(accionId, mes, pendiente) {
   }
   // ───────────────────────────────────────────────────────────────────
 
-  if(isNaN(pct)||pct<0||pct>100){showToast('Valor entre 0 y 100 (o 999 para reiniciar)');return;}
+  // El botón "P" (pendiente) puede usarse SIN porcentaje: en ese caso se
+  // guarda porcentaje=null (la columna ya admite null). El botón "OK" sí
+  // exige un valor válido 0–100. Cualquier número fuera de rango se rechaza
+  // en ambos casos (salvo el campo vacío, que solo es válido para "P").
+  const pctVacio = !pctEl || pctEl.value.trim() === '';
+  let pctFinal;
+  if(pendiente && pctVacio){
+    pctFinal = null;                 // P sin número → pendiente sin porcentaje
+  } else {
+    if(isNaN(pct)||pct<0||pct>100){ showToast('Valor entre 0 y 100 (o 999 para reiniciar)'); return; }
+    pctFinal = pct;
+  }
   if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
   const exSeg=DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   const comentario=exSeg?.comentario||'';
   // colegio_id es CRÍTICO: sin él, las filas quedan con NULL y la edge function
   // generar-brecha-avanzado no puede encontrar el comentario al filtrar por colegio.
-  const payload={colegio_id:SESSION.colegioActivo,accion_id:accionId,mes,porcentaje:pct,comentario,pendiente,updated_at:new Date().toISOString()};
+  const payload={colegio_id:SESSION.colegioActivo,accion_id:accionId,mes,porcentaje:pctFinal,comentario,pendiente,updated_at:new Date().toISOString()};
   let error;
   if(exSeg) {
     ({error}=await sb.from('seguimiento').update(payload).eq('id',exSeg.id));
