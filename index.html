@@ -838,7 +838,7 @@ async function loadColegioStats(c) {
   const ea=document.getElementById('st-a-'+c.id), eac=document.getElementById('st-ac-'+c.id), eav=document.getElementById('st-av-'+c.id);
   if(ea) ea.textContent = nA??0;
   if(eac) eac.textContent = (acs||[]).length;
-  if(eav) { const r=segs||[]; eav.textContent = r.length ? Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length)+'%' : '-'; }
+  if(eav) { const r=(segs||[]).filter(x=>x.porcentaje!==null&&x.porcentaje!==undefined&&x.porcentaje!==''&&!isNaN(parseFloat(x.porcentaje))); eav.textContent = r.length ? Math.round(r.reduce((s,x)=>s+parseFloat(x.porcentaje),0)/r.length)+'%' : '-'; }
 }
 
 async function generarInformeComparativo() {
@@ -915,7 +915,7 @@ async function generarInformeComparativo() {
 
   // GRÁFICO DE BARRAS — AVANCE TOTAL POR LICEO
   const palette = ['#1E3A2F','#2D5A42','#C49A2C','#4A7A5F','#8B6914','#6B8E6F','#A0522D','#3D6B4F'];
-  body += `<h2>Avance total por liceo</h2><div class="card">`;
+  body += `<h2>Avance total por liceo</h2><div class="card" style="max-width:60%">`;
   body += `<div style="display:flex;align-items:flex-end;gap:24px;height:240px;padding:16px 8px 0;border-bottom:2px solid #E4E0D8;margin-bottom:8px">`;
   datosColegios.forEach((d,i) => {
     const p = calcGeneralC(d,null);
@@ -934,7 +934,7 @@ async function generarInformeComparativo() {
   body += `</div></div>`;
 
   // GRÁFICO DE BARRAS AGRUPADO — AVANCE POR ÁREA Y LICEO
-  body += `<h2>Avance por área y liceo</h2><div class="card">`;
+  body += `<h2>Avance por área y liceo</h2><div class="card" style="max-width:60%">`;
   body += `<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:18px;font-size:11px">`;
   datosColegios.forEach((d,i) => {
     body += `<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:${palette[i%palette.length]};display:inline-block"></span>${d.colegio.nombre.replace('Liceo ','')}</div>`;
@@ -972,7 +972,7 @@ async function generarInformeComparativo() {
   body += `</tr>`;
   // Fila metas evaluadas
   body += `<tr style="font-weight:600"><td>Metas evaluadas</td>`;
-  datosColegios.forEach(d => { const ev=calcMetasEvalC(d), tot=calcMetasTotalC(d); body += `<td>${ev}${tot?' / '+tot:''}</td>`; });
+  datosColegios.forEach(d => { body += `<td>${calcMetasEvalC(d)}</td>`; });
   body += `</tr>`;
   areasUnicas.forEach(area => {
     body += `<tr><td style="font-weight:500">${area.nombre}</td>`;
