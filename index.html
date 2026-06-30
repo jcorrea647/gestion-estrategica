@@ -1880,7 +1880,7 @@ function renderSeguimiento() {
       html+='<div style="display:flex;align-items:center;gap:4px;margin-top:4px">';
       html+='<input class="pct-input'+lock+'" type="number" min="0" max="100" id="pct_'+ac.id+'" value="'+(seg?seg.porcentaje:'')+'" placeholder="0-100" title="Ingresa 0–100 para evaluar. Tip: 999 reinicia la meta (conserva comentarios y evidencias)"'+disabledAttr+'>';
       html+='<button class="save-btn'+btnLock+'" id="btn_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',false)"'+disabledAttr+'>OK</button>';
-      html+='<button class="pending-btn'+btnLock+(isPend?' on':'')+'" id="pend_'+ac.id+'" onclick="guardarSeg(\''+ac.id+'\',\''+mes+'\',true)" title="Guardar como pendiente"'+disabledAttr+'>P</button>';
+      html+='<button class="pending-btn'+btnLock+(isPend?' on':'')+'" id="pend_'+ac.id+'" onclick="togglePendiente(\''+ac.id+'\',\''+mes+'\')" title="'+(isPend?'Quitar pendiente':'Guardar como pendiente')+'"'+disabledAttr+'>P</button>';
       html+='</div></div></td>';
       html+='<td>';
       const comVal=seg?.comentario||'';
@@ -2044,6 +2044,35 @@ function mostrarInfoAccion(event, accionId) {
     popup.style.top  = (startTop  + e.clientY - startY) + 'px';
   });
   document.addEventListener('mouseup', function() { isDragging = false; });
+}
+
+// Toggle del botón "P" (Pendiente): si la acción ya está marcada como
+// pendiente, al hacer click se DESMARCA (se elimina el registro de
+// seguimiento → vuelve a "sin datos"/blanco). Si no está pendiente, se
+// comporta como antes y guarda como pendiente vía guardarSeg.
+async function togglePendiente(accionId, mes) {
+  if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
+  const exSeg=DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
+  // Ya está pendiente → desmarcar (eliminar el registro de seguimiento)
+  if(exSeg && exSeg.pendiente===true){
+    const btnEl=document.getElementById('pend_'+accionId);
+    const pctEl=document.getElementById('pct_'+accionId);
+    if(btnEl){ btnEl.disabled=true; btnEl.textContent='...'; }
+    let delErr=null;
+    if(exSeg.id && String(exSeg.id).indexOf('temp_')!==0){
+      ({error:delErr}=await sb.from('seguimiento').delete().eq('id',exSeg.id));
+    }
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='P'; }
+    if(delErr){ showToast('Error al quitar pendiente: '+delErr.message); return; }
+    const i=DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
+    if(i>=0) DB.seguimiento.splice(i,1);
+    if(pctEl){ pctEl.value=''; pctEl.style.borderColor=''; }
+    showToast('Pendiente quitado');
+    renderCurrentPanel();
+    return;
+  }
+  // No estaba pendiente → marcar como pendiente (flujo normal)
+  guardarSeg(accionId, mes, true);
 }
 
 async function guardarSeg(accionId, mes, pendiente) {
