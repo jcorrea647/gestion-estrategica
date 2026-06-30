@@ -1103,6 +1103,19 @@ async function loadColegio(colegioId) {
     const { data: evs } = await sb.from('evidencias').select('*').in('accion_id', accionIds).order('created_at');
     evidencias = evs || [];
   }
+  // Cargar participantes de reuniones por separado (el JOIN anidado en reuniones es
+  // bloqueado por RLS y devuelve [] sin error). Más confiable consultar la tabla plana
+  // y mapear por reunion_id, igual que con evidencias.
+  const reunionIds = (reuniones || []).map(function(r){ return r.id; });
+  if(reunionIds.length) {
+    const { data: parts } = await sb.from('reunion_participantes').select('*').in('reunion_id', reunionIds).order('orden');
+    const partsPorReunion = {};
+    (parts || []).forEach(function(p){
+      if(!partsPorReunion[p.reunion_id]) partsPorReunion[p.reunion_id] = [];
+      partsPorReunion[p.reunion_id].push(p);
+    });
+    (reuniones || []).forEach(function(r){ r.reunion_participantes = partsPorReunion[r.id] || []; });
+  }
   DB = {
     colegio, cargos:cargos||[],
     responsables:(responsables||[]).map(r=>({...r,cargo:r.cargos?.nombre||''})),
