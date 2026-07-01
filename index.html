@@ -6773,8 +6773,7 @@ function agregarDestExtra() {
 }
 // Formatea el texto plano de resumen_ia en HTML estructurado (títulos, acuerdos numerados, párrafos)
 function _formatResumenIA(texto){
-  function esc(s){ return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  // Resalta segmento de "Responsable/Plazo" en tono tenue
+  function esc(s){ return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }  // Resalta segmento de "Responsable/Plazo" en tono tenue
   function tenue(s){
     return esc(s).replace(/\s*[—–-]\s*(Responsable[\s\S]*)$/i, function(_,tail){
       return ' <span class="rs-meta">— '+tail.replace(/\s*[·|]\s*/g,' · ')+'</span>';
@@ -6808,6 +6807,52 @@ function _formatResumenIA(texto){
     out += '<p class="rs-p">'+tenue(t)+'</p>';
   });
   return out || '<p class="rs-p">'+esc(String(texto))+'</p>';
+}
+
+// Formatea comentarios generales: detecta títulos (capitalización normal), viñetas y numeración.
+// Estética grafito (títulos negrita gris oscuro, no verde).
+function _formatComentarios(texto){
+  function esc(s){ return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var lineas = String(texto).replace(/\r/g,'').split(/\n/);
+  var out = '';
+  var listaAbierta = false;
+  function cerrarLista(){ if(listaAbierta){ out += '</ul>'; listaAbierta = false; } }
+  for(var i=0;i<lineas.length;i++){
+    var t = lineas[i].trim();
+    if(!t){ cerrarLista(); continue; }
+    // Viñeta: •, -, –, * al inicio
+    var mBul = t.match(/^[•\-–*]\s+([\s\S]+)$/);
+    if(mBul){
+      if(!listaAbierta){ out += '<ul class="cg-list">'; listaAbierta = true; }
+      out += '<li class="cg-li">'+esc(mBul[1])+'</li>';
+      continue;
+    }
+    cerrarLista();
+    // Numeración: "1. ..." o "1) ..."
+    var mNum = t.match(/^(\d+)[.)]\s+([\s\S]+)$/);
+    if(mNum){
+      out += '<div class="cg-item"><span class="cg-num">'+mNum[1]+'</span><div class="cg-item-body">'+esc(mNum[2])+'</div></div>';
+      continue;
+    }
+    // ¿Es título? Corto, sin puntuación final de oración, no es una lista.
+    // Además, la siguiente línea no vacía debe ser contenido (párrafo o lista).
+    var sinPuntoFinal = !/[.:;,]$/.test(t);
+    var pocasPalabras = t.split(/\s+/).length <= 9;
+    var corto = t.length <= 65;
+    var sigNoVacia = '';
+    for(var j=i+1;j<lineas.length;j++){ if(lineas[j].trim()){ sigNoVacia = lineas[j].trim(); break; } }
+    var haySiguiente = !!sigNoVacia;
+    // Título con ":" explícito también cuenta (ej. "Objetivos:")
+    var terminaEnDosPuntos = /:$/.test(t);
+    var esTitulo = haySiguiente && corto && pocasPalabras && (sinPuntoFinal || terminaEnDosPuntos);
+    if(esTitulo){
+      out += '<div class="cg-title">'+esc(t.replace(/:$/,''))+'</div>';
+      continue;
+    }
+    out += '<p class="cg-p">'+esc(t)+'</p>';
+  }
+  cerrarLista();
+  return out || '<p class="cg-p">'+esc(String(texto))+'</p>';
 }
 
 function generarPDFReunion() {
@@ -6860,6 +6905,7 @@ function generarPDFReunion() {
   /* ===== PÁGINA 2: SÍNTESIS ===== */
   '.pagina2{margin-top:8px}.p2-row{display:table;width:100%;border-spacing:0;table-layout:fixed}.p2-cell{display:table-cell;vertical-align:top}.p2-cell-main{width:68%;padding-right:14px}.p2-cell-aside{width:32%}.p2-cell-aside .area-card{margin-bottom:11px}'+
   '.resumen-soft{background:#DCEBE0;border:1px solid #BBD8C4;border-radius:16px;padding:16px 18px 14px;margin-bottom:16px;box-shadow:0 3px 12px rgba(30,58,47,.06)}.resumen-pill{display:inline-block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#2E5B45;background:#fff;padding:4px 12px;border-radius:999px;font-weight:700;margin-bottom:14px}.resumen-text{font-size:11.5px;line-height:1.7;color:#26382E}.resumen-text .rs-subtitle{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3B6D52;margin:16px 0 7px;padding-top:14px;border-top:1px solid #BBD8C4}.resumen-text .rs-subtitle:first-child{margin-top:0;padding-top:0;border-top:none}.resumen-text .rs-p{margin-bottom:8px}.resumen-text .rs-p:last-child{margin-bottom:0}.resumen-text .rs-item{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px}.resumen-text .rs-num{flex-shrink:0;width:19px;height:19px;border-radius:50%;background:#fff;color:#2E5B45;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.resumen-text .rs-item-body{flex:1;min-width:0}.resumen-text .rs-strong{color:#1E3A2F;font-weight:700}.resumen-text .rs-meta{color:#5B7C6B}'+
+  '.cg-box{font-size:11.5px;line-height:1.7;color:#3F3F46}.cg-title{font-size:12.5px;font-weight:700;color:#2A2A2E;margin:16px 0 6px}.cg-title:first-child{margin-top:0}.cg-p{margin-bottom:9px;color:#3F3F46}.cg-p:last-child{margin-bottom:0}.cg-list{list-style:none;margin:4px 0 9px;padding:0}.cg-li{position:relative;padding-left:16px;margin-bottom:5px;color:#3F3F46}.cg-li:before{content:"";position:absolute;left:3px;top:8px;width:4px;height:4px;border-radius:50%;background:#9AA0A6}.cg-item{display:flex;gap:9px;align-items:flex-start;margin-bottom:7px}.cg-num{flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#EDEDEF;color:#52525B;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.cg-item-body{flex:1;min-width:0;color:#3F3F46}'+
   '.area-card{background:#fff;border-radius:14px;padding:14px 14px 12px;box-shadow:0 3px 14px rgba(30,58,47,.05);margin-bottom:12px}.area-card-title{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#8A9B90;margin-bottom:14px}.area-bar-row{margin-bottom:11px}.area-bar-row:last-child{margin-bottom:0}.area-bar-head{display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px}.area-bar-name{color:#3B4A42;font-weight:600}.area-bar-val{font-weight:700}.area-bar-track{height:8px;background:#EEF1EC;border-radius:999px;overflow:hidden}.area-bar-fill{height:100%;border-radius:999px}'+
   '.total-mini{background:linear-gradient(135deg,#EAF3EC,#DDEEE1);border:1px solid #C9E3CF;border-radius:12px;padding:8px 12px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}.total-mini-label{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;line-height:1.2}.total-mini-val{font-family:"DM Serif Display",serif;font-size:19px;line-height:1}.total-mini-lvl{font-size:9px;font-weight:700}'+
   /* Botón */
@@ -6931,7 +6977,7 @@ function generarPDFReunion() {
   html+='<div class="section-sub" style="margin-top:18px">Comentarios Generales</div>';
   html+='<div class="section-card">';
   if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){
-    html+='<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>';
+    html+='<div class="cg-box">'+_formatComentarios(reunion.comentarios_generales)+'</div>';
   } else {
     html+='<p style="color:#8A9B90;font-style:italic">Sin comentarios generales registrados.</p>';
   }
