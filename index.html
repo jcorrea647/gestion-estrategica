@@ -6917,7 +6917,14 @@ function generarPDFReunion() {
   '.area-card{background:#fff;border:1px solid #E7EFE9;border-radius:14px;padding:15px 15px 13px;box-shadow:0 3px 14px rgba(30,58,47,.05);margin-bottom:12px}.area-card-title{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#7C9686;margin-bottom:14px;padding-bottom:9px;border-bottom:1px solid #EEF1EC}.area-bar-row{margin-bottom:12px}.area-bar-row:last-child{margin-bottom:0}.area-bar-head{display:flex;justify-content:space-between;font-size:10px;margin-bottom:5px}.area-bar-name{color:#3B4A42;font-weight:600}.area-bar-val{font-weight:700}.area-bar-track{height:8px;background:#EEF1EC;border-radius:999px;overflow:hidden}.area-bar-fill{height:100%;border-radius:999px}'+
   '.total-mini{background:linear-gradient(135deg,#EAF3EC,#DDEEE1);border:1px solid #C9E3CF;border-radius:12px;padding:8px 12px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}.total-mini-label{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;line-height:1.2}.total-mini-val{font-family:"DM Serif Display",serif;font-size:19px;line-height:1}.total-mini-lvl{font-size:9px;font-weight:700}'+
   /* Botón */
-  '.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:999px;padding:11px 22px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(30,58,47,.25)}.print-btn:hover{background:#2D5A42}';
+  '.print-btn{position:fixed;top:20px;right:20px;background:#1E3A2F;color:#fff;border:none;border-radius:999px;padding:11px 22px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(30,58,47,.25)}.print-btn:hover{background:#2D5A42}'+
+  /* ===== EDITOR: barra de herramientas y estados ===== */
+  '.edit-btn{position:fixed;top:20px;right:180px;background:#fff;color:#1E3A2F;border:1px solid #C9D8CE;border-radius:999px;padding:11px 20px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(30,58,47,.12)}.edit-btn:hover{background:#F1F6F2}.edit-btn.activo{background:#C49A2C;color:#fff;border-color:#C49A2C}'+
+  '.editor-toolbar{position:fixed;top:0;left:0;right:0;background:#1E3A2F;padding:9px 16px;display:none;gap:6px;align-items:center;flex-wrap:wrap;z-index:9999;box-shadow:0 3px 14px rgba(0,0,0,.2)}.editor-toolbar.visible{display:flex}.editor-toolbar .tb-group{display:flex;gap:3px;align-items:center;padding-right:9px;margin-right:3px;border-right:1px solid rgba(255,255,255,.18)}.editor-toolbar .tb-group:last-child{border-right:none}'+
+  '.tb-btn{background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:6px;min-width:30px;height:30px;padding:0 8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-family:"DM Sans",sans-serif}.tb-btn:hover{background:rgba(255,255,255,.22)}.tb-btn b{font-family:Georgia,serif}.tb-btn i{font-family:Georgia,serif}.tb-btn u{font-family:Georgia,serif}.tb-color{width:26px;height:26px;border-radius:6px;border:2px solid rgba(255,255,255,.35);cursor:pointer;padding:0;background:none}'+
+  '.tb-save{margin-left:auto;background:#C49A2C;color:#fff;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:"DM Sans",sans-serif}.tb-save:hover{background:#D4AA3C}.tb-save:disabled{opacity:.5;cursor:default}.tb-hint{color:#9DBBA9;font-size:11px;margin-left:8px}'+
+  '[data-edit].editando{outline:2px dashed #C49A2C;outline-offset:4px;border-radius:8px;cursor:text;background:rgba(196,154,44,.04)}[data-edit].editando:focus{outline:2px solid #C49A2C}'+
+  '@media print{.editor-toolbar,.edit-btn{display:none!important}[data-edit].editando{outline:none!important;background:none!important}}';
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+nombreCortoLiceo()+' '+reunion.titulo+' '+reunion.fecha+'</title><style>'+pdfCSS+'</style></head><body>';
   html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
 
@@ -6971,9 +6978,9 @@ function generarPDFReunion() {
   // Resumen en verde pastel legible con estructura (reusa resumen_ia)
   html+='<div class="resumen-soft"><span class="resumen-pill">Resumen</span>';
   if(reunion.resumen_ia && reunion.resumen_ia.trim()){
-    html+='<div class="resumen-text">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
+    html+='<div class="resumen-text" data-edit="resumen">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
   } else {
-    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.75;font-style:italic">Resumen no disponible aún. Se genera automáticamente a partir del acta de la reunión.</p></div>';
+    html+='<div class="resumen-text" data-edit="resumen"><p class="rs-p" style="opacity:.75;font-style:italic">Resumen no disponible aún. Se genera automáticamente a partir del acta de la reunión.</p></div>';
   }
   html+='</div>';
   html+='</div><div class="p2-cell p2-cell-aside">';
@@ -6991,16 +6998,16 @@ function generarPDFReunion() {
   html+='<div class="section-sub" style="margin-top:18px">Comentarios Generales</div>';
   html+='<div class="section-card">';
   if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){
-    html+='<div class="cg-box">'+_formatComentarios(reunion.comentarios_generales)+'</div>';
+    html+='<div class="cg-box" data-edit="general">'+_formatComentarios(reunion.comentarios_generales)+'</div>';
   } else {
-    html+='<p style="color:#8A9B90;font-style:italic">Sin comentarios generales registrados.</p>';
+    html+='<div class="cg-box" data-edit="general"><p style="color:#8A9B90;font-style:italic">Sin comentarios generales registrados.</p></div>';
   }
   html+='</div>';
 
   html+='</div>';
 
   // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario) — inicia Hoja 2
-  html+='<div class="section hoja-detalle"><div class="section-title">Comentarios Registrados</div>';
+  html+='<div class="section hoja-detalle"><div class="section-title">Comentarios Registrados por Acción</div>';
   if(soloComentarios.length){
     // Agrupar por mes
     var porMes = {};
@@ -7016,7 +7023,7 @@ function generarPDFReunion() {
         html+='<div class="com-body">';
         html+='<div class="com-acc">'+it.ac.nombre+'</div>';
         html+='<div class="com-meta">'+it.area.nombre+' • Responsable: '+resps+'</div>';
-        html+='<div class="com-text">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
+        html+='<div class="com-text" data-edit="accion" data-seg-id="'+(it.seg.id||'')+'" data-accion-id="'+it.ac.id+'" data-mes="'+it.mes+'">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
         // Evidencias adjuntas a esta acción/mes
         var evCard = (DB.evidencias || []).filter(function(e){ return e.accion_id===it.ac.id && e.mes===m; });
         if(evCard.length) {
@@ -7133,9 +7140,63 @@ function generarPDFReunion() {
     html+='<td style="text-align:center">'+(isPend?'<span class="badge pendiente">Pendiente '+pct+'%</span>':pct!==null&&pct!==undefined?'<span class="badge '+getEstado(pct)+'">'+pct+'%</span>':'<span class="badge sin_datos">Por evaluar</span>')+'</td></tr>';
   });
   html+='</tbody></table></div>';
+
+  // ===== BARRA DE HERRAMIENTAS + BOTÓN EDITAR + SCRIPT DE EDICIÓN =====
+  html+='<div class="editor-toolbar" id="editorToolbar">'
+    + '<div class="tb-group">'
+      + '<button class="tb-btn" title="Negrita" onmousedown="return false" onclick="fmt(\'bold\')"><b>N</b></button>'
+      + '<button class="tb-btn" title="Cursiva" onmousedown="return false" onclick="fmt(\'italic\')"><i>C</i></button>'
+      + '<button class="tb-btn" title="Subrayado" onmousedown="return false" onclick="fmt(\'underline\')"><u>S</u></button>'
+    + '</div>'
+    + '<div class="tb-group">'
+      + '<button class="tb-btn" title="Agrandar letra" onmousedown="return false" onclick="fmtSize(1)">A+</button>'
+      + '<button class="tb-btn" title="Disminuir letra" onmousedown="return false" onclick="fmtSize(-1)">A−</button>'
+    + '</div>'
+    + '<div class="tb-group">'
+      + '<button class="tb-btn" title="Color de texto" onmousedown="return false" onclick="document.getElementById(\'tbColor\').click()">A<span style="color:#C49A2C">▾</span></button>'
+      + '<input type="color" id="tbColor" class="tb-color" value="#1E3A2F" onchange="fmt(\'foreColor\',this.value)" title="Color de texto">'
+      + '<button class="tb-btn" title="Resaltar" onmousedown="return false" onclick="document.getElementById(\'tbHilite\').click()" style="background:rgba(196,154,44,.35)">✎</button>'
+      + '<input type="color" id="tbHilite" class="tb-color" value="#FBF1D9" onchange="fmt(\'hiliteColor\',this.value)" title="Color de resaltado">'
+    + '</div>'
+    + '<div class="tb-group">'
+      + '<button class="tb-btn" title="Lista con viñetas" onmousedown="return false" onclick="fmt(\'insertUnorderedList\')">••</button>'
+      + '<button class="tb-btn" title="Lista numerada" onmousedown="return false" onclick="fmt(\'insertOrderedList\')">1.</button>'
+    + '</div>'
+    + '<div class="tb-group">'
+      + '<button class="tb-btn" title="Alinear izquierda" onmousedown="return false" onclick="fmt(\'justifyLeft\')">⯇</button>'
+      + '<button class="tb-btn" title="Centrar" onmousedown="return false" onclick="fmt(\'justifyCenter\')">≡</button>'
+      + '<button class="tb-btn" title="Alinear derecha" onmousedown="return false" onclick="fmt(\'justifyRight\')">⯈</button>'
+    + '</div>'
+    + '<span class="tb-hint">El formato es solo del PDF · el texto editado se guarda en el seguimiento</span>'
+    + '<button class="tb-save" id="tbSave" onclick="guardarTextoEditado()">Guardar cambios</button>'
+    + '</div>';
+  html+='<button class="edit-btn no-print" id="btnEditar" onclick="toggleEdicion()">✏️ Editar informe</button>';
+
+  var _scriptEdit = 'var REUNION_ID='+JSON.stringify(reunion.id)+';var _editando=false;'
+    + 'function fmt(cmd,val){document.execCommand(cmd,false,val||null);}'
+    + 'function fmtSize(dir){try{var sel=window.getSelection();if(!sel||!sel.rangeCount)return;document.execCommand("fontSize",false,dir>0?"5":"2");}catch(e){}}'
+    + 'function toggleEdicion(){_editando=!_editando;'
+      + 'var tb=document.getElementById("editorToolbar");var be=document.getElementById("btnEditar");'
+      + 'var bloques=document.querySelectorAll("[data-edit]");'
+      + 'if(_editando){tb.classList.add("visible");be.classList.add("activo");be.innerHTML="✓ Editando…";document.body.style.paddingTop="52px";'
+        + 'bloques.forEach(function(b){b.setAttribute("contenteditable","true");b.classList.add("editando");});}'
+      + 'else{tb.classList.remove("visible");be.classList.remove("activo");be.innerHTML="✏️ Editar informe";document.body.style.paddingTop="0";'
+        + 'bloques.forEach(function(b){b.removeAttribute("contenteditable");b.classList.remove("editando");});}}'
+    + 'function _plano(el){var t=el.innerText||el.textContent||"";return t.replace(/\\u00a0/g," ").replace(/\\n{3,}/g,"\\n\\n").trim();}'
+    + 'function guardarTextoEditado(){'
+      + 'if(!window.opener||typeof window.opener.guardarEdicionInforme!=="function"){alert("No se puede guardar: vuelve a abrir el informe desde la plataforma con la sesión activa.");return;}'
+      + 'var payload={reunionId:REUNION_ID,resumen:null,general:null,acciones:[]};'
+      + 'var r=document.querySelector("[data-edit=\\"resumen\\"]");if(r)payload.resumen=_plano(r);'
+      + 'var g=document.querySelector("[data-edit=\\"general\\"]");if(g)payload.general=_plano(g);'
+      + 'document.querySelectorAll("[data-edit=\\"accion\\"]").forEach(function(a){payload.acciones.push({segId:a.getAttribute("data-seg-id"),accionId:a.getAttribute("data-accion-id"),mes:a.getAttribute("data-mes"),texto:_plano(a)});});'
+      + 'var btn=document.getElementById("tbSave");btn.disabled=true;btn.textContent="Guardando…";'
+      + 'Promise.resolve(window.opener.guardarEdicionInforme(payload)).then(function(ok){btn.disabled=false;btn.textContent="Guardar cambios";if(ok){btn.textContent="✓ Guardado";setTimeout(function(){btn.textContent="Guardar cambios";},1800);}else{alert("Hubo un error al guardar. Revisa la plataforma.");}}).catch(function(){btn.disabled=false;btn.textContent="Guardar cambios";alert("Error al guardar.");});'
+    + '}';
+  html+='<script>'+_scriptEdit+'<\/script>';
+
   html+='</div></body></html>';
   W.document.write(html);W.document.close();
-  showToast('Informe generado. Usa Imprimir para guardar como PDF.');
+  showToast('Informe generado. Puedes editarlo con ✏️ y luego Imprimir.');
 
   // Resumen IA garantizado en 3 casos, sin bloquear el PDF actual:
   //  1) Si ya existe resumen_ia -> se usa el caché (arriba, en el render). No entra aquí.
@@ -7196,8 +7257,67 @@ function generarPDFReunion() {
     }catch(_e){ /* noop */ }
   })();
 }
+
 // ================================================================
-// REUNIONES CORPORATIVAS (sin colegio asignado · tipo='corporativa')
+// GUARDAR EDICIÓN DEL INFORME (llamada desde la ventana del PDF vía window.opener)
+// Persiste SOLO texto plano. El formato (negrita, etc.) vive únicamente en el PDF.
+// El texto de cada acción se escribe en seguimiento.comentario -> se refleja en
+// "Ingresar seguimiento / + Comentario". No toca ninguna otra vista.
+// ================================================================
+async function guardarEdicionInforme(payload){
+  try{
+    if(!payload || !payload.reunionId){ showToast('No se pudo identificar la reunión'); return false; }
+    var rId = payload.reunionId;
+    var reunion = (DB.reuniones||[]).find(function(r){ return r.id===rId; });
+
+    // 1) Resumen y comentarios generales -> tabla reuniones
+    var updReunion = {};
+    if(payload.resumen !== null && payload.resumen !== undefined){
+      updReunion.resumen_ia = payload.resumen.trim() || null;
+    }
+    if(payload.general !== null && payload.general !== undefined){
+      updReunion.comentarios_generales = payload.general.trim() || null;
+    }
+    if(Object.keys(updReunion).length){
+      updReunion.updated_at = new Date().toISOString();
+      var r1 = await sb.from('reuniones').update(updReunion).eq('id', rId);
+      if(r1.error){ showToast('Error al guardar resumen/comentarios: '+r1.error.message); return false; }
+      var ir = (DB.reuniones||[]).findIndex(function(x){ return x.id===rId; });
+      if(ir>=0) DB.reuniones[ir] = Object.assign({}, DB.reuniones[ir], updReunion);
+    }
+
+    // 2) Comentario por acción -> tabla seguimiento (mismo campo que "+ Comentario")
+    var acciones = payload.acciones || [];
+    for(var k=0; k<acciones.length; k++){
+      var a = acciones[k];
+      var texto = (a.texto||'').trim();
+      var segId = a.segId && a.segId !== '' ? a.segId : null;
+      if(segId){
+        var r2 = await sb.from('seguimiento').update({ comentario: texto || null, updated_at:new Date().toISOString() }).eq('id', segId);
+        if(r2.error){ showToast('Error al guardar comentario: '+r2.error.message); return false; }
+        var is = (DB.seguimiento||[]).findIndex(function(x){ return x.id===segId; });
+        if(is>=0) DB.seguimiento[is] = Object.assign({}, DB.seguimiento[is], { comentario: texto || null });
+      } else if(a.accionId && a.mes){
+        // Sin fila de seguimiento previa: buscar por accion/mes o crear
+        var ex = (DB.seguimiento||[]).find(function(x){ return x.accion_id===a.accionId && x.mes===a.mes; });
+        if(ex && ex.id){
+          var r3 = await sb.from('seguimiento').update({ comentario: texto || null, updated_at:new Date().toISOString() }).eq('id', ex.id);
+          if(r3.error){ showToast('Error al guardar comentario: '+r3.error.message); return false; }
+          var ie = (DB.seguimiento||[]).findIndex(function(x){ return x.id===ex.id; });
+          if(ie>=0) DB.seguimiento[ie] = Object.assign({}, DB.seguimiento[ie], { comentario: texto || null });
+        }
+      }
+    }
+
+    // Refrescar la vista actual para que "+ Comentario" muestre el texto nuevo
+    if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
+    showToast('✓ Cambios del informe guardados');
+    return true;
+  }catch(e){
+    showToast('Error al guardar la edición: '+(e && e.message ? e.message : e));
+    return false;
+  }
+}
 // Módulo autónomo: NO depende de SESSION.colegioActivo ni de DB.*
 // Solo acta + participantes + comentarios. Carga propia desde Supabase.
 // ================================================================
