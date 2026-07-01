@@ -6855,7 +6855,7 @@ function _formatComentarios(texto){
   return out || '<p class="cg-p">'+esc(String(texto))+'</p>';
 }
 
-function generarPDFReunion() {
+async function generarPDFReunion() {
   var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion){showToast('No hay reunion activa');return;}
   closeModal();
@@ -6880,6 +6880,40 @@ function generarPDFReunion() {
 
   var W=window.open('','_blank');
   if(!W){showToast('Permite ventanas emergentes para generar el PDF');return;}
+  // Pantalla de carga mientras (si hace falta) se genera el resumen con IA
+  W.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Generando informe…</title><style>body{margin:0;font-family:system-ui,Arial,sans-serif;background:#F4F6F3;color:#1E3A2F;display:flex;align-items:center;justify-content:center;height:100vh}.box{text-align:center}.sp{width:34px;height:34px;border:4px solid #DDE7DF;border-top-color:#C49A2C;border-radius:50%;margin:0 auto 16px;animation:g 1s linear infinite}@keyframes g{to{transform:rotate(360deg)}}</style></head><body><div class="box"><div class="sp"></div><div id="msg" style="font-weight:600">Preparando el informe…</div></div></body></html>');
+
+  // ===== GENERAR RESUMEN IA AHORA (síncrono) si falta, para verlo en ESTE PDF =====
+  if(!(reunion.resumen_ia && reunion.resumen_ia.trim())){
+    try{
+      var _msg=W.document.getElementById('msg'); if(_msg)_msg.textContent='Generando la síntesis con IA…';
+      // Materia prima: transcripción, o (si no hay) comentarios generales + seguimiento
+      var _fuente = (reunion.transcripcion_reunion && reunion.transcripcion_reunion.trim()) ? reunion.transcripcion_reunion.trim() : '';
+      if(!_fuente){
+        var _lineas=[];
+        if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){ _lineas.push('Comentarios generales de la reunión:'); _lineas.push(reunion.comentarios_generales.trim()); _lineas.push(''); }
+        if(soloComentarios.length){ _lineas.push('Seguimiento de acciones revisadas:'); soloComentarios.forEach(function(it){ var p=(it.seg&&it.seg.porcentaje!=null)?it.seg.porcentaje+'%':'s/d'; _lineas.push('- ['+it.area.nombre+'] '+it.ac.nombre+' ('+p+'): '+(it.seg.comentario||'').trim()); }); }
+        _fuente=_lineas.join('\n').trim();
+      }
+      if(_fuente){
+        var _resp = await fetch(ACTA_FN_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ colegio: DB.colegio?DB.colegio.nombre:'', titulo: reunion.titulo||'', fecha: reunion.fecha||'', participantes: reunion.reunion_participantes||[], transcripcion: _fuente }) });
+        var _result = await _resp.json().catch(function(){return {};});
+        if(!_resp.ok) throw new Error(_result.error || ('HTTP '+_resp.status));
+        if(!_result.actaTexto) throw new Error('La IA devolvió una respuesta vacía');
+        // Guardar en BD (caché) y en memoria para que este PDF lo use
+        var _up = await sb.from('reuniones').update({ resumen_ia:_result.actaTexto, updated_at:new Date().toISOString() }).eq('id', reunion.id);
+        if(!_up.error){ var _i=(DB.reuniones||[]).findIndex(function(x){return x.id===reunion.id;}); if(_i>=0) DB.reuniones[_i].resumen_ia=_result.actaTexto; }
+        reunion.resumen_ia=_result.actaTexto;   // usa el fresco en este render
+      }
+    }catch(_err){
+      // Error VISIBLE (no más silencio): se muestra en el propio informe.
+      window._resumenErrorPDF = (_err && _err.message) ? _err.message : String(_err);
+      if(String(window._resumenErrorPDF).indexOf('Failed to fetch')>=0){ window._resumenErrorPDF='No se pudo contactar la función procesar-acta-reunion (¿desplegada? ¿CORS?).'; }
+    }
+  } else {
+    window._resumenErrorPDF = null;
+  }
+
   var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap");*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:"DM Sans",sans-serif;color:#374151;font-size:11px;line-height:1.6;background:#F4F6F3}.page{max-width:820px;margin:0 auto;padding:34px 40px 40px}@media print{.page{padding:0;max-width:100%}.no-print{display:none}.hoja-detalle{page-break-before:always}}'+
   /* PORTADA tipo membrete institucional */
   '.cover{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(30,58,47,.08);margin-bottom:22px;page-break-inside:avoid}'+
@@ -6888,7 +6922,7 @@ function generarPDFReunion() {
   '.cover-title{padding:22px 26px 16px;border-bottom:3px solid #C49A2C}.cover-title .colegio-r{font-family:"DM Serif Display",serif;font-size:32px;color:#1E3A2F;line-height:1.05;margin-bottom:4px}.cover-title .rtitulo{font-size:14px;color:#7C9686;font-weight:600;letter-spacing:.2px}'+
   '.cover-meta{display:flex;gap:0}.cover-meta .cm-item{flex:1;padding:14px 20px;border-right:1px solid #EAEDE8}.cover-meta .cm-item:last-child{border-right:none}.cover-meta .cm-lbl{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#8A9B90;font-weight:700;margin-bottom:3px}.cover-meta .cm-val{font-size:13px;color:#374151;font-weight:600}.cover-meta .cm-sub{font-size:10px;color:#9AA3A0}.cover-meta .cm-total{flex:0 0 140px;background:linear-gradient(135deg,#EAF3EC,#DDEEE1);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:12px}.cm-total .cmt-lbl{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;text-align:center;line-height:1.2}.cm-total .cmt-val{font-family:"DM Serif Display",serif;font-size:30px;line-height:1}.cm-total .cmt-lvl{font-size:9px;font-weight:700}'+
   /* Asistentes en tira compacta */
-  '.asistentes-band{background:#fff;border-radius:14px;padding:14px 18px;box-shadow:0 3px 12px rgba(30,58,47,.05);margin-bottom:22px;page-break-inside:avoid}.asistentes-band .ab-title{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#7C9686;margin-bottom:10px}'+
+  '.asistentes-band{background:#fff;border-radius:14px;padding:11px 16px;box-shadow:0 3px 12px rgba(30,58,47,.05);margin-bottom:22px;page-break-inside:avoid}.asistentes-band .ab-title{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#7C9686;margin-bottom:8px}'+
   /* (legacy, por compatibilidad) */
   '.cover .logo-r{display:none}.cover .colegio-r{font-family:"DM Serif Display",serif}.cover .rtitulo{color:#7C9686}'+
   /* HERO métrica en tarjeta pastel */
@@ -6909,7 +6943,7 @@ function generarPDFReunion() {
   /* Tarjetas de comentario por acción, con color según estado */
   '.com-card{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:12px;page-break-inside:avoid;box-shadow:0 3px 12px rgba(30,58,47,.06);border-left:5px solid #C9E3CF;display:flex;gap:16px;align-items:flex-start}.com-card.verde{border-left-color:#8FCBA5;background:linear-gradient(90deg,#F1F8F3,#fff 65%)}.com-card.amarillo{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.rojo{border-left-color:#E7A6B4;background:linear-gradient(90deg,#FBF1F3,#fff 65%)}.com-card.pendiente{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.sin_datos{border-left-color:#C9CDC9;background:linear-gradient(90deg,#F5F5F3,#fff 65%)}.com-body{flex:1;min-width:0}.com-acc{font-weight:700;font-size:14px;color:#1E3A2F;line-height:1.3;margin-bottom:5px}.com-meta{font-size:9px;color:#8A9B90;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;line-height:1.5}.com-text{font-size:11.5px;line-height:1.6;color:#3B4A42;white-space:pre-wrap}.com-score{text-align:center;flex-shrink:0;min-width:66px}.com-score-val{font-family:"DM Serif Display",serif;font-size:30px;line-height:1}.com-score .badge{margin-top:6px;font-size:8.5px}'+
   /* Participantes como tarjetitas pastel */
-  '.participantes-r{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;text-align:left}.participante-r{font-size:10px;color:#374151;padding:9px 12px;line-height:1.4;background:#F4F8F5;border:1px solid #E7EFE9;border-radius:10px}.participante-r .pr-nombre{font-weight:700;color:#1E3A2F;display:block}.participante-r .pr-cargo{color:#7C9686;font-size:9px;font-weight:600;margin-left:0}.participante-r .pr-correo{color:#9AA3A0;font-size:9px;display:block}'+
+  '.participantes-r{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0;text-align:left}.participante-r{font-size:10px;color:#374151;padding:5px 10px;line-height:1.25;background:#F4F8F5;border:1px solid #E7EFE9;border-radius:8px}.participante-r .pr-nombre{font-weight:700;color:#1E3A2F}.participante-r .pr-cargo{color:#7C9686;font-size:9px;font-weight:600;margin-left:5px}.participante-r .pr-correo{display:none}'+
   /* ===== PÁGINA 2: SÍNTESIS ===== */
   '.pagina2{margin-top:8px}.p2-row{display:table;width:100%;border-spacing:0;table-layout:fixed}.p2-cell{display:table-cell;vertical-align:top}.p2-cell-main{width:68%;padding-right:14px}.p2-cell-aside{width:32%}.p2-cell-aside .area-card{margin-bottom:11px}'+
   '.resumen-soft{background:#DCEBE0;border:1px solid #BBD8C4;border-radius:16px;padding:16px 18px 14px;margin-bottom:16px;box-shadow:0 3px 12px rgba(30,58,47,.06)}.resumen-pill{display:inline-block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#2E5B45;background:#fff;padding:4px 12px;border-radius:999px;font-weight:700;margin-bottom:14px}.resumen-text{font-size:11.5px;line-height:1.7;color:#26382E}.resumen-text .rs-subtitle{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3B6D52;margin:16px 0 7px;padding-top:14px;border-top:1px solid #BBD8C4}.resumen-text .rs-subtitle:first-child{margin-top:0;padding-top:0;border-top:none}.resumen-text .rs-p{margin-bottom:8px}.resumen-text .rs-p:last-child{margin-bottom:0}.resumen-text .rs-item{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px}.resumen-text .rs-num{flex-shrink:0;width:19px;height:19px;border-radius:50%;background:#fff;color:#2E5B45;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.resumen-text .rs-item-body{flex:1;min-width:0}.resumen-text .rs-strong{color:#1E3A2F;font-weight:700}.resumen-text .rs-meta{color:#5B7C6B}'+
@@ -6979,8 +7013,10 @@ function generarPDFReunion() {
   html+='<div class="resumen-soft"><span class="resumen-pill">Resumen</span>';
   if(reunion.resumen_ia && reunion.resumen_ia.trim()){
     html+='<div class="resumen-text" data-edit="resumen">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
+  } else if(window._resumenErrorPDF){
+    html+='<div class="resumen-text" data-edit="resumen"><p class="rs-p" style="color:#9B2335"><strong>No se pudo generar la síntesis:</strong> '+String(window._resumenErrorPDF).replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</p><p class="rs-p" style="opacity:.75;font-size:10px">Revisa que la Edge Function <em>procesar-acta-reunion</em> esté desplegada y que haya transcripción o comentarios en la reunión.</p></div>';
   } else {
-    html+='<div class="resumen-text" data-edit="resumen"><p class="rs-p" style="opacity:.75;font-style:italic">Resumen no disponible aún. Se genera automáticamente a partir del acta de la reunión.</p></div>';
+    html+='<div class="resumen-text" data-edit="resumen"><p class="rs-p" style="opacity:.75;font-style:italic">Sin material suficiente para generar la síntesis (no hay transcripción ni comentarios registrados).</p></div>';
   }
   html+='</div>';
   html+='</div><div class="p2-cell p2-cell-aside">';
@@ -7195,67 +7231,10 @@ function generarPDFReunion() {
   html+='<script>'+_scriptEdit+'<\/script>';
 
   html+='</div></body></html>';
-  W.document.write(html);W.document.close();
+  W.document.open();          // limpia la pantalla de carga
+  W.document.write(html);
+  W.document.close();
   showToast('Informe generado. Puedes editarlo con ✏️ y luego Imprimir.');
-
-  // Resumen IA garantizado en 3 casos, sin bloquear el PDF actual:
-  //  1) Si ya existe resumen_ia -> se usa el caché (arriba, en el render). No entra aquí.
-  //  2) Si falta pero hay transcripción -> se genera desde la transcripción.
-  //  3) Si falta y no hay transcripción -> se genera desde los comentarios de las acciones.
-  // En 2 y 3 se guarda en la BD para que la próxima apertura salga instantánea (caché).
-  (function _resumenBgSiFalta(){
-    try{
-      if(reunion.resumen_ia && reunion.resumen_ia.trim()) return;   // caso 1: ya cacheado
-      if(window._resumenBgEnCurso === reunion.id) return;           // evita llamadas duplicadas
-      // Construir la materia prima para la IA
-      var fuente = (reunion.transcripcion_reunion && reunion.transcripcion_reunion.trim())
-        ? reunion.transcripcion_reunion.trim()
-        : '';
-      if(!fuente){
-        // caso 3: armar un "acta" sintética con los comentarios registrados por acción
-        var lineas = [];
-        if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){
-          lineas.push('Comentarios generales de la reunión:');
-          lineas.push(reunion.comentarios_generales.trim());
-          lineas.push('');
-        }
-        var conCom = (typeof soloComentarios !== 'undefined' ? soloComentarios : []).slice();
-        if(conCom.length){
-          lineas.push('Seguimiento de acciones revisadas:');
-          conCom.forEach(function(it){
-            var pct = (it.seg && it.seg.porcentaje!=null) ? it.seg.porcentaje+'%' : 's/d';
-            lineas.push('- ['+it.area.nombre+'] '+it.ac.nombre+' ('+pct+'): '+(it.seg.comentario||'').trim());
-          });
-        }
-        fuente = lineas.join('\n').trim();
-      }
-      if(!fuente) return;   // no hay absolutamente nada que resumir
-      window._resumenBgEnCurso = reunion.id;
-      fetch(ACTA_FN_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          colegio: DB.colegio ? DB.colegio.nombre : '',
-          titulo: reunion.titulo || '', fecha: reunion.fecha || '',
-          participantes: reunion.reunion_participantes || [],
-          transcripcion: fuente
-        })
-      }).then(function(r){ return r.json().catch(function(){return {};}); })
-        .then(function(res){
-          if(!res || !res.actaTexto) return;
-          return sb.from('reuniones')
-            .update({ resumen_ia: res.actaTexto, updated_at: new Date().toISOString() })
-            .eq('id', reunion.id)
-            .then(function(o){
-              if(o && o.error) return;
-              var i=(DB.reuniones||[]).findIndex(function(x){return x.id===reunion.id;});
-              if(i>=0) DB.reuniones[i]=Object.assign({},DB.reuniones[i],{resumen_ia:res.actaTexto});
-              showToast('✨ Resumen generado. Vuelve a abrir el informe para incluirlo.');
-            });
-        })
-        .catch(function(){ /* silencioso: no romper el flujo del PDF */ })
-        .finally(function(){ if(window._resumenBgEnCurso===reunion.id) window._resumenBgEnCurso=null; });
-    }catch(_e){ /* noop */ }
-  })();
 }
 
 // ================================================================
