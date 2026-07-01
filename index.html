@@ -6858,7 +6858,7 @@ function generarPDFReunion() {
   /* Participantes como tarjetitas pastel */
   '.participantes-r{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px;max-width:680px;margin-left:auto;margin-right:auto;text-align:left}.participante-r{font-size:10px;color:#374151;padding:8px 12px;line-height:1.4;background:#F4F8F5;border-radius:10px}.participante-r .pr-nombre{font-weight:700;color:#1E3A2F}.participante-r .pr-cargo{color:#7C9686;font-size:9px;font-weight:600;margin-left:4px}.participante-r .pr-correo{color:#9AA3A0;font-size:9px;display:block}'+
   /* ===== PÁGINA 2: SÍNTESIS ===== */
-  '.pagina2{margin-top:8px}.p2-grid{display:grid;grid-template-columns:minmax(0,70%) minmax(0,30%);gap:16px;align-items:start}.p2-left{min-width:0}.p2-right{min-width:0}'+
+  '.pagina2{margin-top:8px}.p2-float{overflow:hidden}.p2-aside{float:right;width:31%;margin:0 0 12px 16px}.p2-aside .area-card{margin-bottom:11px}'+
   '.resumen-soft{background:#DCEBE0;border:1px solid #BBD8C4;border-radius:16px;padding:16px 18px 14px;margin-bottom:16px;box-shadow:0 3px 12px rgba(30,58,47,.06)}.resumen-pill{display:inline-block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#2E5B45;background:#fff;padding:4px 12px;border-radius:999px;font-weight:700;margin-bottom:14px}.resumen-text{font-size:11.5px;line-height:1.7;color:#26382E}.resumen-text .rs-subtitle{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3B6D52;margin:16px 0 7px;padding-top:14px;border-top:1px solid #BBD8C4}.resumen-text .rs-subtitle:first-child{margin-top:0;padding-top:0;border-top:none}.resumen-text .rs-p{margin-bottom:8px}.resumen-text .rs-p:last-child{margin-bottom:0}.resumen-text .rs-item{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px}.resumen-text .rs-num{flex-shrink:0;width:19px;height:19px;border-radius:50%;background:#fff;color:#2E5B45;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.resumen-text .rs-item-body{flex:1;min-width:0}.resumen-text .rs-strong{color:#1E3A2F;font-weight:700}.resumen-text .rs-meta{color:#5B7C6B}'+
   '.area-card{background:#fff;border-radius:14px;padding:14px 14px 12px;box-shadow:0 3px 14px rgba(30,58,47,.05);margin-bottom:12px}.area-card-title{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#8A9B90;margin-bottom:14px}.area-bar-row{margin-bottom:11px}.area-bar-row:last-child{margin-bottom:0}.area-bar-head{display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px}.area-bar-name{color:#3B4A42;font-weight:600}.area-bar-val{font-weight:700}.area-bar-track{height:8px;background:#EEF1EC;border-radius:999px;overflow:hidden}.area-bar-fill{height:100%;border-radius:999px}'+
   '.total-mini{background:linear-gradient(135deg,#EAF3EC,#DDEEE1);border:1px solid #C9E3CF;border-radius:12px;padding:8px 12px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}.total-mini-label{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;line-height:1.2}.total-mini-val{font-family:"DM Serif Display",serif;font-size:19px;line-height:1}.total-mini-lvl{font-size:9px;font-weight:700}'+
@@ -6901,31 +6901,10 @@ function generarPDFReunion() {
   function _colBarPct(p){ if(p===null||p===undefined) return {fill:'#C9CDC9',txt:'#8A9B90'}; if(p>=90) return {fill:'#8FCBA5',txt:'#2E7D52'}; if(p>=70) return {fill:'#EBCD7A',txt:'#B8860B'}; return {fill:'#E7A6B4',txt:'#C0546A'}; }
 
   html+='<div class="section pagina2"><div class="section-title">Síntesis de la reunión</div>';
-  html+='<div class="p2-grid">';
+  html+='<div class="p2-float">';
 
-  // --- Columna izquierda (70%): Resumen (verde oscuro) + Comentarios generales ---
-  html+='<div class="p2-left">';
-  // Resumen en verde pastel legible con estructura (reusa resumen_ia ya guardado)
-  html+='<div class="resumen-soft"><span class="resumen-pill">Resumen</span>';
-  if(reunion.resumen_ia && reunion.resumen_ia.trim()){
-    html+='<div class="resumen-text">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
-  } else {
-    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.7;font-style:italic">Genera el resumen desde la reunión para incluirlo aquí.</p></div>';
-  }
-  html+='</div>';
-  // Comentarios generales
-  html+='<div class="section-sub">Comentarios Generales</div>';
-  html+='<div class="section-card">';
-  if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){
-    html+='<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>';
-  } else {
-    html+='<p style="color:#8A9B90;font-style:italic">Sin comentarios generales registrados.</p>';
-  }
-  html+='</div>';
-  html+='</div>';
-
-  // --- Columna derecha (30%): barras por área + % total pequeño ---
-  html+='<div class="p2-right">';
+  // --- Flotante derecho: barras por área + % total pequeño ---
+  html+='<div class="p2-aside">';
   html+='<div class="area-card"><div class="area-card-title">Resultados por área</div>';
   _areasBar.forEach(function(ab){
     var c=_colBarPct(ab.pct); var w=(ab.pct!==null&&ab.pct!==undefined)?ab.pct:0;
@@ -6933,9 +6912,27 @@ function generarPDFReunion() {
     html+='<div class="area-bar-track"><div class="area-bar-fill" style="width:'+w+'%;background:'+c.fill+'"></div></div></div>';
   });
   html+='</div>';
-  // % total pequeño
   if(_pctGlobalPDF !== null){
     html+='<div class="total-mini"><span class="total-mini-label">% Logro<br>total</span><span class="total-mini-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</span><span class="total-mini-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</span></div>';
+  }
+  html+='</div>';
+
+  // --- Resumen (verde pastel legible con estructura, reusa resumen_ia) — fluye junto al flotante y luego a ancho completo ---
+  html+='<div class="resumen-soft"><span class="resumen-pill">Resumen</span>';
+  if(reunion.resumen_ia && reunion.resumen_ia.trim()){
+    html+='<div class="resumen-text">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
+  } else {
+    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.7;font-style:italic">Genera el resumen desde la reunión para incluirlo aquí.</p></div>';
+  }
+  html+='</div>';
+
+  // --- Comentarios generales — a ancho completo, debajo del flotante ---
+  html+='<div class="section-sub" style="margin-top:16px">Comentarios Generales</div>';
+  html+='<div class="section-card">';
+  if(reunion.comentarios_generales && reunion.comentarios_generales.trim()){
+    html+='<div class="comentario-box">'+reunion.comentarios_generales.replace(/\n/g,'<br>')+'</div>';
+  } else {
+    html+='<p style="color:#8A9B90;font-style:italic">Sin comentarios generales registrados.</p>';
   }
   html+='</div>';
 
