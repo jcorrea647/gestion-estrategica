@@ -6771,6 +6771,45 @@ function agregarDestExtra() {
   var cont=document.getElementById('extraDest');if(!cont)return;
   cont.insertAdjacentHTML('beforeend',partRow(cont.querySelectorAll('.part-row').length,'',''));
 }
+// Formatea el texto plano de resumen_ia en HTML estructurado (títulos, acuerdos numerados, párrafos)
+function _formatResumenIA(texto){
+  function esc(s){ return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // Resalta segmento de "Responsable/Plazo" en tono tenue
+  function tenue(s){
+    return esc(s).replace(/\s*[—–-]\s*(Responsable[\s\S]*)$/i, function(_,tail){
+      return ' <span class="rs-meta">— '+tail.replace(/\s*[·|]\s*/g,' · ')+'</span>';
+    });
+  }
+  // Destaca la parte inicial del ítem (hasta el primer punto, coma o guion largo) en negrita
+  function itemHtml(cuerpo){
+    var m = cuerpo.match(/^([^.,—–]+[.,]?)([\s\S]*)$/);
+    var head = m ? m[1].trim() : cuerpo;
+    var rest = m ? m[2] : '';
+    return '<strong class="rs-strong">'+esc(head)+'</strong>'+tenue(rest);
+  }
+  var lineas = String(texto).split(/\n/).map(function(l){return l.replace(/\s+$/,'');});
+  var out = '';
+  lineas.forEach(function(linea){
+    var t = linea.trim();
+    if(!t){ return; }
+    var mNum = t.match(/^(\d+)[.)]\s+([\s\S]+)$/);
+    if(mNum){
+      out += '<div class="rs-item"><span class="rs-num">'+mNum[1]+'</span><div class="rs-item-body">'+itemHtml(mNum[2])+'</div></div>';
+      return;
+    }
+    // Título de sección: línea sin numeración, corta, mayormente en mayúsculas
+    var letras = t.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'');
+    var mayus = t.replace(/[^A-ZÁÉÍÓÚÑ]/g,'');
+    var esTitulo = letras.length>0 && letras.length<=48 && (mayus.length/letras.length)>=0.75;
+    if(esTitulo){
+      out += '<div class="rs-subtitle">'+esc(t.replace(/:$/,''))+'</div>';
+      return;
+    }
+    out += '<p class="rs-p">'+tenue(t)+'</p>';
+  });
+  return out || '<p class="rs-p">'+esc(String(texto))+'</p>';
+}
+
 function generarPDFReunion() {
   var reunion=DB.reuniones&&DB.reuniones.find(function(r){return r.id===window._reunionActiva;});
   if(!reunion){showToast('No hay reunion activa');return;}
@@ -6820,7 +6859,7 @@ function generarPDFReunion() {
   '.participantes-r{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px;max-width:680px;margin-left:auto;margin-right:auto;text-align:left}.participante-r{font-size:10px;color:#374151;padding:8px 12px;line-height:1.4;background:#F4F8F5;border-radius:10px}.participante-r .pr-nombre{font-weight:700;color:#1E3A2F}.participante-r .pr-cargo{color:#7C9686;font-size:9px;font-weight:600;margin-left:4px}.participante-r .pr-correo{color:#9AA3A0;font-size:9px;display:block}'+
   /* ===== PÁGINA 2: SÍNTESIS ===== */
   '.pagina2{margin-top:8px}.p2-grid{display:grid;grid-template-columns:minmax(0,70%) minmax(0,30%);gap:16px;align-items:start}.p2-left{min-width:0}.p2-right{min-width:0}'+
-  '.resumen-dark{background:#1E3A2F;border-radius:16px;padding:16px 18px;margin-bottom:16px;box-shadow:0 6px 20px rgba(30,58,47,.18)}.resumen-pill{display:inline-block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#1E3A2F;background:#C9E3CF;padding:4px 11px;border-radius:999px;font-weight:700;margin-bottom:10px}.resumen-text{font-size:11.5px;line-height:1.7;color:#EAF3EC;white-space:pre-wrap}'+
+  '.resumen-soft{background:#DCEBE0;border:1px solid #BBD8C4;border-radius:16px;padding:16px 18px 14px;margin-bottom:16px;box-shadow:0 3px 12px rgba(30,58,47,.06)}.resumen-pill{display:inline-block;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#2E5B45;background:#fff;padding:4px 12px;border-radius:999px;font-weight:700;margin-bottom:14px}.resumen-text{font-size:11.5px;line-height:1.7;color:#26382E}.resumen-text .rs-subtitle{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3B6D52;margin:16px 0 7px;padding-top:14px;border-top:1px solid #BBD8C4}.resumen-text .rs-subtitle:first-child{margin-top:0;padding-top:0;border-top:none}.resumen-text .rs-p{margin-bottom:8px}.resumen-text .rs-p:last-child{margin-bottom:0}.resumen-text .rs-item{display:flex;gap:9px;align-items:flex-start;margin-bottom:9px}.resumen-text .rs-num{flex-shrink:0;width:19px;height:19px;border-radius:50%;background:#fff;color:#2E5B45;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.resumen-text .rs-item-body{flex:1;min-width:0}.resumen-text .rs-strong{color:#1E3A2F;font-weight:700}.resumen-text .rs-meta{color:#5B7C6B}'+
   '.area-card{background:#fff;border-radius:14px;padding:14px 14px 12px;box-shadow:0 3px 14px rgba(30,58,47,.05);margin-bottom:12px}.area-card-title{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#8A9B90;margin-bottom:14px}.area-bar-row{margin-bottom:11px}.area-bar-row:last-child{margin-bottom:0}.area-bar-head{display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px}.area-bar-name{color:#3B4A42;font-weight:600}.area-bar-val{font-weight:700}.area-bar-track{height:8px;background:#EEF1EC;border-radius:999px;overflow:hidden}.area-bar-fill{height:100%;border-radius:999px}'+
   '.total-mini{background:linear-gradient(135deg,#EAF3EC,#DDEEE1);border:1px solid #C9E3CF;border-radius:12px;padding:8px 12px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}.total-mini-label{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;line-height:1.2}.total-mini-val{font-family:"DM Serif Display",serif;font-size:19px;line-height:1}.total-mini-lvl{font-size:9px;font-weight:700}'+
   /* Botón */
@@ -6866,12 +6905,12 @@ function generarPDFReunion() {
 
   // --- Columna izquierda (70%): Resumen (verde oscuro) + Comentarios generales ---
   html+='<div class="p2-left">';
-  // Resumen en verde oscuro (reusa resumen_ia ya guardado)
-  html+='<div class="resumen-dark"><span class="resumen-pill">Resumen</span>';
+  // Resumen en verde pastel legible con estructura (reusa resumen_ia ya guardado)
+  html+='<div class="resumen-soft"><span class="resumen-pill">Resumen</span>';
   if(reunion.resumen_ia && reunion.resumen_ia.trim()){
-    html+='<div class="resumen-text">'+reunion.resumen_ia.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
+    html+='<div class="resumen-text">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
   } else {
-    html+='<div class="resumen-text" style="opacity:.75;font-style:italic">Genera el resumen desde la reunión para incluirlo aquí.</div>';
+    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.7;font-style:italic">Genera el resumen desde la reunión para incluirlo aquí.</p></div>';
   }
   html+='</div>';
   // Comentarios generales
