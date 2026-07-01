@@ -6880,9 +6880,17 @@ function generarPDFReunion() {
 
   var W=window.open('','_blank');
   if(!W){showToast('Permite ventanas emergentes para generar el PDF');return;}
-  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap");*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:"DM Sans",sans-serif;color:#374151;font-size:11px;line-height:1.6;background:#fff}.page{max-width:820px;margin:0 auto;padding:40px}@media print{.page{padding:16px;max-width:100%}.no-print{display:none}.pagina2{page-break-before:auto!important}}'+
-  /* PORTADA como tarjeta */
-  '.cover{text-align:center;padding:40px 40px 34px;background:#fff;border-radius:20px;box-shadow:0 6px 24px rgba(30,58,47,.06);margin-bottom:28px;page-break-inside:avoid}.cover .logo-r{display:inline-block;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#5B7C6B;background:#EAF3EC;padding:5px 14px;border-radius:999px;margin-bottom:22px;font-weight:600}.cover .colegio-r{font-family:"DM Serif Display",serif;font-size:36px;color:#1E3A2F;margin-bottom:6px;line-height:1.1}.cover .rtitulo{font-size:15px;color:#7C9686;margin-bottom:8px;font-weight:600;letter-spacing:.3px}'+
+  var pdfCSS='@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap");*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:"DM Sans",sans-serif;color:#374151;font-size:11px;line-height:1.6;background:#F4F6F3}.page{max-width:820px;margin:0 auto;padding:34px 40px 40px}@media print{.page{padding:0;max-width:100%}.no-print{display:none}.hoja-detalle{page-break-before:always}}'+
+  /* PORTADA tipo membrete institucional */
+  '.cover{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(30,58,47,.08);margin-bottom:22px;page-break-inside:avoid}'+
+  '.cover-band{background:#1E3A2F;padding:16px 26px;display:flex;align-items:center;justify-content:space-between}'+
+  '.cover-brand{display:flex;align-items:center;gap:12px}.cover-mark{width:32px;height:32px;border-radius:8px;background:#C49A2C;display:flex;align-items:center;justify-content:center;font-family:"DM Serif Display",serif;color:#1E3A2F;font-size:19px;line-height:1}.cover-brand-name{color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px}.cover-brand-sub{color:#9DBBA9;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;margin-top:1px}.cover-date{text-align:right}.cover-date-lbl{color:#C49A2C;font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:2px}.cover-date-val{color:#fff;font-size:13px;font-weight:600}'+
+  '.cover-title{padding:22px 26px 16px;border-bottom:3px solid #C49A2C}.cover-title .colegio-r{font-family:"DM Serif Display",serif;font-size:32px;color:#1E3A2F;line-height:1.05;margin-bottom:4px}.cover-title .rtitulo{font-size:14px;color:#7C9686;font-weight:600;letter-spacing:.2px}'+
+  '.cover-meta{display:flex;gap:0}.cover-meta .cm-item{flex:1;padding:14px 20px;border-right:1px solid #EAEDE8}.cover-meta .cm-item:last-child{border-right:none}.cover-meta .cm-lbl{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#8A9B90;font-weight:700;margin-bottom:3px}.cover-meta .cm-val{font-size:13px;color:#374151;font-weight:600}.cover-meta .cm-sub{font-size:10px;color:#9AA3A0}.cover-meta .cm-total{flex:0 0 140px;background:linear-gradient(135deg,#EAF3EC,#DDEEE1);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:12px}.cm-total .cmt-lbl{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:#6E9179;font-weight:700;text-align:center;line-height:1.2}.cm-total .cmt-val{font-family:"DM Serif Display",serif;font-size:30px;line-height:1}.cm-total .cmt-lvl{font-size:9px;font-weight:700}'+
+  /* Asistentes en tira compacta */
+  '.asistentes-band{background:#fff;border-radius:14px;padding:14px 18px;box-shadow:0 3px 12px rgba(30,58,47,.05);margin-bottom:22px;page-break-inside:avoid}.asistentes-band .ab-title{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#7C9686;margin-bottom:10px}'+
+  /* (legacy, por compatibilidad) */
+  '.cover .logo-r{display:none}.cover .colegio-r{font-family:"DM Serif Display",serif}.cover .rtitulo{color:#7C9686}'+
   /* HERO métrica en tarjeta pastel */
   '.metric-hero{display:inline-block;background:linear-gradient(135deg,#EAF3EC 0%,#DDEEE1 100%);border:1px solid #C9E3CF;border-radius:18px;padding:20px 44px;margin:14px auto 26px}.metric-hero .mh-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#6E9179;margin-bottom:4px;font-weight:600}.metric-hero .mh-value{font-family:"DM Serif Display",serif;font-size:44px;line-height:1}.metric-hero .mh-level{font-size:12px;font-weight:700;margin-top:6px;letter-spacing:.4px}'+
   /* Meta como chips pastel */
@@ -6931,15 +6939,25 @@ function generarPDFReunion() {
     else if(_pctGlobalPDF >= 25) { _nivelLabelPDF='Básico';        _nivelColorPDF='#A85416'; }
     else                          { _nivelLabelPDF='Inicial';       _nivelColorPDF='#9B2335'; }
   }
-  html+='<div class="cover"><div class="logo-r">Gestión Estratégica &mdash; Informe de Reunion</div>';
-  html+='<div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div>';
-  html+='<div style="margin-bottom:18px"></div>';
-  html+='<div class="meta-row"><div class="meta-item"><strong>Fecha:</strong> '+reunion.fecha+'</div><div class="meta-item"><strong>Mes(es) evaluado(s):</strong> '+(mesesLabel||'—')+'</div>';
-  if(reunion.consultor_nombre)html+='<div class="meta-item"><strong>Consultor:</strong> '+reunion.consultor_nombre+'</div>';
-  if(reunion.consultor_correo)html+='<div class="meta-item"><strong>Correo:</strong> '+reunion.consultor_correo+'</div>';
-  html+='</div>';
-  if(partes.length){html+='<div class="participantes-r">';partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){var _r=(DB.responsables||[]).find(function(x){return (x.nombre||'').trim().toLowerCase()===(p.nombre||'').trim().toLowerCase();});var _cargo=_r&&_r.cargo?_r.cargo:'';html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(_cargo?'<span class="pr-cargo">'+_cargo+'</span>':'')+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});html+='</div>';}
-  html+='</div>';
+  // ===== PORTADA tipo membrete =====
+  html+='<div class="cover">';
+  html+='<div class="cover-band"><div class="cover-brand"><div class="cover-mark">L</div><div><div class="cover-brand-name">Gestión Estratégica</div><div class="cover-brand-sub">Informe de Reunión</div></div></div>';
+  html+='<div class="cover-date"><div class="cover-date-lbl">Fecha</div><div class="cover-date-val">'+(reunion.fecha||'—')+'</div></div></div>';
+  html+='<div class="cover-title"><div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div></div>';
+  html+='<div class="cover-meta">';
+  html+='<div class="cm-item"><div class="cm-lbl">Mes(es) evaluado(s)</div><div class="cm-val">'+(mesesLabel||'—')+'</div></div>';
+  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val">'+(reunion.consultor_nombre||'—')+'</div>'+(reunion.consultor_correo?'<div class="cm-sub">'+reunion.consultor_correo+'</div>':'')+'</div>';
+  if(_pctGlobalPDF !== null){
+    html+='<div class="cm-total"><div class="cmt-lbl">% Logro<br>total</div><div class="cmt-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</div><div class="cmt-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</div></div>';
+  }
+  html+='</div></div>';
+
+  // ===== ASISTENTES a la reunión (tira propia) =====
+  if(partes.length){
+    html+='<div class="asistentes-band"><div class="ab-title">Asistentes a la reunión</div><div class="participantes-r">';
+    partes.slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'','es');}).forEach(function(p){var _r=(DB.responsables||[]).find(function(x){return (x.nombre||'').trim().toLowerCase()===(p.nombre||'').trim().toLowerCase();});var _cargo=_r&&_r.cargo?_r.cargo:'';html+='<div class="participante-r"><span class="pr-nombre">'+p.nombre+'</span>'+(_cargo?'<span class="pr-cargo">'+_cargo+'</span>':'')+(p.correo?'<span class="pr-correo">'+p.correo+'</span>':'')+'</div>';});
+    html+='</div></div>';
+  }
 
   // ============ PÁGINA 2: SÍNTESIS (Resumen + Comentarios 70% / Barras por área + % total 30%) ============
   // % por área (mes principal) para el gráfico de barras
@@ -6955,7 +6973,7 @@ function generarPDFReunion() {
   if(reunion.resumen_ia && reunion.resumen_ia.trim()){
     html+='<div class="resumen-text">'+_formatResumenIA(reunion.resumen_ia)+'</div>';
   } else {
-    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.7;font-style:italic">Genera el resumen desde la reunión para incluirlo aquí.</p></div>';
+    html+='<div class="resumen-text"><p class="rs-p" style="opacity:.75;font-style:italic">Resumen no disponible aún. Se genera automáticamente a partir del acta de la reunión.</p></div>';
   }
   html+='</div>';
   html+='</div><div class="p2-cell p2-cell-aside">';
@@ -6967,10 +6985,6 @@ function generarPDFReunion() {
     html+='<div class="area-bar-track"><div class="area-bar-fill" style="width:'+w+'%;background:'+c.fill+'"></div></div></div>';
   });
   html+='</div>';
-  // % total pequeño
-  if(_pctGlobalPDF !== null){
-    html+='<div class="total-mini"><span class="total-mini-label">% Logro<br>total</span><span class="total-mini-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</span><span class="total-mini-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</span></div>';
-  }
   html+='</div></div>';
 
   // --- Comentarios generales — ancho completo, debajo de la fila ---
@@ -6985,8 +6999,8 @@ function generarPDFReunion() {
 
   html+='</div>';
 
-  // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario)
-  html+='<div class="section"><div class="section-title">Comentarios Registrados</div>';
+  // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario) — inicia Hoja 2
+  html+='<div class="section hoja-detalle"><div class="section-title">Comentarios Registrados</div>';
   if(soloComentarios.length){
     // Agrupar por mes
     var porMes = {};
@@ -7024,36 +7038,8 @@ function generarPDFReunion() {
   }
   html+='</div>';
 
-  // TABLA DETALLE POR ACCION (todas, con o sin comentario)
-  html+='<div class="section"><div class="section-title">Detalle por Acción</div>';
-  if(accionesConSeg.length){
-    var grupo = '';
-    mesesReunion.forEach(function(m){
-      var items = accionesConSeg.filter(function(it){return it.mes===m;});
-      if(!items.length) return;
-      if(mesesReunion.length > 1) html+='<div class="section-sub" style="margin-top:14px;color:#1E3A2F;font-size:11px">📅 '+fmtMes(m)+'</div>';
-      var areaActual='';
-      items.forEach(function(item){
-        var area=item.area,ac=item.ac,seg=item.seg;
-        if(area.nombre!==areaActual){
-          if(areaActual)html+='</tbody></table>';
-          html+='<div class="section-sub" style="margin-top:12px">'+area.nombre+'</div>';
-          html+='<table><thead><tr><th>Acción</th><th>Responsable</th><th style="text-align:center">%</th><th style="text-align:center">Estado</th><th>Comentario</th></tr></thead><tbody>';
-          areaActual=area.nombre;
-        }
-        var pct=seg?seg.porcentaje:null;
-        var est=seg?(seg.pendiente?'pendiente':getEstado(pct)):'sin_datos';
-        var estLabel=seg?(seg.pendiente?'Pendiente':pct>=90?'Completo':pct>=70?'En proceso':'Critico'):'Sin datos';
-        var resps=getResps(ac.id).map(function(r){return r.nombre;}).join(', ')||'-';
-        html+='<tr><td style="font-weight:500">'+ac.nombre+'<div style="color:#7A7670;font-size:9px;font-weight:400">'+(ac.descripcion||'')+'</div></td><td>'+resps+'</td>';
-        html+='<td style="text-align:center;font-weight:600" class="'+(est==='pendiente'?'amarillo':est)+'">'+(pct!==null&&pct!==undefined?pct+'%':'-')+'</td>';
-        html+='<td style="text-align:center"><span class="badge '+(est==='pendiente'?'pendiente':est)+'">'+estLabel+'</span></td>';
-        html+='<td>'+(seg&&seg.comentario?'<div class="comentario-box" style="margin:0">'+seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>':'<span style="color:#bbb">—</span>')+'</td></tr>';
-      });
-      if(areaActual){html+='</tbody></table>';areaActual='';}
-    });
-  } else {html+='<p style="color:#7A7670;font-style:italic">No hay acciones con seguimiento para los meses evaluados.</p>';}
-  html+='</div>';
+  // (Sección "Detalle por Acción" eliminada: es redundante con "Comentarios Registrados",
+  //  donde cada acción ya aparece con su comentario, % y estado.)
 
   // RESUMEN MENSUAL
   html+='<div class="section"><div class="section-title">Resumen Mensual por Area</div>';
@@ -7150,8 +7136,41 @@ function generarPDFReunion() {
   html+='</div></body></html>';
   W.document.write(html);W.document.close();
   showToast('Informe generado. Usa Imprimir para guardar como PDF.');
+
+  // Opción B: si NO hay resumen cacheado pero SÍ hay transcripción, generarlo
+  // en segundo plano para que aparezca la próxima vez (no bloquea el PDF actual).
+  (function _resumenBgSiFalta(){
+    try{
+      if(reunion.resumen_ia && reunion.resumen_ia.trim()) return;               // ya está cacheado
+      if(!reunion.transcripcion_reunion || !reunion.transcripcion_reunion.trim()) return; // nada que resumir
+      if(window._resumenBgEnCurso === reunion.id) return;                        // evita duplicados
+      window._resumenBgEnCurso = reunion.id;
+      fetch(ACTA_FN_URL, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          colegio: DB.colegio ? DB.colegio.nombre : '',
+          titulo: reunion.titulo || '', fecha: reunion.fecha || '',
+          participantes: reunion.reunion_participantes || [],
+          transcripcion: reunion.transcripcion_reunion
+        })
+      }).then(function(r){ return r.json().catch(function(){return {};}); })
+        .then(function(res){
+          if(!res || !res.actaTexto) return;
+          return sb.from('reuniones')
+            .update({ resumen_ia: res.actaTexto, updated_at: new Date().toISOString() })
+            .eq('id', reunion.id)
+            .then(function(o){
+              if(o && o.error) return;
+              var i=(DB.reuniones||[]).findIndex(function(x){return x.id===reunion.id;});
+              if(i>=0) DB.reuniones[i]=Object.assign({},DB.reuniones[i],{resumen_ia:res.actaTexto});
+              showToast('✨ Resumen generado. Vuelve a abrir el informe para incluirlo.');
+            });
+        })
+        .catch(function(){ /* silencioso: no romper el flujo del PDF */ })
+        .finally(function(){ if(window._resumenBgEnCurso===reunion.id) window._resumenBgEnCurso=null; });
+    }catch(_e){ /* noop */ }
+  })();
 }
-// MODAL
 // ================================================================
 // REUNIONES CORPORATIVAS (sin colegio asignado · tipo='corporativa')
 // Módulo autónomo: NO depende de SESSION.colegioActivo ni de DB.*
