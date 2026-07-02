@@ -386,7 +386,7 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
           <input type="date" id="infSostFecha" style="border:1px solid var(--line,#E4E0D6);border-radius:8px;padding:8px 10px;font-size:13px">
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Documentos (puedes elegir varios)</label>
+          <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Documentos (opcional, puedes elegir varios)</label>
           <input type="file" id="infSostFile" multiple style="font-size:12px">
         </div>
         <button id="infSostBtn" onclick="guardarInformeSostenedor()" style="background:var(--gold,#C49A2C);border:none;color:#fff;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer">Guardar</button>
@@ -964,7 +964,6 @@ async function guardarInformeSostenedor(){
   const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
 
   if(!fechaInput || !fechaInput.value){ showToast('Indica una fecha'); return; }
-  if(!files.length){ showToast('Selecciona al menos un documento'); return; }
 
   if(status){ status.style.display='block'; status.textContent='Guardando…'; }
   if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
