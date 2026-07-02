@@ -7130,7 +7130,7 @@ async function generarPDFReunion() {
   // creados para esos meses como los que pudieron modificar su nivel de
   // cumplimiento durante la reunión (porque el seguimiento se ancla al mes).
   var microplanesReunion = (DB.microacciones || []).filter(function(m){
-    return mesesReunion.indexOf(m.mes) !== -1;
+    return mesesReunion.indexOf(m.mes) !== -1 && m.estado !== 'COMPLETADA';
   });
   // Ordenar: primero por Área (alfabético), luego por nombre de la acción (alfabético).
   // Los planes sin área asociada quedan al final.
