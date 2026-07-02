@@ -39,17 +39,17 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .multi-page-title{font-size:30px;color:var(--accent);margin-bottom:6px}
 .multi-page-sub{color:var(--muted);font-size:13px;margin-bottom:32px}
 .colegios-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
-.colegio-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:var(--shadow);cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.colegio-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow);cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
 .colegio-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent)}
 .colegio-card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,.12);border-color:var(--accent2)}
 .colegio-card:hover::before{background:var(--gold)}
-.colegio-rbd{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-.colegio-name{font-family:'DM Serif Display',serif;font-size:19px;color:var(--text);margin-bottom:16px;line-height:1.3}
-.colegio-stats{display:flex;gap:12px;margin-bottom:20px}
-.colegio-stat{background:var(--surface2);border-radius:6px;padding:8px 12px;flex:1;text-align:center}
+.colegio-rbd{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.colegio-name{font-family:'DM Serif Display',serif;font-size:18px;color:var(--text);margin-bottom:10px;line-height:1.15}
+.colegio-stats{display:flex;gap:8px;margin-bottom:12px}
+.colegio-stat{background:var(--surface2);border-radius:6px;padding:6px 10px;flex:1;text-align:center}
 .colegio-stat-val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--accent)}
 .colegio-stat-label{font-size:10px;color:var(--muted)}
-.colegio-enter-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.colegio-enter-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:6px}
 .colegio-enter-btn:hover{background:var(--accent2)}
 .add-colegio-card{background:var(--surface2);border:2px dashed var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;min-height:200px;gap:10px}
 .add-colegio-card:hover{border-color:var(--accent);background:var(--surface)}
@@ -369,19 +369,25 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
     <div class="colegios-grid" id="colegiosGrid"></div>
     <div id="informesSostBox" style="display:none;margin-top:32px;background:#fff;border:1px solid var(--line,#E4E0D6);border-radius:14px;padding:22px;max-width:820px">
       <div style="font-size:16px;font-weight:600;color:var(--accent,#1E3A2F);margin-bottom:4px">📁 Informes de reuniones</div>
-      <div style="font-size:12px;color:var(--muted,#7A7670);margin-bottom:16px">Guarda aquí los informes de tus reuniones. Sube un archivo y asígnale una fecha.</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px">
-        <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:12px;color:var(--muted,#7A7670);margin-bottom:16px">Guarda aquí los informes de tus reuniones. Puedes agregar uno o varios documentos y un par de comentarios.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;margin-bottom:12px">
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">
           <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Título (opcional)</label>
-          <input type="text" id="infSostTitulo" placeholder="Ej: Reunión mensual DAEM" style="border:1px solid var(--line,#E4E0D6);border-radius:8px;padding:8px 10px;font-size:13px;min-width:220px">
+          <input type="text" id="infSostTitulo" placeholder="Ej: Reunión mensual DAEM" style="border:1px solid var(--line,#E4E0D6);border-radius:8px;padding:8px 10px;font-size:13px;width:100%">
         </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:220px">
+          <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Comentarios (opcional)</label>
+          <textarea id="infSostComentarios" rows="1" placeholder="Un par de notas sobre la reunión…" style="border:1px solid var(--line,#E4E0D6);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;resize:vertical;font-family:inherit"></textarea>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px">
         <div style="display:flex;flex-direction:column;gap:4px">
           <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Fecha</label>
           <input type="date" id="infSostFecha" style="border:1px solid var(--line,#E4E0D6);border-radius:8px;padding:8px 10px;font-size:13px">
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Archivo</label>
-          <input type="file" id="infSostFile" style="font-size:12px">
+          <label style="font-size:11px;color:var(--muted,#7A7670);font-weight:500">Documentos (puedes elegir varios)</label>
+          <input type="file" id="infSostFile" multiple style="font-size:12px">
         </div>
         <button id="infSostBtn" onclick="guardarInformeSostenedor()" style="background:var(--gold,#C49A2C);border:none;color:#fff;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer">Guardar</button>
       </div>
@@ -879,86 +885,169 @@ async function cargarInformesSostenedor(){
     lista.innerHTML = '<div style="font-size:12px;color:var(--muted,#7A7670);font-style:italic">Aún no has guardado informes.</div>';
     return;
   }
+  // Traer los documentos de todas las reuniones en una consulta plana (patrón evidencias)
+  const ids = data.map(function(i){ return i.id; });
+  let docs = [];
+  if(ids.length){
+    const { data: dd } = await sb.from('informes_reunion_documentos').select('*').in('informe_id', ids).order('created_at');
+    docs = dd || [];
+  }
+  const docsPorInforme = {};
+  docs.forEach(function(d){ (docsPorInforme[d.informe_id] = docsPorInforme[d.informe_id] || []).push(d); });
+
   lista.innerHTML = data.map(function(inf){
     const f = inf.fecha ? inf.fecha.split('-').reverse().join('/') : '—';
-    const titulo = (inf.titulo && inf.titulo.trim()) ? inf.titulo : (inf.nombre_archivo || 'Informe');
+    const titulo = (inf.titulo && inf.titulo.trim()) ? inf.titulo : 'Informe';
     const tituloSafe = titulo.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line,#E4E0D6);border-radius:9px;margin-bottom:8px">'
-      + '<div style="min-width:0">'
-        + '<div style="font-size:13px;font-weight:500;color:var(--accent,#1E3A2F);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+tituloSafe+'</div>'
-        + '<div style="font-size:11px;color:var(--muted,#7A7670)">📅 '+f+'</div>'
+    const comentSafe = (inf.comentarios && inf.comentarios.trim())
+      ? inf.comentarios.trim().replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : '';
+    const misDocs = docsPorInforme[inf.id] || [];
+    let docsHtml = '';
+    if(misDocs.length){
+      docsHtml = '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">' + misDocs.map(function(d){
+        const nom = (d.nombre_archivo || 'documento').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface2,#F3F1EA);border:1px solid var(--line,#E4E0D6);border-radius:6px;padding:4px 8px;font-size:11px">'
+          + '<a href="#" onclick="abrirDocumentoInforme(\''+d.id+'\');return false;" style="color:var(--accent,#1E3A2F);text-decoration:none">📄 '+nom+'</a>'
+          + '<span onclick="eliminarDocumentoInforme(\''+d.id+'\')" title="Quitar documento" style="color:#9B2335;cursor:pointer;font-weight:600">×</span>'
+        + '</span>';
+      }).join('') + '</div>';
+    } else {
+      docsHtml = '<div style="margin-top:6px;font-size:11px;color:var(--muted,#7A7670);font-style:italic">Sin documentos</div>';
+    }
+    return '<div style="padding:12px 14px;border:1px solid var(--line,#E4E0D6);border-radius:9px;margin-bottom:8px">'
+      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
+        + '<div style="min-width:0">'
+          + '<div style="font-size:13px;font-weight:600;color:var(--accent,#1E3A2F)">'+tituloSafe+'</div>'
+          + '<div style="font-size:11px;color:var(--muted,#7A7670);margin-top:2px">📅 '+f+'</div>'
+          + (comentSafe ? '<div style="font-size:12px;color:var(--text,#1A1916);margin-top:6px;line-height:1.4">'+comentSafe+'</div>' : '')
+        + '</div>'
+        + '<div style="display:flex;gap:6px;flex-shrink:0">'
+          + '<button onclick="agregarDocsAInforme(\''+inf.id+'\')" style="background:var(--surface2,#F3F1EA);border:1px solid var(--line,#E4E0D6);color:var(--accent,#1E3A2F);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">+ Doc</button>'
+          + '<button onclick="eliminarInformeSostenedor(\''+inf.id+'\')" style="background:rgba(155,35,53,.1);border:none;color:#9B2335;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">✕</button>'
+        + '</div>'
       + '</div>'
-      + '<div style="display:flex;gap:6px;flex-shrink:0">'
-        + '<button onclick="abrirInformeSostenedor(\''+inf.id+'\')" style="background:var(--accent,#1E3A2F);border:none;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">Ver</button>'
-        + '<button onclick="eliminarInformeSostenedor(\''+inf.id+'\')" style="background:rgba(155,35,53,.1);border:none;color:#9B2335;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">✕</button>'
-      + '</div>'
+      + docsHtml
     + '</div>';
   }).join('');
+}
+
+// Sube una lista de archivos a Storage y registra cada uno en la tabla hija.
+async function _subirDocumentosInforme(informeId, files){
+  const MAX = 25 * 1024 * 1024;
+  let subidos = 0;
+  for(let i=0; i<files.length; i++){
+    const file = files[i];
+    if(file.size > MAX){ showToast('“'+file.name+'” supera 25 MB, se omitió'); continue; }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = 'informes-sostenedor/'+SESSION.user.id+'/'+informeId+'/'+Date.now()+'_'+i+'_'+safeName;
+    const { error: upErr } = await sb.storage.from(INF_SOST_BUCKET).upload(path, file, { upsert:false, contentType:file.type || undefined });
+    if(upErr){ showToast('Error al subir “'+file.name+'”: '+upErr.message); continue; }
+    const { error: dbErr } = await sb.from('informes_reunion_documentos').insert({
+      informe_id: informeId, storage_path: path, nombre_archivo: file.name
+    });
+    if(dbErr){
+      try { await sb.storage.from(INF_SOST_BUCKET).remove([path]); } catch(_){}
+      showToast('Error al registrar “'+file.name+'”: '+dbErr.message); continue;
+    }
+    subidos++;
+  }
+  return subidos;
 }
 
 async function guardarInformeSostenedor(){
   const fileInput = document.getElementById('infSostFile');
   const fechaInput = document.getElementById('infSostFecha');
   const tituloInput = document.getElementById('infSostTitulo');
+  const comentInput = document.getElementById('infSostComentarios');
   const status = document.getElementById('infSostStatus');
   const btn = document.getElementById('infSostBtn');
-  const file = fileInput && fileInput.files && fileInput.files[0];
+  const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
 
-  if(!file){ showToast('Selecciona un archivo'); return; }
   if(!fechaInput || !fechaInput.value){ showToast('Indica una fecha'); return; }
-  const MAX = 25 * 1024 * 1024;
-  if(file.size > MAX){ showToast('El archivo supera el límite de 25 MB'); fileInput.value=''; return; }
+  if(!files.length){ showToast('Selecciona al menos un documento'); return; }
 
-  if(status){ status.style.display='block'; status.textContent='Subiendo archivo…'; }
+  if(status){ status.style.display='block'; status.textContent='Guardando…'; }
   if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = 'informes-sostenedor/'+SESSION.user.id+'/'+Date.now()+'_'+safeName;
-
-  const { error: upErr } = await sb.storage.from(INF_SOST_BUCKET).upload(path, file, { upsert:false, contentType:file.type || undefined });
-  if(upErr){
-    if(status){ status.style.display='none'; }
-    if(btn){ btn.disabled=false; btn.textContent='Guardar'; }
-    showToast('Error al subir: '+upErr.message);
-    return;
-  }
-
-  const { error: dbErr } = await sb.from('informes_reunion_sostenedor').insert({
+  // 1) Crear la reunión
+  const { data: inf, error: dbErr } = await sb.from('informes_reunion_sostenedor').insert({
     sostenedor_id: SESSION.user.id,
     titulo: (tituloInput && tituloInput.value.trim()) ? tituloInput.value.trim() : null,
-    fecha: fechaInput.value,
-    storage_path: path,
-    nombre_archivo: file.name
-  });
-  if(dbErr){
+    comentarios: (comentInput && comentInput.value.trim()) ? comentInput.value.trim() : null,
+    fecha: fechaInput.value
+  }).select().single();
+  if(dbErr || !inf){
     if(status){ status.style.display='none'; }
     if(btn){ btn.disabled=false; btn.textContent='Guardar'; }
-    showToast('Archivo subido pero error al registrar: '+dbErr.message);
+    showToast('Error al crear el informe: '+(dbErr?dbErr.message:'desconocido'));
     return;
   }
+
+  // 2) Subir los documentos
+  const n = await _subirDocumentosInforme(inf.id, files);
 
   if(status){ status.style.display='none'; }
   if(btn){ btn.disabled=false; btn.textContent='Guardar'; }
   if(fileInput) fileInput.value='';
   if(tituloInput) tituloInput.value='';
-  showToast('✓ Informe guardado');
+  if(comentInput) comentInput.value='';
+  showToast(n>0 ? ('✓ Informe guardado ('+n+' doc'+(n!==1?'s':'')+')') : '✓ Informe guardado');
   cargarInformesSostenedor();
 }
 
-async function abrirInformeSostenedor(id){
-  const { data: inf, error } = await sb.from('informes_reunion_sostenedor').select('storage_path').eq('id', id).maybeSingle();
-  if(error || !inf){ showToast('No se encontró el informe'); return; }
-  const { data, error: urlErr } = await sb.storage.from(INF_SOST_BUCKET).createSignedUrl(inf.storage_path, 3600);
+// Agregar documentos a una reunión existente (input file oculto reutilizable)
+let _infDocTarget = null;
+function agregarDocsAInforme(informeId){
+  _infDocTarget = informeId;
+  let inp = document.getElementById('infSostFileExtra');
+  if(!inp){
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.id = 'infSostFileExtra';
+    inp.style.display = 'none';
+    inp.addEventListener('change', async function(){
+      const files = Array.from(inp.files || []);
+      inp.value = '';
+      if(!files.length || !_infDocTarget) return;
+      showToast('Subiendo…');
+      const n = await _subirDocumentosInforme(_infDocTarget, files);
+      _infDocTarget = null;
+      if(n>0) showToast('✓ '+n+' documento'+(n!==1?'s':'')+' agregado'+(n!==1?'s':''));
+      cargarInformesSostenedor();
+    });
+    document.body.appendChild(inp);
+  }
+  inp.click();
+}
+
+async function abrirDocumentoInforme(docId){
+  const { data: d, error } = await sb.from('informes_reunion_documentos').select('storage_path').eq('id', docId).maybeSingle();
+  if(error || !d){ showToast('No se encontró el documento'); return; }
+  const { data, error: urlErr } = await sb.storage.from(INF_SOST_BUCKET).createSignedUrl(d.storage_path, 3600);
   if(urlErr || !data || !data.signedUrl){ showToast('No se pudo abrir el archivo'); return; }
   window.open(data.signedUrl, '_blank', 'noopener');
 }
 
-async function eliminarInformeSostenedor(id){
-  if(!confirm('¿Eliminar este informe?')) return;
-  const { data: inf } = await sb.from('informes_reunion_sostenedor').select('storage_path').eq('id', id).maybeSingle();
-  if(inf && inf.storage_path){
-    try { await sb.storage.from(INF_SOST_BUCKET).remove([inf.storage_path]); } catch(_){}
+async function eliminarDocumentoInforme(docId){
+  if(!confirm('¿Quitar este documento?')) return;
+  const { data: d } = await sb.from('informes_reunion_documentos').select('storage_path').eq('id', docId).maybeSingle();
+  if(d && d.storage_path){
+    try { await sb.storage.from(INF_SOST_BUCKET).remove([d.storage_path]); } catch(_){}
   }
+  const { error } = await sb.from('informes_reunion_documentos').delete().eq('id', docId);
+  if(error){ showToast('Error al quitar: '+error.message); return; }
+  showToast('✓ Documento quitado');
+  cargarInformesSostenedor();
+}
+
+async function eliminarInformeSostenedor(id){
+  if(!confirm('¿Eliminar este informe y todos sus documentos?')) return;
+  // Borrar archivos de storage
+  const { data: docs } = await sb.from('informes_reunion_documentos').select('storage_path').eq('informe_id', id);
+  const paths = (docs || []).map(function(d){ return d.storage_path; }).filter(Boolean);
+  if(paths.length){ try { await sb.storage.from(INF_SOST_BUCKET).remove(paths); } catch(_){} }
+  // La FK on delete cascade elimina las filas hijas; borramos la reunión
   const { error } = await sb.from('informes_reunion_sostenedor').delete().eq('id', id);
   if(error){ showToast('Error al eliminar: '+error.message); return; }
   showToast('✓ Informe eliminado');
