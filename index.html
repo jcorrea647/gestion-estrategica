@@ -3085,12 +3085,78 @@ function tablaAcciones() {
     tr:nth-child(even) td.area{ background:#2D5A42; }
     tr:nth-child(even) td.obj{ background:#E8F0EB; }
     .print-btn{ position:fixed; top:8px; right:8px; background:#1E3A2F; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:10pt; cursor:pointer; }
-    @media print{ .print-btn{ display:none; } }
+    .copy-btn{ position:fixed; top:8px; right:96px; background:#6B3A8C; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:10pt; cursor:pointer; }
+    @media print{ .print-btn, .copy-btn{ display:none; } }
   `;
 
   // Agrupar filas por área y objetivo para calcular rowspans
   let html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Tabla de Acciones</title><style>${css}</style></head><body>`;
   html += `<button class="print-btn" onclick="window.print()">Imprimir</button>`;
+  html += `<button class="copy-btn" onclick="copiarTablaAcciones()">📋 Copiar</button>`;
+  html += `<script>
+    function copiarTablaAcciones(){
+      var tabla = document.querySelector('table');
+      if(!tabla){ return; }
+      // Construir una versión limpia: reemplazar los círculos de color por texto de estado
+      var clon = tabla.cloneNode(true);
+      clon.querySelectorAll('td').forEach(function(td){
+        var div = td.querySelector('div[style*="border-radius:50%"]');
+        if(div){
+          var bg = (div.getAttribute('style')||'') + (div.style.background||'');
+          var estado = '';
+          if(bg.indexOf('#1A4D2E')>=0) estado='Logrado';
+          else if(bg.indexOf('#3D6B4F')>=0) estado='En proceso';
+          else if(bg.indexOf('#7A1C2B')>=0) estado='Crítico';
+          else if(bg.indexOf('#B8860B')>=0) estado='Pendiente';
+          else estado='Sin evaluar'; // el div existe pero es gris → mes activo sin seguimiento
+          td.textContent = estado;
+          td.style.textAlign='center';
+        }
+      });
+      // Bordes visibles al pegar
+      clon.setAttribute('border','1');
+      clon.style.borderCollapse='collapse';
+      var htmlStr = clon.outerHTML;
+      var textoStr = tablaComoTexto(clon);
+      if(navigator.clipboard && window.ClipboardItem){
+        var item = new ClipboardItem({
+          'text/html': new Blob([htmlStr], {type:'text/html'}),
+          'text/plain': new Blob([textoStr], {type:'text/plain'})
+        });
+        navigator.clipboard.write([item]).then(function(){ _copyOK(); }).catch(function(){ _copyFallback(textoStr); });
+      } else {
+        _copyFallback(textoStr);
+      }
+    }
+    function tablaComoTexto(tabla){
+      var lineas=[];
+      tabla.querySelectorAll('tr').forEach(function(tr){
+        var celdas=[];
+        tr.querySelectorAll('th,td').forEach(function(c){
+          // Reemplazar <br> por separador para que los responsables no queden pegados
+          var tmp=c.cloneNode(true);
+          tmp.querySelectorAll('br').forEach(function(br){ br.replaceWith(document.createTextNode(', ')); });
+          var txt=(tmp.innerText||tmp.textContent||'').replace(/\\s*\\n\\s*/g,', ').replace(/\\s+/g,' ').trim();
+          celdas.push(txt);
+        });
+        lineas.push(celdas.join('\\t'));
+      });
+      return lineas.join('\\n');
+    }
+    function _copyFallback(texto){
+      var ta=document.createElement('textarea');
+      ta.value=texto; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); _copyOK(); }catch(e){ alert('No se pudo copiar automáticamente.'); }
+      document.body.removeChild(ta);
+    }
+    function _copyOK(){
+      var btn=document.querySelector('.copy-btn');
+      if(!btn) return;
+      var orig=btn.innerHTML;
+      btn.innerHTML='✓ Copiado';
+      setTimeout(function(){ btn.innerHTML=orig; }, 1800);
+    }
+  <\/script>`;
   const _metaMeses = mesesSel.length ? ' · '+mesesSel.map(m=>fmtMes(m,true)).join(', ') : '';
   html += `<div class="header"><h1>Tabla de Acciones — ${DB.colegio.nombre}</h1><span class="meta">RBD ${DB.colegio.rbd} · Generado ${new Date().toLocaleDateString('es-CL')}${_metaMeses}</span></div>`;
   html += `<div style="display:flex;gap:16px;margin-bottom:6px;font-size:7pt;align-items:center">
