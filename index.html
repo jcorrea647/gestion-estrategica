@@ -3111,9 +3111,9 @@ function tablaAcciones() {
 
   html += `<table><colgroup>
     <col style="width:6%">
-    <col style="width:18%">
-    <col style="width:32%">
     <col style="width:12%">
+    <col style="width:42%">
+    <col style="width:8%">
     ${meses.map(()=>'<col style="width:'+(32/meses.length).toFixed(2)+'%">').join('')}
   </colgroup>
   <thead><tr>
@@ -3136,9 +3136,10 @@ function tablaAcciones() {
     // Descripción
     const desc = ac.descripcion || '—';
     html += `<td class="obj" style="font-weight:400;white-space:normal" title="${desc}">${desc}</td>`;
-    // Responsables (apilados, uno por línea)
-    const respNombres = resps.map(r=>r.cargo).join(', ')||'—';
-    const respApilado = resps.length ? resps.map(r=>r.cargo).join('<br>') : '—';
+    // Responsables (apilados, uno por línea, sin repetir cargos)
+    const cargosUnicos = [...new Set(resps.map(r=>r.cargo))];
+    const respNombres = cargosUnicos.join(', ')||'—';
+    const respApilado = cargosUnicos.length ? cargosUnicos.join('<br>') : '—';
     html += `<td class="resp" title="${respNombres}">${respApilado}</td>`;
     // Meses con círculo de color según seguimiento
     meses.forEach(m => {
