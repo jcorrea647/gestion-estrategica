@@ -3074,12 +3074,12 @@ function tablaAcciones() {
     table{ width:100%; border-collapse:collapse; table-layout:fixed; }
     th{ background:#1E3A2F; color:#fff; padding:4px 3px; font-size:7pt; font-weight:600; text-align:center; border:1px solid #fff; overflow:hidden; }
     th.left{ text-align:left; }
-    td{ padding:3px 3px; border:1px solid #D0CDC6; vertical-align:middle; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    td.area{ background:#2D5A42; color:#fff; font-weight:700; font-size:7.5pt; writing-mode:horizontal-tb; }
-    td.obj{ background:#E8F0EB; color:#1E3A2F; font-weight:600; font-size:7pt; }
-    td.accion{ font-size:7.5pt; max-width:0; }
-    td.resp{ font-size:6.5pt; color:#555; max-width:0; }
-    td.mes{ text-align:center; font-size:9pt; font-weight:700; color:#1E3A2F; }
+    td{ padding:3px 3px; border:1px solid #D0CDC6; vertical-align:top; overflow:hidden; }
+    td.area{ background:#2D5A42; color:#fff; font-weight:700; font-size:7.5pt; writing-mode:horizontal-tb; vertical-align:middle; text-align:center; }
+    td.obj{ background:#E8F0EB; color:#1E3A2F; font-weight:600; font-size:7pt; white-space:normal; word-break:break-word; }
+    td.accion{ font-size:7pt; font-weight:600; white-space:normal; word-break:break-word; }
+    td.resp{ font-size:6.5pt; color:#555; white-space:normal; word-break:break-word; line-height:1.25; }
+    td.mes{ text-align:center; font-size:9pt; font-weight:700; color:#1E3A2F; vertical-align:middle; }
     td.mes.x{ color:#2E7D52; }
     tr:nth-child(even) td{ background-color:#F9F8F6; }
     tr:nth-child(even) td.area{ background:#2D5A42; }
@@ -3110,11 +3110,11 @@ function tablaAcciones() {
   const areaUsed = {}, objUsed = {};
 
   html += `<table><colgroup>
-    <col style="width:7%">
-    <col style="width:16%">
-    <col style="width:23%">
-    <col style="width:10%">
-    ${meses.map(()=>'<col style="width:'+(44/meses.length).toFixed(1)+'%">').join('')}
+    <col style="width:6%">
+    <col style="width:18%">
+    <col style="width:32%">
+    <col style="width:12%">
+    ${meses.map(()=>'<col style="width:'+(32/meses.length).toFixed(2)+'%">').join('')}
   </colgroup>
   <thead><tr>
     <th class="left">Área</th>
@@ -3136,9 +3136,10 @@ function tablaAcciones() {
     // Descripción
     const desc = ac.descripcion || '—';
     html += `<td class="obj" style="font-weight:400;white-space:normal" title="${desc}">${desc}</td>`;
-    // Responsables
+    // Responsables (apilados, uno por línea)
     const respNombres = resps.map(r=>r.cargo).join(', ')||'—';
-    html += `<td class="resp" title="${respNombres}">${respNombres}</td>`;
+    const respApilado = resps.length ? resps.map(r=>r.cargo).join('<br>') : '—';
+    html += `<td class="resp" title="${respNombres}">${respApilado}</td>`;
     // Meses con círculo de color según seguimiento
     meses.forEach(m => {
       const activo = ac.meses_activos.includes(m);
