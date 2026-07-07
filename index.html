@@ -2910,18 +2910,65 @@ function exportExcel() {
 }
 
 // ADMIN ESTRUCTURA
+// Helpers de filtro múltiple (los filtros ahora son arrays de valores seleccionados)
+function _estrucMesesSel(){ return Array.isArray(window._estructuraFiltroMes) ? window._estructuraFiltroMes : (window._estructuraFiltroMes ? [window._estructuraFiltroMes] : []); }
+function _estrucCargosSel(){ return Array.isArray(window._estructuraFiltroCargo) ? window._estructuraFiltroCargo : (window._estructuraFiltroCargo ? [window._estructuraFiltroCargo] : []); }
+function _accionPasaMes(ac){ const sel=_estrucMesesSel(); if(!sel.length) return true; return sel.some(m=>ac.meses_activos.includes(m)); }
+function _accionPasaCargo(ac){ const sel=_estrucCargosSel(); if(!sel.length) return true; const resps=getResps(ac.id); return resps.some(r=>sel.includes(r.cargo_id)); }
+function _estrucToggleFiltro(tipo, valor){
+  const key = tipo==='mes' ? '_estructuraFiltroMes' : '_estructuraFiltroCargo';
+  let arr = tipo==='mes' ? _estrucMesesSel().slice() : _estrucCargosSel().slice();
+  const i = arr.indexOf(valor);
+  if(i>=0) arr.splice(i,1); else arr.push(valor);
+  window[key] = arr;
+  renderCurrentPanel();
+}
+function _estrucLimpiarFiltro(tipo){
+  window[tipo==='mes' ? '_estructuraFiltroMes' : '_estructuraFiltroCargo'] = [];
+  renderCurrentPanel();
+}
+function _estrucToggleDropdown(id){
+  document.querySelectorAll('.estruc-dd-menu').forEach(m=>{ if(m.id!==id) m.style.display='none'; });
+  const el=document.getElementById(id); if(el) el.style.display = el.style.display==='block' ? 'none' : 'block';
+}
+// Cerrar dropdowns al hacer clic fuera
+if(!window._estrucDDListener){
+  window._estrucDDListener = true;
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.estruc-dd')) document.querySelectorAll('.estruc-dd-menu').forEach(m=>m.style.display='none');
+  });
+}
+function _estrucDropdownHTML(tipo, opciones, seleccionados, labelDefault){
+  const menuId = 'estruc-dd-'+tipo;
+  const n = seleccionados.length;
+  const label = n===0 ? labelDefault : (n===1 ? (opciones.find(o=>o.value===seleccionados[0])?.label||n+' sel.') : n+' seleccionados');
+  let items = opciones.map(o=>{
+    const checked = seleccionados.includes(o.value) ? ' checked' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap" onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">'
+      + '<input type="checkbox"'+checked+' onchange="event.stopPropagation();_estrucToggleFiltro(\''+tipo+'\',\''+o.value+'\')" style="margin:0"> '+o.label+'</label>';
+  }).join('');
+  return '<div class="estruc-dd" style="position:relative;display:inline-block">'
+    + '<button type="button" class="filter-select" onclick="event.stopPropagation();_estrucToggleDropdown(\''+menuId+'\')" style="font-size:12px;cursor:pointer;min-width:150px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px">'
+    + '<span>'+label+'</span><span style="font-size:9px;color:var(--muted)">▼</span></button>'
+    + '<div id="'+menuId+'" class="estruc-dd-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);max-height:280px;overflow-y:auto;min-width:200px;padding:4px 0">'
+    + (n>0 ? '<div style="padding:4px 10px;border-bottom:1px solid var(--border);margin-bottom:2px"><button type="button" class="btn btn-sm btn-outline" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();_estrucLimpiarFiltro(\''+tipo+'\')">Limpiar</button></div>' : '')
+    + items + '</div></div>';
+}
 function renderAdminEstructura() {
-  const fMes   = window._estructuraFiltroMes   || '';
-  const fCargo = window._estructuraFiltroCargo || '';
-  const mesesOpts = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11']
-    .map(m=>'<option value="'+m+'"'+(fMes===m?' selected':'')+'>'+fmtMes(m)+'</option>').join('');
-  const cargosOpts = _cargosOrdenados().map(c=>'<option value="'+c.id+'"'+(fCargo===c.id?' selected':'')+'>'+c.nombre+'</option>').join('');
+  const mesesSelArr  = _estrucMesesSel();
+  const cargosSelArr = _estrucCargosSel();
+  const mesesDropdown = _estrucDropdownHTML('mes',
+    ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'].map(m=>({value:m,label:fmtMes(m)})),
+    mesesSelArr, 'Todos los meses');
+  const cargosDropdown = _estrucDropdownHTML('cargo',
+    _cargosOrdenados().map(c=>({value:c.id,label:c.nombre})),
+    cargosSelArr, 'Todos los cargos');
 
   let html = '<div class="page-header"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">';
   html += '<div><div class="page-title">Estructura del plan</div><div class="page-sub">Areas, objetivos y acciones</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-  html += '<select class="filter-select" onchange="window._estructuraFiltroMes=this.value;renderCurrentPanel()" style="font-size:12px"><option value="">Todos los meses</option>'+mesesOpts+'</select>';
-  html += '<select class="filter-select" onchange="window._estructuraFiltroCargo=this.value;renderCurrentPanel()" style="font-size:12px"><option value="">Todos los cargos</option>'+cargosOpts+'</select>';
+  html += mesesDropdown;
+  html += cargosDropdown;
   html += '<div style="display:flex;gap:4px">';
   html += '<button class="btn btn-sm btn-export" onclick="exportarEstructura(\'pdf\')" title="Descargar PDF">PDF</button>';
   html += '<button class="btn btn-sm btn-export" style="background:#1E6B3C" onclick="exportarEstructura(\'excel\')" title="Descargar Excel">Excel</button>';
@@ -2947,20 +2994,18 @@ function renderAdminEstructura() {
     html += '</div></div></div>';
   }
 
+  const hayFiltro = mesesSelArr.length>0 || cargosSelArr.length>0;
   let hayAcciones = false;
   DB.areas.forEach(area=>{
-    // Filtrar acciones según mes y cargo
+    // Filtrar acciones según mes(es) y cargo(s)
     const accionesArea = DB.acciones.filter(ac=>{
       const objIds = DB.objetivos.filter(o=>o.area_id===area.id).map(o=>o.id);
       if(!objIds.includes(ac.objetivo_id)) return false;
-      if(fMes && !ac.meses_activos.includes(fMes)) return false;
-      if(fCargo){
-        const resps = getResps(ac.id);
-        if(!resps.some(r=>r.cargo_id===fCargo)) return false;
-      }
+      if(!_accionPasaMes(ac)) return false;
+      if(!_accionPasaCargo(ac)) return false;
       return true;
     });
-    if((fMes||fCargo) && !accionesArea.length) return;
+    if(hayFiltro && !accionesArea.length) return;
     hayAcciones = true;
 
     html += '<div class="card" style="margin-bottom:14px">';
@@ -2969,7 +3014,7 @@ function renderAdminEstructura() {
     html += '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="editArea(\''+area.id+'\')">Editar</button><button class="btn btn-sm btn-primary" onclick="addObjetivo(\''+area.id+'\')">+ Objetivo</button><button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red)" onclick="deleteArea(\''+area.id+'\',\''+area.nombre.replace(/'/g,"\\'")+'\')" >✕ Eliminar</button></div></div>';
     DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
       const accionesObj = accionesArea.filter(a=>a.objetivo_id===obj.id);
-      if((fMes||fCargo) && !accionesObj.length) return;
+      if(hayFiltro && !accionesObj.length) return;
       html += '<div style="margin-left:16px;margin-bottom:10px;padding:10px 14px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--border)">';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
       html += '<div><span style="font-weight:500">'+obj.nombre+'</span><span style="font-size:11px;color:var(--muted);margin-left:8px">Pond: '+(obj.ponderador*100).toFixed(0)+'%</span></div>';
@@ -2988,7 +3033,7 @@ function renderAdminEstructura() {
     html += '</div>';
   });
 
-  if((fMes||fCargo) && !hayAcciones) {
+  if(hayFiltro && !hayAcciones) {
     html += '<div class="card"><div class="empty-state"><div class="icon">🔍</div>No hay acciones para el filtro seleccionado.</div></div>';
   }
 
@@ -2997,19 +3042,18 @@ function renderAdminEstructura() {
 }
 
 function tablaAcciones() {
-  const fMes   = window._estructuraFiltroMes   || '';
-  const fCargo = window._estructuraFiltroCargo || '';
-  const meses  = ['2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
-  const mesesLabel = ['Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'];
+  const mesesSel = _estrucMesesSel();
+  const meses  = ['2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11'];
+  const mesesLabel = ['May','Jun','Jul','Ago','Sep','Oct','Nov'];
 
-  // Recopilar filas según filtros activos
+  // Recopilar filas según filtros activos (múltiple)
   const filas = [];
   DB.areas.forEach(area => {
     DB.objetivos.filter(o => o.area_id === area.id).forEach(obj => {
       DB.acciones.filter(ac => {
         if(ac.objetivo_id !== obj.id) return false;
-        if(fMes && !ac.meses_activos.includes(fMes)) return false;
-        if(fCargo){ const r=getResps(ac.id); if(!r.some(r=>r.cargo_id===fCargo)) return false; }
+        if(!_accionPasaMes(ac)) return false;
+        if(!_accionPasaCargo(ac)) return false;
         return true;
       }).forEach(ac => {
         filas.push({ area, obj, ac, resps: getResps(ac.id) });
@@ -3047,7 +3091,8 @@ function tablaAcciones() {
   // Agrupar filas por área y objetivo para calcular rowspans
   let html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Tabla de Acciones</title><style>${css}</style></head><body>`;
   html += `<button class="print-btn" onclick="window.print()">Imprimir</button>`;
-  html += `<div class="header"><h1>Tabla de Acciones — ${DB.colegio.nombre}</h1><span class="meta">RBD ${DB.colegio.rbd} · Generado ${new Date().toLocaleDateString('es-CL')}${fMes?' · '+fmtMes(fMes):''}</span></div>`;
+  const _metaMeses = mesesSel.length ? ' · '+mesesSel.map(m=>fmtMes(m,true)).join(', ') : '';
+  html += `<div class="header"><h1>Tabla de Acciones — ${DB.colegio.nombre}</h1><span class="meta">RBD ${DB.colegio.rbd} · Generado ${new Date().toLocaleDateString('es-CL')}${_metaMeses}</span></div>`;
   html += `<div style="display:flex;gap:16px;margin-bottom:6px;font-size:7pt;align-items:center">
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#1A4D2E;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> Logrado (≥90%)</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#3D6B4F;display:inline-block;border:1px solid rgba(0,0,0,.15)"></span> En proceso (70-89%)</span>
@@ -3066,15 +3111,15 @@ function tablaAcciones() {
 
   html += `<table><colgroup>
     <col style="width:7%">
-    <col style="width:19%">
-    <col style="width:20%">
+    <col style="width:16%">
+    <col style="width:23%">
     <col style="width:10%">
     ${meses.map(()=>'<col style="width:'+(44/meses.length).toFixed(1)+'%">').join('')}
   </colgroup>
   <thead><tr>
     <th class="left">Área</th>
-    <th class="left">Objetivo</th>
     <th class="left">Acción</th>
+    <th class="left">Descripción</th>
     <th class="left">Responsable</th>
     ${mesesLabel.map(m=>`<th>${m}</th>`).join('')}
   </tr></thead><tbody>`;
@@ -3086,13 +3131,11 @@ function tablaAcciones() {
       areaUsed[area.id] = true;
       html += `<td class="area" rowspan="${areaSpan[area.id]}">${area.nombre}</td>`;
     }
-    // Objetivo con rowspan
-    if(!objUsed[obj.id]) {
-      objUsed[obj.id] = true;
-      html += `<td class="obj" rowspan="${objSpan[obj.id]}">${obj.nombre}</td>`;
-    }
     // Acción
     html += `<td class="accion" title="${ac.nombre}">${ac.nombre}</td>`;
+    // Descripción
+    const desc = ac.descripcion || '—';
+    html += `<td class="obj" style="font-weight:400;white-space:normal" title="${desc}">${desc}</td>`;
     // Responsables
     const respNombres = resps.map(r=>r.cargo).join(', ')||'—';
     html += `<td class="resp" title="${respNombres}">${respNombres}</td>`;
@@ -3124,15 +3167,13 @@ function tablaAcciones() {
 }
 
 function getAccionesFiltradas() {
-  const fMes   = window._estructuraFiltroMes   || '';
-  const fCargo = window._estructuraFiltroCargo || '';
   const resultado = [];
   DB.areas.forEach(area=>{
     DB.objetivos.filter(o=>o.area_id===area.id).forEach(obj=>{
       DB.acciones.filter(ac=>{
         if(ac.objetivo_id!==obj.id) return false;
-        if(fMes && !ac.meses_activos.includes(fMes)) return false;
-        if(fCargo){ const resps=getResps(ac.id); if(!resps.some(r=>r.cargo_id===fCargo)) return false; }
+        if(!_accionPasaMes(ac)) return false;
+        if(!_accionPasaCargo(ac)) return false;
         return true;
       }).forEach(ac=>{
         resultado.push({area, obj, ac, resps: getResps(ac.id)});
@@ -3143,13 +3184,17 @@ function getAccionesFiltradas() {
 }
 
 function exportarEstructura(tipo) {
-  const fMes   = window._estructuraFiltroMes   || '';
-  const fCargo = window._estructuraFiltroCargo || '';
+  const mesesSel  = _estrucMesesSel();
+  const cargosSel = _estrucCargosSel();
   const items  = getAccionesFiltradas();
   if(!items.length){ showToast('No hay acciones para exportar'); return; }
 
+  const _mesesTxt  = mesesSel.length ? mesesSel.map(m=>fmtMes(m)).join(', ') : '';
+  const _cargosTxt = cargosSel.length ? cargosSel.map(id=>DB.cargos.find(c=>c.id===id)?.nombre).filter(Boolean).join(', ') : '';
+  const _fnameSuf  = mesesSel.length ? '_'+mesesSel.map(m=>fmtMes(m,true)).join('-') : '';
+
   const titulo = 'Estructura del Plan de Mejora';
-  const subtitulo = DB.colegio.nombre + (fMes?' · '+fmtMes(fMes):'') + (fCargo?' · '+DB.cargos.find(c=>c.id===fCargo)?.nombre:'');
+  const subtitulo = DB.colegio.nombre + (_mesesTxt?' · '+_mesesTxt:'') + (_cargosTxt?' · '+_cargosTxt:'');
 
   if(tipo==='excel') {
     const rows = [
@@ -3170,7 +3215,7 @@ function exportarEstructura(tipo) {
     // Estilo cabecera (solo disponible en versión pro, pero el formato de celda sí aplica)
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Estructura PME');
-    const fname = 'estructura_pme'+(fMes?'_'+fmtMes(fMes,true):'')+'.xlsx';
+    const fname = 'estructura_pme'+_fnameSuf+'.xlsx';
     XLSX.writeFile(wb, fname);
     showToast('Excel descargado');
     return;
@@ -3235,7 +3280,7 @@ function exportarEstructura(tipo) {
     const blob = new Blob([html], {type:'application/msword'});
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a'); a.href=url;
-    a.download = 'estructura_pme'+(fMes?'_'+fmtMes(fMes,true):'')+'.doc';
+    a.download = 'estructura_pme'+_fnameSuf+'.doc';
     a.click(); URL.revokeObjectURL(url);
     showToast('Word descargado');
   }
