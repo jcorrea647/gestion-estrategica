@@ -1572,7 +1572,9 @@ function puedeEditarSeguimientoMes(mes) {
 // Los porcentajes NUNCA son editables por director (eso lo garantiza RLS además).
 function puedeSubirEvidencia(mes) {
   const rol = SESSION.user?.rol;
-  if(rol === 'superadmin') return puedeEditarSeguimientoMes(mes);
+  // Las evidencias están desacopladas del estado de la reunión: se pueden
+  // agregar/ver/eliminar aunque la reunión esté cerrada o no exista.
+  if(rol === 'superadmin') return true;
   if(rol === 'director') return true;
   return false;
 }
@@ -2147,12 +2149,12 @@ function renderSeguimiento() {
       html+=comVal?'<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">'+comVal+'</span>':'<span style="color:var(--muted)">+ Comentario</span>';
       html+='</button></td>';
       html+='<td style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap">';
-      // Botón Adj: siempre clicable (puedes ver evidencias incluso con reunión cerrada).
-      // Si reunión está cerrada, el modal mostrará el listado pero no permitirá agregar/eliminar.
+      // Botón Adj: siempre clicable. Las evidencias se pueden agregar/ver/eliminar
+      // aunque la reunión esté cerrada o no exista (desacopladas del estado de reunión).
       const evCount = (DB.evidencias || []).filter(function(e){ return e.accion_id===ac.id && e.mes===mes; }).length;
       const adjLabel = evCount > 0 ? 'Adj ('+evCount+')' : 'Adj';
       const adjStyle = evCount > 0 ? ' style="background:#E8F5EE;color:#155028;border-color:#A8D5B7"' : '';
-      html+='<button class="evidence-btn"'+adjStyle+' onclick="openEvidenceModal(\''+ac.id+'\',\''+mes+'\')" title="'+(bloqueado?'Ver evidencias (no editable: reunión cerrada)':'Ver / agregar evidencias')+'">'+adjLabel+'</button>';
+      html+='<button class="evidence-btn"'+adjStyle+' onclick="openEvidenceModal(\''+ac.id+'\',\''+mes+'\')" title="Ver / agregar evidencias">'+adjLabel+'</button>';
       html+=renderBotonPlan(ac.id, mes, seg);
       if(SESSION.user?.rol === 'superadmin'){ html+='<button class="periodo-btn" onclick="cambiarPeriodo(\''+ac.id+'\')">Per</button>'; }
       html+='</div></td></tr>';
