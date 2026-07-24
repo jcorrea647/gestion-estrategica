@@ -7362,7 +7362,7 @@ async function generarPDFReunion() {
   html+='<div class="cover-title"><div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div></div>';
   html+='<div class="cover-meta">';
   html+='<div class="cm-item"><div class="cm-lbl">Mes(es) evaluado(s)</div><div class="cm-val">'+(mesesLabel||'—')+'</div></div>';
-  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val">'+(reunion.consultor_nombre||'—')+'</div>'+(reunion.consultor_correo?'<div class="cm-sub">'+reunion.consultor_correo+'</div>':'')+'</div>';
+  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val" data-edit="consultor">'+(reunion.consultor_nombre||'—')+'</div>'+(reunion.consultor_correo?'<div class="cm-sub">'+reunion.consultor_correo+'</div>':'')+'</div>';
   if(_pctGlobalPDF !== null){
     html+='<div class="cm-total"><div class="cmt-lbl">% Logro<br>total</div><div class="cmt-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</div><div class="cmt-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</div></div>';
   }
@@ -7625,7 +7625,8 @@ async function generarPDFReunion() {
     + 'function _plano(el){var t=el.innerText||el.textContent||"";return t.replace(/\\u00a0/g," ").replace(/\\n{3,}/g,"\\n\\n").trim();}'
     + 'function guardarTextoEditado(){'
       + 'if(!window.opener||typeof window.opener.guardarEdicionInforme!=="function"){alert("No se puede guardar: vuelve a abrir el informe desde la plataforma con la sesión activa.");return;}'
-      + 'var payload={reunionId:REUNION_ID,resumen:null,general:null,acciones:[]};'
+      + 'var payload={reunionId:REUNION_ID,resumen:null,general:null,consultor:null,acciones:[]};'
+      + 'var c=document.querySelector("[data-edit=\\\"consultor\\\"]");if(c){var _c=_plano(c);payload.consultor=(_c==="—"?"":_c);}'
       + 'var r=document.querySelector("[data-edit=\\"resumen\\"]");var rr=document.querySelector("[data-edit=\\"resumen-resto\\"]");if(r){var _t=_plano(r);if(rr){_t+="\\n\\n"+_plano(rr);}payload.resumen=_t;}'
       + 'var g=document.querySelector("[data-edit=\\"general\\"]");if(g)payload.general=_plano(g);'
       + 'document.querySelectorAll("[data-edit=\\"accion\\"]").forEach(function(a){payload.acciones.push({segId:a.getAttribute("data-seg-id"),accionId:a.getAttribute("data-accion-id"),mes:a.getAttribute("data-mes"),texto:_plano(a)});});'
@@ -7660,6 +7661,9 @@ async function guardarEdicionInforme(payload){
     }
     if(payload.general !== null && payload.general !== undefined){
       updReunion.comentarios_generales = payload.general.trim() || null;
+    }
+    if(payload.consultor !== null && payload.consultor !== undefined){
+      updReunion.consultor_nombre = payload.consultor.trim() || null;
     }
     if(Object.keys(updReunion).length){
       updReunion.updated_at = new Date().toISOString();
