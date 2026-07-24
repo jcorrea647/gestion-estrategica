@@ -7333,6 +7333,7 @@ async function generarPDFReunion() {
   '.tb-btn{background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:6px;min-width:30px;height:30px;padding:0 8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-family:"DM Sans",sans-serif}.tb-btn:hover{background:rgba(255,255,255,.22)}.tb-btn b{font-family:Georgia,serif}.tb-btn i{font-family:Georgia,serif}.tb-btn u{font-family:Georgia,serif}.tb-color{width:26px;height:26px;border-radius:6px;border:2px solid rgba(255,255,255,.35);cursor:pointer;padding:0;background:none}'+
   '.tb-save{margin-left:auto;background:#C49A2C;color:#fff;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:"DM Sans",sans-serif}.tb-save:hover{background:#D4AA3C}.tb-save:disabled{opacity:.5;cursor:default}.tb-hint{color:#9DBBA9;font-size:11px;margin-left:8px}'+
   '[data-edit].editando{outline:2px dashed #C49A2C;outline-offset:4px;border-radius:8px;cursor:text;background:rgba(196,154,44,.04)}[data-edit].editando:focus{outline:2px solid #C49A2C}'+
+  '.cm-sub-vacio{visibility:hidden}.cm-sub-vacio.editando{visibility:visible;color:#C0C7C4;font-style:italic}'+
   '@media print{.editor-toolbar,.edit-btn{display:none!important}[data-edit].editando{outline:none!important;background:none!important}}';
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+nombreCortoLiceo()+' '+reunion.titulo+' '+reunion.fecha+'</title><style>'+pdfCSS+'</style></head><body>';
   html+='<button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button><div class="page">';
@@ -7362,7 +7363,7 @@ async function generarPDFReunion() {
   html+='<div class="cover-title"><div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div></div>';
   html+='<div class="cover-meta">';
   html+='<div class="cm-item"><div class="cm-lbl">Mes(es) evaluado(s)</div><div class="cm-val">'+(mesesLabel||'—')+'</div></div>';
-  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val" data-edit="consultor">'+(reunion.consultor_nombre||'—')+'</div>'+(reunion.consultor_correo?'<div class="cm-sub">'+reunion.consultor_correo+'</div>':'')+'</div>';
+  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val" data-edit="consultor">'+(reunion.consultor_nombre||'—')+'</div><div class="cm-sub'+(reunion.consultor_correo?'':' cm-sub-vacio')+'" data-edit="consultor-correo">'+(reunion.consultor_correo||'—')+'</div></div>';
   if(_pctGlobalPDF !== null){
     html+='<div class="cm-total"><div class="cmt-lbl">% Logro<br>total</div><div class="cmt-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</div><div class="cmt-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</div></div>';
   }
@@ -7625,8 +7626,9 @@ async function generarPDFReunion() {
     + 'function _plano(el){var t=el.innerText||el.textContent||"";return t.replace(/\\u00a0/g," ").replace(/\\n{3,}/g,"\\n\\n").trim();}'
     + 'function guardarTextoEditado(){'
       + 'if(!window.opener||typeof window.opener.guardarEdicionInforme!=="function"){alert("No se puede guardar: vuelve a abrir el informe desde la plataforma con la sesión activa.");return;}'
-      + 'var payload={reunionId:REUNION_ID,resumen:null,general:null,consultor:null,acciones:[]};'
+      + 'var payload={reunionId:REUNION_ID,resumen:null,general:null,consultor:null,consultorCorreo:null,acciones:[]};'
       + 'var c=document.querySelector("[data-edit=\\\"consultor\\\"]");if(c){var _c=_plano(c);payload.consultor=(_c==="—"?"":_c);}'
+      + 'var cc=document.querySelector("[data-edit=\\\"consultor-correo\\\"]");if(cc){var _cc=_plano(cc);payload.consultorCorreo=(_cc==="—"?"":_cc);}'
       + 'var r=document.querySelector("[data-edit=\\"resumen\\"]");var rr=document.querySelector("[data-edit=\\"resumen-resto\\"]");if(r){var _t=_plano(r);if(rr){_t+="\\n\\n"+_plano(rr);}payload.resumen=_t;}'
       + 'var g=document.querySelector("[data-edit=\\"general\\"]");if(g)payload.general=_plano(g);'
       + 'document.querySelectorAll("[data-edit=\\"accion\\"]").forEach(function(a){payload.acciones.push({segId:a.getAttribute("data-seg-id"),accionId:a.getAttribute("data-accion-id"),mes:a.getAttribute("data-mes"),texto:_plano(a)});});'
@@ -7664,6 +7666,14 @@ async function guardarEdicionInforme(payload){
     }
     if(payload.consultor !== null && payload.consultor !== undefined){
       updReunion.consultor_nombre = payload.consultor.trim() || null;
+    }
+    if(payload.consultorCorreo !== null && payload.consultorCorreo !== undefined){
+      var _correo = payload.consultorCorreo.trim();
+      if(_correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(_correo)){
+        showToast('Correo del consultor no válido: '+_correo);
+        return false;
+      }
+      updReunion.consultor_correo = _correo || null;
     }
     if(Object.keys(updReunion).length){
       updReunion.updated_at = new Date().toISOString();
