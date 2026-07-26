@@ -23,6 +23,7 @@
   var _fuentes = [];                    // fuentes del curso del docente
   var _activas = {};                    // tipo -> bool (elección del profe)
   var _estado  = {};                    // tipo -> 'ok' | 'error'
+  var _modif   = {};                    // sheetId -> fecha ISO de modificación
 
   var TIPOS = [
     { id:'academico',   icono:'\uD83D\uDCCA', label:'Académico'   },
@@ -62,23 +63,28 @@
   }
 
   // ── Lectura EN VIVO de una hoja (con caché de 3 min) ─────────
+  // Pasa por /api/drive-csv (servidor): el navegador NO puede leer
+  // docs.google.com por CORS, y así la API key nunca sale del backend.
   function leerHoja(sheetId, gid) {
     var key = sheetId + '|' + (gid || '');
     var c = _cache[key];
     if (c && (Date.now() - c.t) < TTL_MS) return Promise.resolve(c.texto);
 
-    var url = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/export?format=csv';
+    var url = '/api/drive-csv?id=' + encodeURIComponent(sheetId);
     if (gid) url += '&gid=' + encodeURIComponent(gid);
 
     return fetch(url)
       .then(function (r) {
-        if (!r.ok) throw new Error('no accesible');
-        return r.text();
+        if (!r.ok) throw new Error('endpoint ' + r.status);
+        return r.json();
       })
-      .then(function (txt) {
-        if (!txt || !txt.trim()) throw new Error('hoja vacía');
-        _cache[key] = { t: Date.now(), texto: txt };
-        return txt;
+      .then(function (d) {
+        if (!d || !d.ok || !d.csv || !d.csv.trim()) {
+          throw new Error((d && d.error) || 'sin datos');
+        }
+        if (d.modifiedTime) _modif[sheetId] = d.modifiedTime;
+        _cache[key] = { t: Date.now(), texto: d.csv };
+        return d.csv;
       });
   }
 
@@ -101,8 +107,6 @@
   // ── Fecha de última modificación en Drive (vía /api/drive-info) ──
   // La API key vive en Vercel, no en el navegador. Si el endpoint no está
   // disponible, simplemente no se muestra la fecha: nada más se rompe.
-  var _modif = {};   // sheetId -> ISO string
-
   function _cargarModificados() {
     try {
       var ids = _fuentes.map(function (f) { return f.sheet_id; }).filter(Boolean);
