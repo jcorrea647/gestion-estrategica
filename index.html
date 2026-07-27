@@ -153,6 +153,10 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .com-popup-bit-item:first-of-type{border-top:none;padding-top:0}
 .com-popup-bit-fecha{flex-shrink:0;width:118px;font-size:10.5px;color:var(--muted);line-height:1.5}
 .com-popup-bit-texto{font-size:12px;line-height:1.55;color:var(--text);white-space:pre-wrap;min-width:0}
+.com-popup-bit-acc{display:flex;gap:8px;margin-top:3px}
+.com-popup-bit-acc button{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:10px;color:var(--accent);text-decoration:underline;opacity:.75}
+.com-popup-bit-acc button:hover{opacity:1}
+.com-popup-bit-acc button:last-child{color:#B04A5A}
 .com-popup-textarea:focus{border-color:var(--accent)}
 .com-popup-footer{display:flex;justify-content:flex-end;gap:6px;flex-shrink:0}
 .com-save-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
@@ -2232,6 +2236,7 @@ function renderSeguimiento() {
 }
 
 function abrirComentario(event, accionId, mes) {
+  _COM_EDIT_ID = null;
   const prev = document.getElementById('comPopup');
   if(prev) {
     // Si el popup ya está abierto para la misma acción, cerrarlo
@@ -2253,14 +2258,23 @@ function abrirComentario(event, accionId, mes) {
 
   // Bitácora de esta acción (todos los meses), más nueva arriba.
   const _bit = bitacoraAccion(accionId, null);
+  const _puedeEditarBit = canEditSeguimiento(SESSION.user?.rol);
   let _bitHtml = '';
   if(_bit.length) {
     _bitHtml = '<div class="com-popup-bitacora"><div class="com-popup-bit-tit">Comentarios anteriores</div>';
     _bit.forEach(function(e){
       const f = fmtFechaComentario(e.created_at, true) || '—';
-      _bitHtml += '<div class="com-popup-bit-item">'+
-        '<div class="com-popup-bit-fecha">'+f+' · '+fmtMes(e.mes,true)+'</div>'+
-        '<div class="com-popup-bit-texto">'+escapeHtmlPlan(e.texto||'')+'</div>'+
+      // Las entradas _fallback vienen de seguimiento.comentario, no de la bitácora:
+      // no tienen id propio en comentarios_seguimiento y por eso no son editables.
+      const acciones = (_puedeEditarBit && !e._fallback)
+        ? '<div class="com-popup-bit-acc">'+
+            '<button type="button" onclick="comEditarEntrada(\''+e.id+'\')">Editar</button>'+
+            '<button type="button" onclick="comEliminarEntrada(\''+e.id+'\',\''+accionId+'\',\''+mes+'\')">Eliminar</button>'+
+          '</div>'
+        : '';
+      _bitHtml += '<div class="com-popup-bit-item" data-bit-id="'+e.id+'">'+
+        '<div class="com-popup-bit-fecha">'+f+' · '+fmtMes(e.mes,true)+acciones+'</div>'+
+        '<div class="com-popup-bit-texto" data-bit-texto="'+e.id+'">'+escapeHtmlPlan(e.texto||'')+'</div>'+
       '</div>';
     });
     _bitHtml += '</div>';
@@ -2291,9 +2305,13 @@ function abrirComentario(event, accionId, mes) {
     '<div class="com-popup-body">'+
       _metaHtml+
       _bitHtml+
+      '<div id="comPopupEditBar" style="display:none;flex-shrink:0;background:#E8F0FB;border:1px solid #A9C4E4;border-radius:6px;padding:8px 12px;font-size:12px;color:#1F4E79;align-items:center;justify-content:space-between;gap:10px">'+
+        '<span id="comPopupEditLbl">Editando una entrada existente</span>'+
+        '<button type="button" onclick="comCancelarEdicion()" style="background:none;border:none;color:#1F4E79;text-decoration:underline;cursor:pointer;font-size:12px;font-family:inherit;padding:0">Cancelar edición</button>'+
+      '</div>'+
       '<textarea class="com-popup-textarea" id="comPopupText" placeholder="'+(_bit.length?'Escribe un comentario nuevo — los anteriores se conservan arriba...':'Escribe tu comentario aquí...')+'"></textarea>'+
       '<div class="com-popup-footer">'+
-        '<button class="com-save-btn" onclick="guardarComentarioPopup(\''+accionId+'\',\''+mes+'\')">Guardar</button>'+
+        '<button class="com-save-btn" id="comPopupSaveBtn" onclick="guardarComentarioPopup(\''+accionId+'\',\''+mes+'\')">Guardar</button>'+
       '</div>'+
     '</div>';
 
@@ -2327,12 +2345,89 @@ function abrirComentario(event, accionId, mes) {
   document.addEventListener('mouseup', function(){ drag=false; });
 }
 
+/* ============ EDICIÓN DE ENTRADAS DE BITÁCORA ============
+ * Editar NO crea una entrada nueva: llama a la función editar_comentario_bitacora
+ * de Supabase, que actualiza el texto conservando el created_at original y
+ * sincroniza seguimiento.comentario con la bandera app.skip_bitacora activada
+ * para que los triggers no vuelvan a registrar el cambio. */
+let _COM_EDIT_ID = null;
+
+function comEditarEntrada(entradaId) {
+  const src = document.querySelector('[data-bit-texto="'+entradaId+'"]');
+  const ta  = document.getElementById('comPopupText');
+  if(!src || !ta) return;
+  _COM_EDIT_ID = entradaId;
+  ta.value = src.textContent || '';
+  const bar = document.getElementById('comPopupEditBar');
+  if(bar) bar.style.display = 'flex';
+  const btn = document.getElementById('comPopupSaveBtn');
+  if(btn) btn.textContent = 'Guardar cambios';
+  const item = document.querySelector('[data-bit-id="'+entradaId+'"]');
+  if(item) item.style.background = '#EEF4FC';
+  ta.focus();
+}
+
+function comCancelarEdicion() {
+  _COM_EDIT_ID = null;
+  const ta = document.getElementById('comPopupText');
+  if(ta) ta.value = '';
+  const bar = document.getElementById('comPopupEditBar');
+  if(bar) bar.style.display = 'none';
+  const btn = document.getElementById('comPopupSaveBtn');
+  if(btn) btn.textContent = 'Guardar';
+  document.querySelectorAll('[data-bit-id]').forEach(function(el){ el.style.background = ''; });
+}
+
+async function comEliminarEntrada(entradaId, accionId, mes) {
+  if(!canEditSeguimiento(SESSION.user?.rol)){ showToast('🔒 Solo superadmin puede eliminar comentarios'); return; }
+  if(!confirm('¿Eliminar esta entrada del historial? No se puede deshacer.')) return;
+  const {data, error} = await sb.rpc('borrar_comentario_bitacora', {p_id: entradaId});
+  if(error){ showToast('Error al eliminar: '+error.message); return; }
+  if(!data){ showToast('La entrada ya no existe'); }
+  await _refrescarBitacora(accionId);
+  if(_COM_EDIT_ID === entradaId) comCancelarEdicion();
+  document.getElementById('comPopup')?.remove();
+  renderCurrentPanel();
+  showToast('Entrada eliminada');
+}
+
+/* Relee la bitácora de una acción desde la BD y la refresca en memoria. */
+async function _refrescarBitacora(accionId) {
+  try {
+    const {data} = await sb.from('comentarios_seguimiento')
+      .select('*').eq('accion_id', accionId).order('created_at', {ascending:false});
+    if(data){
+      DB.comentarios = (DB.comentarios||[]).filter(function(c){ return c.accion_id !== accionId; }).concat(data);
+    }
+  } catch(e){ console.warn('[bitacora] no se pudo refrescar:', e.message); }
+}
+
 async function guardarComentarioPopup(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
   const texto = document.getElementById('comPopupText')?.value.trim()||'';
   // Guarda: el textarea parte vacío porque cada guardado AGREGA una entrada.
   // Sin esta validación, cerrar con el campo vacío borraría el comentario vigente.
   if(!texto){ showToast('Escribe un comentario antes de guardar'); return; }
+
+  // MODO EDICIÓN: actualiza la entrada existente, sin crear otra.
+  if(_COM_EDIT_ID){
+    const idEd = _COM_EDIT_ID;
+    const {error} = await sb.rpc('editar_comentario_bitacora', {p_id: idEd, p_texto: texto});
+    if(error){ showToast('Error al editar: '+error.message); return; }
+    await _refrescarBitacora(accionId);
+    // Reflejar el texto vigente en memoria si se editó la entrada más reciente
+    const masNueva = bitacoraAccion(accionId, [mes])[0];
+    if(masNueva && masNueva.id === idEd){
+      const i = DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
+      if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario: texto};
+    }
+    _COM_EDIT_ID = null;
+    document.getElementById('comPopup')?.remove();
+    renderCurrentPanel();
+    showToast('Comentario actualizado');
+    return;
+  }
+
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   if(ex) {
     // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
