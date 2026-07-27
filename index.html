@@ -1843,6 +1843,12 @@ function bitacoraAccion(accionId, meses) {
             created_at: s.comentario_updated_at || s.updated_at, _fallback:true};
   }).sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
 }
+// Equipo consultor fijo de LIAX. Aparece siempre en la portada del informe de
+// reunión, independiente de lo que traiga reunion.consultor_nombre/_correo
+// (ese campo se sigue usando para identificar al consultor responsable de la sesión).
+const EQUIPO_CONSULTOR_NOMBRES = 'José Miguel Correa, Ismael Hidalgo, Niurka Alanis';
+const EQUIPO_CONSULTOR_CORREOS = 'jcorrea@estrategica.cl; ihidalgo@estrategica.cl; nalanis@estrategica.cl';
+
 function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='sin_datos'?'Sin datos':(label||est))+'</div>'; }
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
 
@@ -7596,7 +7602,7 @@ async function generarPDFReunion() {
   html+='<div class="cover-title"><div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div></div>';
   html+='<div class="cover-meta">';
   html+='<div class="cm-item"><div class="cm-lbl">Mes(es) evaluado(s)</div><div class="cm-val">'+(mesesLabel||'—')+'</div></div>';
-  html+='<div class="cm-item"><div class="cm-lbl">Consultor</div><div class="cm-val" data-edit="consultor">'+(reunion.consultor_nombre||'—')+'</div><div class="cm-sub'+(reunion.consultor_correo?'':' cm-sub-vacio')+'" data-edit="consultor-correo">'+(reunion.consultor_correo||'—')+'</div></div>';
+  html+='<div class="cm-item" style="flex:1.5"><div class="cm-lbl">Equipo Consultor</div><div class="cm-val">'+EQUIPO_CONSULTOR_NOMBRES+'</div><div class="cm-sub">'+EQUIPO_CONSULTOR_CORREOS+'</div></div>';
   if(_pctGlobalPDF !== null){
     html+='<div class="cm-total"><div class="cmt-lbl">% Logro<br>total</div><div class="cmt-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</div><div class="cmt-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</div></div>';
   }
@@ -7871,9 +7877,12 @@ async function generarPDFReunion() {
     + 'function toggleEdicion(){_editando=!_editando;'
       + 'var tb=document.getElementById("editorToolbar");var be=document.getElementById("btnEditar");'
       + 'var bloques=document.querySelectorAll("[data-edit]");'
-      + 'if(_editando){tb.classList.add("visible");be.classList.add("activo");be.innerHTML="✓ Editando…";document.body.style.paddingTop="52px";'
+      + 'if(_editando){tb.classList.add("visible");be.classList.add("activo");be.innerHTML="✓ Editando…";'
+      + 'var _h=(tb.offsetHeight||52);document.body.style.paddingTop=_h+"px";'
+      + 'document.querySelectorAll(".print-btn,.edit-btn").forEach(function(b){b.style.top=(_h+12)+"px";b.style.zIndex="10000";});'
         + 'bloques.forEach(function(b){b.setAttribute("contenteditable","true");b.classList.add("editando");});}'
       + 'else{tb.classList.remove("visible");be.classList.remove("activo");be.innerHTML="✏️ Editar informe";document.body.style.paddingTop="0";'
+      + 'document.querySelectorAll(".print-btn,.edit-btn").forEach(function(b){b.style.top="";b.style.zIndex="";});'
         + 'bloques.forEach(function(b){b.removeAttribute("contenteditable");b.classList.remove("editando");});}}'
     + 'function _plano(el){var t=el.innerText||el.textContent||"";return t.replace(/\\u00a0/g," ").replace(/\\n{3,}/g,"\\n\\n").trim();}'
     + 'function guardarTextoEditado(){'
@@ -7883,7 +7892,7 @@ async function generarPDFReunion() {
       + 'var cc=document.querySelector("[data-edit=\\\"consultor-correo\\\"]");if(cc){var _cc=_plano(cc);payload.consultorCorreo=(_cc==="—"?"":_cc);}'
       + 'var r=document.querySelector("[data-edit=\\"resumen\\"]");var rr=document.querySelector("[data-edit=\\"resumen-resto\\"]");if(r){var _t=_plano(r);if(rr){_t+="\\n\\n"+_plano(rr);}payload.resumen=_t;}'
       + 'var g=document.querySelector("[data-edit=\\"general\\"]");if(g)payload.general=_plano(g);'
-      + 'document.querySelectorAll("[data-edit=\\"accion\\"]").forEach(function(a){payload.acciones.push({segId:a.getAttribute("data-seg-id"),accionId:a.getAttribute("data-accion-id"),mes:a.getAttribute("data-mes"),texto:_plano(a)});});'
+      + 'document.querySelectorAll("[data-edit=\\"accion\\"]").forEach(function(a){payload.acciones.push({comId:a.getAttribute("data-com-id"),segId:a.getAttribute("data-seg-id"),accionId:a.getAttribute("data-accion-id"),mes:a.getAttribute("data-mes"),texto:_plano(a)});});'
       + 'var btn=document.getElementById("tbSave");btn.disabled=true;btn.textContent="Guardando…";'
       + 'Promise.resolve(window.opener.guardarEdicionInforme(payload)).then(function(ok){btn.disabled=false;btn.textContent="Guardar cambios";if(ok){btn.textContent="✓ Guardado";setTimeout(function(){btn.textContent="Guardar cambios";},1800);}else{alert("Hubo un error al guardar. Revisa la plataforma.");}}).catch(function(){btn.disabled=false;btn.textContent="Guardar cambios";alert("Error al guardar.");});'
     + '}';
@@ -7937,9 +7946,30 @@ async function guardarEdicionInforme(payload){
 
     // 2) Comentario por acción -> tabla seguimiento (mismo campo que "+ Comentario")
     var acciones = payload.acciones || [];
+    var _omitidos = 0;
     for(var k=0; k<acciones.length; k++){
       var a = acciones[k];
       var texto = (a.texto||'').trim();
+      // Entradas de bitácora: se editan con la RPC, que conserva el created_at
+      // original y NO dispara el trigger (si no, cada edición crearía otra entrada).
+      // Los ids con prefijo 'seg_' son entradas de respaldo reconstruidas desde
+      // seguimiento: esas no existen en comentarios_seguimiento y van por el
+      // camino antiguo.
+      var comId = a.comId && a.comId !== '' && a.comId.indexOf('seg_') !== 0 ? a.comId : null;
+      if(comId){
+        if(!texto){ _omitidos++; continue; }
+        var rb = await sb.rpc('editar_comentario_bitacora', {p_id: comId, p_texto: texto});
+        if(rb.error){ showToast('Error al guardar comentario: '+rb.error.message); return false; }
+        var ib = (DB.comentarios||[]).findIndex(function(x){ return x.id===comId; });
+        if(ib>=0) DB.comentarios[ib] = Object.assign({}, DB.comentarios[ib], { texto: texto });
+        var _seg = (DB.seguimiento||[]).find(function(x){ return x.accion_id===a.accionId && x.mes===a.mes; });
+        var _ultima = bitacoraAccion(a.accionId, [a.mes])[0];
+        if(_seg && _ultima && _ultima.id === comId){
+          var iu = (DB.seguimiento||[]).findIndex(function(x){ return x.id===_seg.id; });
+          if(iu>=0) DB.seguimiento[iu] = Object.assign({}, DB.seguimiento[iu], { comentario: texto });
+        }
+        continue;
+      }
       var segId = a.segId && a.segId !== '' ? a.segId : null;
       if(segId){
         var r2 = await sb.from('seguimiento').update({ comentario: texto || null, updated_at:new Date().toISOString() }).eq('id', segId);
@@ -7960,7 +7990,11 @@ async function guardarEdicionInforme(payload){
 
     // Refrescar la vista actual para que "+ Comentario" muestre el texto nuevo
     if(typeof renderCurrentPanel === 'function') renderCurrentPanel();
-    showToast('✓ Cambios del informe guardados');
+    if(_omitidos){
+      showToast('✓ Guardado — '+_omitidos+' comentario(s) quedaron vacíos y no se modificaron. Usa Eliminar en el popup para borrarlos.');
+    } else {
+      showToast('✓ Cambios del informe guardados');
+    }
     return true;
   }catch(e){
     showToast('Error al guardar la edición: '+(e && e.message ? e.message : e));
