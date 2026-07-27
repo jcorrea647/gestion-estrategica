@@ -136,13 +136,17 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .info-field-val.empty{color:var(--muted);font-style:italic}
 .comentario-btn{background:var(--surface2);border:1px dashed var(--border);border-radius:5px;padding:4px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);cursor:pointer;transition:all .15s;max-width:150px;text-align:left}
 .comentario-btn:hover{border-color:var(--accent);background:var(--green-bg)}
-.com-popup{position:fixed;z-index:2001;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);width:378px;height:189px;display:flex;flex-direction:column}
+.com-popup{position:fixed;z-index:2001;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);width:min(900px,92vw);height:min(560px,85vh);display:flex;flex-direction:column}
 .com-popup-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 8px;background:var(--accent2);border-radius:10px 10px 0 0;cursor:move;flex-shrink:0}
 .com-popup-title{font-size:12px;font-weight:600;color:#fff;letter-spacing:.3px}
 .com-popup-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:15px;cursor:pointer;line-height:1;padding:0 2px}
 .com-popup-close:hover{color:#fff}
 .com-popup-body{flex:1;display:flex;flex-direction:column;padding:10px 12px 10px;gap:8px;overflow:hidden}
-.com-popup-textarea{flex:1;resize:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text);outline:none;line-height:1.5}
+.com-popup-textarea{flex:1;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 14px;font-family:'DM Sans',sans-serif;font-size:13.5px;color:var(--text);outline:none;line-height:1.65}
+.com-popup-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.com-popup-pill{display:inline-flex;align-items:center;gap:5px;background:#E8F0FB;color:#1F4E79;font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;letter-spacing:.2px}
+.com-popup-fecha{font-size:11px;color:var(--muted);letter-spacing:.2px}
+.com-popup-warn{flex-shrink:0;background:#FBF7EC;border:1px solid #EBCD7A;border-radius:6px;padding:9px 12px;font-size:12px;line-height:1.5;color:#8A6D1F}
 .com-popup-textarea:focus{border-color:var(--accent)}
 .com-popup-footer{display:flex;justify-content:flex-end;gap:6px;flex-shrink:0}
 .com-save-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
@@ -1772,6 +1776,28 @@ function fmtMes(mes,short=false) {
   const s={'01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic'};
   const [y,mm] = mes.split('-'); return short ? s[mm] : m[mm]+' '+y;
 }
+// FECHA DE REGISTRO DEL COMENTARIO
+// La columna seguimiento.comentario_updated_at la mantiene un trigger en Supabase
+// (seguimiento_comentario_ts): solo avanza cuando cambia el TEXTO del comentario,
+// no cuando se guarda un porcentaje. Las filas anteriores al trigger se poblaron
+// por backfill con updated_at, que es una aproximación: se marcan con "~".
+const COMENTARIO_TS_CUTOFF = Date.parse('2026-07-27T17:30:00Z');
+function fmtFechaComentario(ts, conHora) {
+  if(!ts) return '';
+  const d = new Date(ts);
+  if(isNaN(d.getTime())) return '';
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const dd = String(d.getDate()).padStart(2,'0');
+  const aprox = d.getTime() < COMENTARIO_TS_CUTOFF ? '~' : '';
+  let out = aprox+dd+'-'+meses[d.getMonth()]+'-'+d.getFullYear();
+  if(conHora) out += ' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return out;
+}
+function esFechaComentarioAprox(ts) {
+  if(!ts) return false;
+  const d = new Date(ts);
+  return !isNaN(d.getTime()) && d.getTime() < COMENTARIO_TS_CUTOFF;
+}
 function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='sin_datos'?'Sin datos':(label||est))+'</div>'; }
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
 
@@ -2175,6 +2201,27 @@ function abrirComentario(event, accionId, mes) {
   const seg = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   const ac  = DB.acciones.find(a=>a.id===accionId);
 
+  // Contexto: en qué mes se está escribiendo y cuándo se registró el comentario.
+  // La alerta de desfase aparece si hay una reunión abierta cuyos meses de
+  // evaluación NO incluyen el mes del filtro lateral: es el caso en que se
+  // registra en un mes distinto al que la reunión está evaluando.
+  const _rAbierta = (DB.reuniones||[]).slice().reverse().find(function(r){ return !r.cerrada; }) || null;
+  const _mesesAct = _rAbierta ? (_rAbierta.meses_evaluacion||[]) : [];
+  const _desfase  = _rAbierta && _mesesAct.length && !_mesesAct.includes(mes);
+  const _fechaCom = fmtFechaComentario(seg?.comentario_updated_at, true);
+
+  let _metaHtml = '<div class="com-popup-meta">'+
+    '<span class="com-popup-pill">📅 Registrando en '+fmtMes(mes)+'</span>'+
+    '<span class="com-popup-fecha">'+(_fechaCom
+        ? '✏️ Comentario registrado '+_fechaCom
+        : '✏️ Se registrará con fecha de hoy')+'</span>'+
+  '</div>';
+  if(_desfase) {
+    _metaHtml += '<div class="com-popup-warn">⚠ La reunión activa "'+(_rAbierta.titulo||'')+'" evalúa '+
+      _mesesAct.map(function(m){return fmtMes(m);}).join(', ')+
+      '. Este comentario quedará guardado en '+fmtMes(mes)+'.</div>';
+  }
+
   const popup = document.createElement('div');
   popup.id = 'comPopup';
   popup.className = 'com-popup';
@@ -2186,21 +2233,25 @@ function abrirComentario(event, accionId, mes) {
       '<button class="com-popup-close" onclick="document.getElementById(\'comPopup\').remove()">✕</button>'+
     '</div>'+
     '<div class="com-popup-body">'+
+      _metaHtml+
       '<textarea class="com-popup-textarea" id="comPopupText" placeholder="Escribe tu comentario aquí...">'+(seg?.comentario||'')+'</textarea>'+
       '<div class="com-popup-footer">'+
         '<button class="com-save-btn" onclick="guardarComentarioPopup(\''+accionId+'\',\''+mes+'\')">Guardar</button>'+
       '</div>'+
     '</div>';
 
-  // Posicionar
+  // Posicionar: se mide DESPUÉS de insertar porque el ancho/alto ahora son
+  // responsivos (min(900px,92vw) / min(560px,85vh)) y no se conocen de antemano.
+  document.body.appendChild(popup);
   const rect = event.target.getBoundingClientRect();
+  const pw = popup.offsetWidth, ph = popup.offsetHeight;
+  let left = Math.min(rect.left, window.innerWidth - pw - 12);
+  if(left < 12) left = 12;
   let top = rect.bottom + 6;
-  let left = rect.left;
-  if(left + 378 > window.innerWidth) left = window.innerWidth - 386;
-  if(top + 189 > window.innerHeight) top = rect.top - 197;
+  if(top + ph > window.innerHeight - 12) top = window.innerHeight - ph - 12;
+  if(top < 12) top = 12;
   popup.style.top = top + 'px';
   popup.style.left = left + 'px';
-  document.body.appendChild(popup);
   document.getElementById('comPopupText').focus();
 
   // Arrastrable
@@ -2225,10 +2276,14 @@ async function guardarComentarioPopup(accionId, mes) {
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   if(ex) {
     // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
-    const {error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id);
+    // .select() devuelve la fila ya procesada por el trigger, así que
+    // comentario_updated_at queda actualizado en memoria sin recargar la página.
+    const {data:upd, error} = await sb.from('seguimiento').update({comentario:texto,updated_at:new Date().toISOString()}).eq('id',ex.id).select().single();
     if(error){ showToast('Error: '+error.message); return; }
     const i = DB.seguimiento.findIndex(s=>s.accion_id===accionId&&s.mes===mes);
-    if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario:texto};
+    if(i>=0) DB.seguimiento[i] = upd
+      ? {...DB.seguimiento[i], ...upd}
+      : {...DB.seguimiento[i], comentario:texto, comentario_updated_at:new Date().toISOString()};
   } else {
     // Caso 2: no existe fila → crear con porcentaje:null, pendiente:true
     const nuevoPayload = {
@@ -7463,7 +7518,8 @@ async function generarPDFReunion() {
         html+='<div class="com-card '+est+'">';
         html+='<div class="com-body">';
         html+='<div class="com-acc">'+it.ac.nombre+'</div>';
-        html+='<div class="com-meta">'+it.area.nombre+' • Responsable: '+resps+'</div>';
+        var _fCom = fmtFechaComentario(it.seg.comentario_updated_at, false);
+        html+='<div class="com-meta">'+it.area.nombre+' • Responsable: '+resps+(_fCom?' • ✏️ Registrado '+_fCom:'')+'</div>';
         html+='<div class="com-text" data-edit="accion" data-seg-id="'+(it.seg.id||'')+'" data-accion-id="'+it.ac.id+'" data-mes="'+it.mes+'">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
         // Evidencias adjuntas a esta acción/mes
         var evCard = (DB.evidencias || []).filter(function(e){ return e.accion_id===it.ac.id && e.mes===m; });
@@ -7481,6 +7537,9 @@ async function generarPDFReunion() {
         html+='</div>';
       });
     });
+    if(soloComentarios.some(function(it){ return esFechaComentarioAprox(it.seg.comentario_updated_at); })) {
+      html+='<p style="font-size:9px;color:#8A9B90;font-style:italic;margin-top:10px">Las fechas precedidas por ~ son aproximadas: corresponden a comentarios anteriores al registro automático de fecha.</p>';
+    }
   } else {
     html+='<p style="color:#7A7670;font-style:italic">No se registraron comentarios en las acciones de esta reunión.</p>';
   }
