@@ -147,6 +147,12 @@ h1,h2,h3{font-family:'DM Serif Display',serif;font-weight:400}
 .com-popup-pill{display:inline-flex;align-items:center;gap:5px;background:#E8F0FB;color:#1F4E79;font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;letter-spacing:.2px}
 .com-popup-fecha{font-size:11px;color:var(--muted);letter-spacing:.2px}
 .com-popup-warn{flex-shrink:0;background:#FBF7EC;border:1px solid #EBCD7A;border-radius:6px;padding:9px 12px;font-size:12px;line-height:1.5;color:#8A6D1F}
+.com-popup-bitacora{flex-shrink:0;max-height:190px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:10px 12px;background:var(--bg)}
+.com-popup-bit-tit{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
+.com-popup-bit-item{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--border)}
+.com-popup-bit-item:first-of-type{border-top:none;padding-top:0}
+.com-popup-bit-fecha{flex-shrink:0;width:118px;font-size:10.5px;color:var(--muted);line-height:1.5}
+.com-popup-bit-texto{font-size:12px;line-height:1.55;color:var(--text);white-space:pre-wrap;min-width:0}
 .com-popup-textarea:focus{border-color:var(--accent)}
 .com-popup-footer{display:flex;justify-content:flex-end;gap:6px;flex-shrink:0}
 .com-save-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
@@ -470,7 +476,7 @@ const sb = createClient(
 
 // SESSION & STATE
 let SESSION = {user:null, colegios:[], colegioActivo:null};
-let DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[]};
+let DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[],comentarios:[]};
 let currentPanel='dashboard', filterCargo='', filterMes='';
 let openAreas=new Set(), openObjs=new Set(), charts={};
 
@@ -1378,6 +1384,16 @@ async function loadColegio(colegioId) {
     });
     (reuniones || []).forEach(function(r){ r.reunion_participantes = partsPorReunion[r.id] || []; });
   }
+  // Bitácora de comentarios (tabla comentarios_seguimiento, alimentada por trigger).
+  // Consulta PLANA filtrada por colegio_id: el JOIN anidado es bloqueado por RLS
+  // y devuelve [] sin error, igual que pasa con evidencias y reunion_participantes.
+  let comentariosBitacora = [];
+  {
+    const { data: cbs, error: cbErr } = await sb.from('comentarios_seguimiento')
+      .select('*').eq('colegio_id', colegioId).order('created_at', {ascending:false});
+    if(cbErr) console.warn('[bitacora comentarios] no disponible:', cbErr.message);
+    comentariosBitacora = cbs || [];
+  }
   DB = {
     colegio, cargos:cargos||[],
     responsables:(responsables||[]).map(r=>({...r,cargo:r.cargos?.nombre||''})),
@@ -1385,6 +1401,7 @@ async function loadColegio(colegioId) {
     accion_responsable:ar||[], seguimiento:segs||[],
     reuniones:(reuniones||[]).map(r=>({...r,reunion_participantes:r.reunion_participantes||[]})),
     evidencias: evidencias,
+    comentarios: comentariosBitacora,
     microacciones: [],
     pasos: []
   };
@@ -1543,7 +1560,7 @@ function renderAyuda() {
 }
 
 function volverMulti() {
-  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[]};
+  DB = {colegio:null,cargos:[],responsables:[],areas:[],objetivos:[],acciones:[],accion_responsable:[],seguimiento:[],reuniones:[],evidencias:[],comentarios:[]};
   SESSION.colegioActivo = null;
   renderMultiPanel(); showScreen('screenMulti');
 }
@@ -1797,6 +1814,30 @@ function esFechaComentarioAprox(ts) {
   if(!ts) return false;
   const d = new Date(ts);
   return !isNaN(d.getTime()) && d.getTime() < COMENTARIO_TS_CUTOFF;
+}
+// Entradas de bitácora de una acción, ordenadas de MÁS NUEVA a más antigua.
+// Si `meses` viene, filtra a esos meses. Si la bitácora está vacía (tabla recién
+// creada, o RLS devolviendo [] sin error), cae de vuelta al campo seguimiento.comentario
+// para que el informe nunca quede en blanco.
+function bitacoraAccion(accionId, meses) {
+  const lista = (DB.comentarios || []).filter(function(c){
+    if(c.accion_id !== accionId) return false;
+    return !meses || !meses.length || meses.indexOf(c.mes) >= 0;
+  });
+  if(lista.length) {
+    return lista.slice().sort(function(a,b){
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+  }
+  // Fallback: reconstruir desde seguimiento
+  return (DB.seguimiento || []).filter(function(s){
+    if(s.accion_id !== accionId) return false;
+    if(!(s.comentario||'').trim()) return false;
+    return !meses || !meses.length || meses.indexOf(s.mes) >= 0;
+  }).map(function(s){
+    return {id:'seg_'+s.id, accion_id:s.accion_id, mes:s.mes, texto:s.comentario,
+            created_at: s.comentario_updated_at || s.updated_at, _fallback:true};
+  }).sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
 }
 function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='sin_datos'?'Sin datos':(label||est))+'</div>'; }
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
@@ -2210,6 +2251,21 @@ function abrirComentario(event, accionId, mes) {
   const _desfase  = _rAbierta && _mesesAct.length && !_mesesAct.includes(mes);
   const _fechaCom = fmtFechaComentario(seg?.comentario_updated_at, true);
 
+  // Bitácora de esta acción (todos los meses), más nueva arriba.
+  const _bit = bitacoraAccion(accionId, null);
+  let _bitHtml = '';
+  if(_bit.length) {
+    _bitHtml = '<div class="com-popup-bitacora"><div class="com-popup-bit-tit">Comentarios anteriores</div>';
+    _bit.forEach(function(e){
+      const f = fmtFechaComentario(e.created_at, true) || '—';
+      _bitHtml += '<div class="com-popup-bit-item">'+
+        '<div class="com-popup-bit-fecha">'+f+' · '+fmtMes(e.mes,true)+'</div>'+
+        '<div class="com-popup-bit-texto">'+escapeHtmlPlan(e.texto||'')+'</div>'+
+      '</div>';
+    });
+    _bitHtml += '</div>';
+  }
+
   let _metaHtml = '<div class="com-popup-meta">'+
     '<span class="com-popup-pill">📅 Registrando en '+fmtMes(mes)+'</span>'+
     '<span class="com-popup-fecha">'+(_fechaCom
@@ -2234,7 +2290,8 @@ function abrirComentario(event, accionId, mes) {
     '</div>'+
     '<div class="com-popup-body">'+
       _metaHtml+
-      '<textarea class="com-popup-textarea" id="comPopupText" placeholder="Escribe tu comentario aquí...">'+(seg?.comentario||'')+'</textarea>'+
+      _bitHtml+
+      '<textarea class="com-popup-textarea" id="comPopupText" placeholder="'+(_bit.length?'Escribe un comentario nuevo — los anteriores se conservan arriba...':'Escribe tu comentario aquí...')+'"></textarea>'+
       '<div class="com-popup-footer">'+
         '<button class="com-save-btn" onclick="guardarComentarioPopup(\''+accionId+'\',\''+mes+'\')">Guardar</button>'+
       '</div>'+
@@ -2273,6 +2330,9 @@ function abrirComentario(event, accionId, mes) {
 async function guardarComentarioPopup(accionId, mes) {
   if(!puedeEditarSeguimientoMes(mes)){ showToast('🔒 Bloqueado: no hay reunión abierta para '+fmtMes(mes)); return; }
   const texto = document.getElementById('comPopupText')?.value.trim()||'';
+  // Guarda: el textarea parte vacío porque cada guardado AGREGA una entrada.
+  // Sin esta validación, cerrar con el campo vacío borraría el comentario vigente.
+  if(!texto){ showToast('Escribe un comentario antes de guardar'); return; }
   const ex = DB.seguimiento.find(s=>s.accion_id===accionId&&s.mes===mes);
   if(ex) {
     // Caso 1: ya existe fila de seguimiento → solo actualizar comentario
@@ -2300,6 +2360,15 @@ async function guardarComentarioPopup(accionId, mes) {
     if(data) DB.seguimiento.push(data);
     else DB.seguimiento.push({...nuevoPayload, id:'temp_'+accionId+'_'+mes});
   }
+  // La entrada de bitácora la crea el trigger en la BD, así que hay que releerla
+  // para que el popup y el informe la muestren sin recargar la página.
+  try {
+    const {data:nuevas} = await sb.from('comentarios_seguimiento')
+      .select('*').eq('accion_id', accionId).order('created_at', {ascending:false});
+    if(nuevas){
+      DB.comentarios = (DB.comentarios||[]).filter(function(c){ return c.accion_id !== accionId; }).concat(nuevas);
+    }
+  } catch(e){ console.warn('[bitacora] no se pudo refrescar:', e.message); }
   document.getElementById('comPopup')?.remove();
   renderCurrentPanel();
   showToast('Comentario guardado');
@@ -7369,7 +7438,7 @@ async function generarPDFReunion() {
   /* Cajas comentario pastel */
   '.comentario-box{font-size:11px;background:#F4F8F5;padding:12px 16px;border-radius:12px;margin-top:10px;white-space:pre-wrap;line-height:1.65;color:#3B4A42}'+
   /* Tarjetas de comentario por acción, con color según estado */
-  '.com-card{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:12px;page-break-inside:avoid;box-shadow:0 3px 12px rgba(30,58,47,.06);border-left:5px solid #C9E3CF;display:flex;gap:16px;align-items:flex-start}.com-card.verde{border-left-color:#8FCBA5;background:linear-gradient(90deg,#F1F8F3,#fff 65%)}.com-card.amarillo{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.rojo{border-left-color:#E7A6B4;background:linear-gradient(90deg,#FBF1F3,#fff 65%)}.com-card.pendiente{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.sin_datos{border-left-color:#C9CDC9;background:linear-gradient(90deg,#F5F5F3,#fff 65%)}.com-body{flex:1;min-width:0}.com-acc{font-weight:700;font-size:14px;color:#1E3A2F;line-height:1.3;margin-bottom:5px}.com-meta{font-size:9px;color:#8A9B90;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;line-height:1.5}.com-text{font-size:11.5px;line-height:1.6;color:#3B4A42;white-space:pre-wrap}.com-score{text-align:center;flex-shrink:0;min-width:66px}.com-score-val{font-family:"DM Serif Display",serif;font-size:30px;line-height:1}.com-score .badge{margin-top:6px;font-size:8.5px}'+
+  '.com-card{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:12px;page-break-inside:avoid;box-shadow:0 3px 12px rgba(30,58,47,.06);border-left:5px solid #C9E3CF;display:flex;gap:16px;align-items:flex-start}.com-card.verde{border-left-color:#8FCBA5;background:linear-gradient(90deg,#F1F8F3,#fff 65%)}.com-card.amarillo{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.rojo{border-left-color:#E7A6B4;background:linear-gradient(90deg,#FBF1F3,#fff 65%)}.com-card.pendiente{border-left-color:#EBCD7A;background:linear-gradient(90deg,#FBF7EC,#fff 65%)}.com-card.sin_datos{border-left-color:#C9CDC9;background:linear-gradient(90deg,#F5F5F3,#fff 65%)}.com-body{flex:1;min-width:0}.com-acc{font-weight:700;font-size:14px;color:#1E3A2F;line-height:1.3;margin-bottom:5px}.com-meta{font-size:9px;color:#8A9B90;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;line-height:1.5}.com-text{font-size:11.5px;line-height:1.6;color:#3B4A42;white-space:pre-wrap}.com-score{text-align:center;flex-shrink:0;min-width:66px}.com-score-val{font-family:"DM Serif Display",serif;font-size:30px;line-height:1}.com-score .badge{margin-top:6px;font-size:8.5px}.com-log{margin-top:2px}.com-log-item{display:flex;gap:12px;padding:7px 0;border-top:1px solid #EDEAE2;page-break-inside:avoid}.com-log-item:first-child{border-top:none;padding-top:0}.com-log-fecha{flex-shrink:0;width:78px;font-size:9px;color:#8A9B90;line-height:1.45;letter-spacing:.2px}.com-log-texto{font-size:11.5px;line-height:1.6;color:#3B4A42;white-space:pre-wrap;min-width:0}'+
   /* Participantes como tarjetitas pastel */
   '.participantes-r{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0;text-align:left}.participante-r{font-size:10px;color:#374151;padding:5px 10px;line-height:1.25;background:#F4F8F5;border:1px solid #E7EFE9;border-radius:8px}.participante-r .pr-nombre{font-weight:700;color:#1E3A2F}.participante-r .pr-cargo{color:#7C9686;font-size:9px;font-weight:600;margin-left:5px}.participante-r .pr-correo{display:none}'+
   /* ===== PÁGINA 2: SÍNTESIS ===== */
@@ -7504,40 +7573,55 @@ async function generarPDFReunion() {
 
   // COMENTARIOS DESTACADOS POR ACCIÓN (solo los que tienen comentario) — inicia Hoja 2
   html+='<div class="section hoja-detalle"><div class="section-title">Comentarios Registrados por Acción</div>';
-  if(soloComentarios.length){
-    // Agrupar por mes
-    var porMes = {};
-    soloComentarios.forEach(function(it){ if(!porMes[it.mes]) porMes[it.mes]=[]; porMes[it.mes].push(it); });
-    Object.keys(porMes).sort().forEach(function(m){
-      if(mesesReunion.length > 1) html+='<div class="section-sub" style="margin-top:18px;color:#1E3A2F;font-size:11px">📅 '+fmtMes(m)+'</div>';
-      porMes[m].forEach(function(it){
-        var pct = it.seg.porcentaje;
-        var est = it.seg.pendiente?'pendiente':getEstado(pct);
-        var estLabel = it.seg.pendiente?'Pendiente':(pct>=90?'Completo':pct>=70?'En proceso':'Crítico');
-        var resps = getResps(it.ac.id).map(function(r){return r.nombre;}).join(', ')||'—';
-        html+='<div class="com-card '+est+'">';
-        html+='<div class="com-body">';
-        html+='<div class="com-acc">'+it.ac.nombre+'</div>';
-        var _fCom = fmtFechaComentario(it.seg.comentario_updated_at, false);
-        html+='<div class="com-meta">'+it.area.nombre+' • Responsable: '+resps+(_fCom?' • ✏️ Registrado '+_fCom:'')+'</div>';
-        html+='<div class="com-text" data-edit="accion" data-seg-id="'+(it.seg.id||'')+'" data-accion-id="'+it.ac.id+'" data-mes="'+it.mes+'">'+it.seg.comentario.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
-        // Evidencias adjuntas a esta acción/mes
-        var evCard = (DB.evidencias || []).filter(function(e){ return e.accion_id===it.ac.id && e.mes===m; });
-        if(evCard.length) {
-          html+='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #D8D3C8"><div style="font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#8A9B90;font-weight:600;margin-bottom:5px">📎 Evidencias ('+evCard.length+')</div>';
-          evCard.forEach(function(ev){
-            var safeUrl = (ev.url||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            var safeDesc = ((ev.descripcion||'').trim() || 'Sin descripción').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            html+='<div style="font-size:10px;line-height:1.5;margin-bottom:3px">• <a href="'+safeUrl+'" target="_blank" style="color:#2D5A42;text-decoration:underline">'+safeUrl+'</a> — <span style="color:#666">'+safeDesc+'</span></div>';
-          });
-          html+='</div>';
-        }
-        html+='</div>';
-        html+='<div class="com-score"><div class="com-score-val" style="color:'+(est==='verde'?'#2E7D52':est==='amarillo'||est==='pendiente'?'#B8860B':est==='rojo'?'#C0546A':'#8A9B90')+'">'+(pct!==null&&pct!==undefined?pct+'%':'—')+'</div><span class="badge '+est+'">'+estLabel+'</span></div>';
+  // Agrupar por ACCIÓN (no por mes): cada tarjeta lista sus comentarios fechados,
+  // del más nuevo al más antiguo. El % y el estado corresponden al mes más reciente
+  // con datos dentro de los meses evaluados por la reunión.
+  var porAccion = [];
+  var vistas = {};
+  accionesConSeg.forEach(function(it){
+    if(vistas[it.ac.id]) return;
+    var entradas = bitacoraAccion(it.ac.id, mesesReunion);
+    if(!entradas.length) return;
+    vistas[it.ac.id] = true;
+    var segsAc = accionesConSeg.filter(function(x){ return x.ac.id===it.ac.id && x.seg; })
+                               .sort(function(a,b){ return a.mes < b.mes ? 1 : -1; });
+    porAccion.push({area:it.area, ac:it.ac, seg:(segsAc[0]||{}).seg||null, entradas:entradas});
+  });
+  if(porAccion.length){
+    porAccion.forEach(function(g){
+      var pct = g.seg ? g.seg.porcentaje : null;
+      var est = g.seg && g.seg.pendiente ? 'pendiente' : getEstado(pct);
+      var estLabel = g.seg && g.seg.pendiente ? 'Pendiente' : (pct>=90?'Completo':pct>=70?'En proceso':pct!==null&&pct!==undefined?'Crítico':'Sin datos');
+      var resps = getResps(g.ac.id).map(function(r){return r.nombre;}).join(', ')||'—';
+      html+='<div class="com-card '+est+'">';
+      html+='<div class="com-body">';
+      html+='<div class="com-acc">'+g.ac.nombre+'</div>';
+      html+='<div class="com-meta">'+g.area.nombre+' • Responsable: '+resps+'</div>';
+      html+='<div class="com-log">';
+      g.entradas.forEach(function(e){
+        var f = fmtFechaComentario(e.created_at, false) || '—';
+        html+='<div class="com-log-item">';
+        html+='<div class="com-log-fecha">'+f+'<br><span style="color:#A8B5AC">'+fmtMes(e.mes,true)+'</span></div>';
+        html+='<div class="com-log-texto" data-edit="accion" data-com-id="'+(e.id||'')+'" data-accion-id="'+g.ac.id+'" data-mes="'+e.mes+'">'+(e.texto||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</div>';
         html+='</div>';
       });
+      html+='</div>';
+      // Evidencias de esta acción en los meses de la reunión
+      var evCard = (DB.evidencias || []).filter(function(ev){ return ev.accion_id===g.ac.id && mesesReunion.indexOf(ev.mes)>=0; });
+      if(evCard.length) {
+        html+='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #D8D3C8"><div style="font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#8A9B90;font-weight:600;margin-bottom:5px">📎 Evidencias ('+evCard.length+')</div>';
+        evCard.forEach(function(ev){
+          var safeUrl = (ev.url||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          var safeDesc = ((ev.descripcion||'').trim() || 'Sin descripción').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          html+='<div style="font-size:10px;line-height:1.5;margin-bottom:3px">• <a href="'+safeUrl+'" target="_blank" style="color:#2D5A42;text-decoration:underline">'+safeUrl+'</a> — <span style="color:#666">'+safeDesc+'</span></div>';
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+      html+='<div class="com-score"><div class="com-score-val" style="color:'+(est==='verde'?'#2E7D52':est==='amarillo'||est==='pendiente'?'#B8860B':est==='rojo'?'#C0546A':'#8A9B90')+'">'+(pct!==null&&pct!==undefined?pct+'%':'—')+'</div><span class="badge '+est+'">'+estLabel+'</span></div>';
+      html+='</div>';
     });
-    if(soloComentarios.some(function(it){ return esFechaComentarioAprox(it.seg.comentario_updated_at); })) {
+    if(porAccion.some(function(g){ return g.entradas.some(function(e){ return esFechaComentarioAprox(e.created_at); }); })) {
       html+='<p style="font-size:9px;color:#8A9B90;font-style:italic;margin-top:10px">Las fechas precedidas por ~ son aproximadas: corresponden a comentarios anteriores al registro automático de fecha.</p>';
     }
   } else {
