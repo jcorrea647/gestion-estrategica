@@ -2235,6 +2235,37 @@ function renderSeguimiento() {
   return html;
 }
 
+/* Construye el bloque de "Comentarios anteriores" del popup. Se usa al abrir
+ * y para refrescar en sitio tras editar, eliminar o agregar, sin cerrar el popup. */
+function _bitacoraPopupHtml(accionId, mes) {
+  const bit = bitacoraAccion(accionId, null);
+  if(!bit.length) return '';
+  const puede = canEditSeguimiento(SESSION.user?.rol);
+  let h = '<div class="com-popup-bitacora"><div class="com-popup-bit-tit">Comentarios anteriores</div>';
+  bit.forEach(function(e){
+    const f = fmtFechaComentario(e.created_at, true) || '—';
+    // Las entradas _fallback vienen de seguimiento.comentario, no de la bitácora:
+    // no tienen id propio en comentarios_seguimiento y por eso no son editables.
+    const acc = (puede && !e._fallback)
+      ? '<div class="com-popup-bit-acc">'+
+          '<button type="button" onclick="comEditarEntrada(\''+e.id+'\')">Editar</button>'+
+          '<button type="button" onclick="comEliminarEntrada(\''+e.id+'\',\''+accionId+'\',\''+mes+'\')">Eliminar</button>'+
+        '</div>'
+      : '';
+    h += '<div class="com-popup-bit-item" data-bit-id="'+e.id+'">'+
+      '<div class="com-popup-bit-fecha">'+f+' · '+fmtMes(e.mes,true)+acc+'</div>'+
+      '<div class="com-popup-bit-texto" data-bit-texto="'+e.id+'">'+escapeHtmlPlan(e.texto||'')+'</div>'+
+    '</div>';
+  });
+  return h + '</div>';
+}
+
+/* Refresca en sitio la lista de comentarios del popup abierto. */
+function _refrescarBitacoraUI(accionId, mes) {
+  const wrap = document.getElementById('comPopupBitWrap');
+  if(wrap) wrap.innerHTML = _bitacoraPopupHtml(accionId, mes);
+}
+
 function abrirComentario(event, accionId, mes) {
   _COM_EDIT_ID = null;
   const prev = document.getElementById('comPopup');
@@ -2258,27 +2289,7 @@ function abrirComentario(event, accionId, mes) {
 
   // Bitácora de esta acción (todos los meses), más nueva arriba.
   const _bit = bitacoraAccion(accionId, null);
-  const _puedeEditarBit = canEditSeguimiento(SESSION.user?.rol);
-  let _bitHtml = '';
-  if(_bit.length) {
-    _bitHtml = '<div class="com-popup-bitacora"><div class="com-popup-bit-tit">Comentarios anteriores</div>';
-    _bit.forEach(function(e){
-      const f = fmtFechaComentario(e.created_at, true) || '—';
-      // Las entradas _fallback vienen de seguimiento.comentario, no de la bitácora:
-      // no tienen id propio en comentarios_seguimiento y por eso no son editables.
-      const acciones = (_puedeEditarBit && !e._fallback)
-        ? '<div class="com-popup-bit-acc">'+
-            '<button type="button" onclick="comEditarEntrada(\''+e.id+'\')">Editar</button>'+
-            '<button type="button" onclick="comEliminarEntrada(\''+e.id+'\',\''+accionId+'\',\''+mes+'\')">Eliminar</button>'+
-          '</div>'
-        : '';
-      _bitHtml += '<div class="com-popup-bit-item" data-bit-id="'+e.id+'">'+
-        '<div class="com-popup-bit-fecha">'+f+' · '+fmtMes(e.mes,true)+acciones+'</div>'+
-        '<div class="com-popup-bit-texto" data-bit-texto="'+e.id+'">'+escapeHtmlPlan(e.texto||'')+'</div>'+
-      '</div>';
-    });
-    _bitHtml += '</div>';
-  }
+  const _bitHtml = '<div id="comPopupBitWrap">'+_bitacoraPopupHtml(accionId, mes)+'</div>';
 
   let _metaHtml = '<div class="com-popup-meta">'+
     '<span class="com-popup-pill">📅 Registrando en '+fmtMes(mes)+'</span>'+
@@ -2386,7 +2397,7 @@ async function comEliminarEntrada(entradaId, accionId, mes) {
   if(!data){ showToast('La entrada ya no existe'); }
   await _refrescarBitacora(accionId);
   if(_COM_EDIT_ID === entradaId) comCancelarEdicion();
-  document.getElementById('comPopup')?.remove();
+  _refrescarBitacoraUI(accionId, mes);
   renderCurrentPanel();
   showToast('Entrada eliminada');
 }
@@ -2422,7 +2433,8 @@ async function guardarComentarioPopup(accionId, mes) {
       if(i>=0) DB.seguimiento[i] = {...DB.seguimiento[i], comentario: texto};
     }
     _COM_EDIT_ID = null;
-    document.getElementById('comPopup')?.remove();
+    comCancelarEdicion();
+    _refrescarBitacoraUI(accionId, mes);
     renderCurrentPanel();
     showToast('Comentario actualizado');
     return;
@@ -2464,7 +2476,9 @@ async function guardarComentarioPopup(accionId, mes) {
       DB.comentarios = (DB.comentarios||[]).filter(function(c){ return c.accion_id !== accionId; }).concat(nuevas);
     }
   } catch(e){ console.warn('[bitacora] no se pudo refrescar:', e.message); }
-  document.getElementById('comPopup')?.remove();
+  const _ta = document.getElementById('comPopupText');
+  if(_ta){ _ta.value = ''; _ta.focus(); }
+  _refrescarBitacoraUI(accionId, mes);
   renderCurrentPanel();
   showToast('Comentario guardado');
 }
