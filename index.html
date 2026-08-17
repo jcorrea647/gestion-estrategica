@@ -1843,11 +1843,9 @@ function bitacoraAccion(accionId, meses) {
             created_at: s.comentario_updated_at || s.updated_at, _fallback:true};
   }).sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
 }
-// Equipo consultor fijo de LIAX. Aparece siempre en la portada del informe de
-// reunión, independiente de lo que traiga reunion.consultor_nombre/_correo
-// (ese campo se sigue usando para identificar al consultor responsable de la sesión).
-const EQUIPO_CONSULTOR_NOMBRES = 'José Miguel Correa, Ismael Hidalgo, Niurka Alanis';
-const EQUIPO_CONSULTOR_CORREOS = 'jcorrea@estrategica.cl; ihidalgo@estrategica.cl; nalanis@estrategica.cl';
+// El consultor del informe se toma SIEMPRE de la reunión en la base de datos
+// (reuniones.consultor_nombre / consultor_correo). Regla vigente: un solo
+// consultor por liceo. Ya no existe un equipo consultor fijo en el código.
 
 function semHtml(est,label) { return '<div class="semaforo '+est+'">'+(est==='sin_datos'?'Sin datos':(label||est))+'</div>'; }
 function acDesc(ac) { return ac.descripcion ? '<div class="accion-desc">'+ac.descripcion+'</div>' : ''; }
@@ -7602,7 +7600,9 @@ async function generarPDFReunion() {
   html+='<div class="cover-title"><div class="colegio-r">'+DB.colegio.nombre+'</div><div class="rtitulo">'+reunion.titulo+'</div></div>';
   html+='<div class="cover-meta">';
   html+='<div class="cm-item"><div class="cm-lbl">Mes(es) evaluado(s)</div><div class="cm-val">'+(mesesLabel||'—')+'</div></div>';
-  html+='<div class="cm-item" style="flex:1.5"><div class="cm-lbl">Equipo Consultor</div><div class="cm-val">'+EQUIPO_CONSULTOR_NOMBRES+'</div><div class="cm-sub">'+EQUIPO_CONSULTOR_CORREOS+'</div></div>';
+  var _consNomPDF = (reunion.consultor_nombre||'').trim() || '—';
+  var _consCorPDF = (reunion.consultor_correo||'').trim() || '—';
+  html+='<div class="cm-item" style="flex:1.5"><div class="cm-lbl">Consultor</div><div class="cm-val" data-edit="consultor">'+_consNomPDF+'</div><div class="cm-sub" data-edit="consultor-correo">'+_consCorPDF+'</div></div>';
   if(_pctGlobalPDF !== null){
     html+='<div class="cm-total"><div class="cmt-lbl">% Logro<br>total</div><div class="cmt-val" style="color:'+_nivelColorPDF+'">'+_pctGlobalPDF+'%</div><div class="cmt-lvl" style="color:'+_nivelColorPDF+'">'+_nivelLabelPDF+'</div></div>';
   }
