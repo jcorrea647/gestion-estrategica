@@ -7540,6 +7540,13 @@ async function generarPDFReunion() {
   /* Meta como chips pastel */
   '.cover .meta-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.cover .meta-item{font-size:11px;color:#4B5563;background:#F3F4F6;border-radius:10px;padding:6px 14px}.cover .meta-item strong{color:#1E3A2F;font-weight:600}'+
   /* Secciones */
+  /* ===== Selector de inclusión en PDF por comentario individual ===== */
+  '.log-chk{width:13px;height:13px;flex:0 0 auto;align-self:flex-start;margin:3px 0 0;cursor:pointer;accent-color:#2D5A42}'+
+  '.log-tag{display:none;font-size:7.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#C0546A;background:#FBE7EC;border-radius:999px;padding:2px 7px;margin-top:5px}'+
+  '.com-log-item.excluida .log-tag{display:inline-block}'+
+  '.com-log-item.excluida .com-log-texto{opacity:.42;text-decoration:line-through}'+
+  '.com-log-item.excluida .com-log-fecha{opacity:.55}'+
+  '@media print{.com-log-item.excluida{display:none !important}.log-chk,.log-tag{display:none !important}}'+
   /* ===== Tarjetas de comentario plegables + selector de inclusión en PDF ===== */
   '.card-head{display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;border-radius:10px;padding:3px 5px;margin:-3px -5px;transition:background .15s}'+
   '.card-head:hover{background:rgba(124,150,134,.10)}'+
@@ -7953,7 +7960,7 @@ async function generarPDFReunion() {
         + 'head.addEventListener("click",function(e){if(e.target===chk)return;sec.classList.toggle("abierta");});'
         + 'chk.addEventListener("change",function(){sec.classList.toggle("excluida",!chk.checked);});'
       + '});'
-      + '_cardInit();'
+      + '_cardInit();_logInit();'
       + 'var tb=document.createElement("div");tb.className="sec-toolbar no-print";'
       + 'tb.innerHTML="<span class=\\"st-lbl\\">Secciones</span>"'
         + '+"<button type=\\"button\\" onclick=\\"_secAbrir(true)\\">Abrir todas</button>"'
@@ -7963,6 +7970,16 @@ async function generarPDFReunion() {
         + '+"<button type=\\"button\\" onclick=\\"_secPdf(false)\\">Ninguna</button>";'
       + 'document.body.appendChild(tb);'
     + '}'
+    + 'function _logInit(){Array.prototype.forEach.call(document.querySelectorAll(".com-log-item"),function(it){'
+      + 'if(it.querySelector(".log-chk"))return;'
+      + 'var chk=document.createElement("input");chk.type="checkbox";chk.className="log-chk";chk.checked=true;'
+      + 'chk.title="Incluir este comentario en el PDF";'
+      + 'var f=it.querySelector(".com-log-fecha");'
+      + 'if(f){var tg=document.createElement("span");tg.className="log-tag";tg.textContent="No va al PDF";f.appendChild(tg);}'
+      + 'it.insertBefore(chk,it.firstChild);'
+      + 'chk.addEventListener("click",function(e){e.stopPropagation();});'
+      + 'chk.addEventListener("change",function(){it.classList.toggle("excluida",!chk.checked);});'
+    + '});}'
     + 'function _cardInit(){Array.prototype.forEach.call(document.querySelectorAll(".com-card"),function(card){'
       + 'var b=card.querySelector(".com-body");if(!b)return;'
       + 'var acc=b.querySelector(".com-acc");if(!acc)return;'
@@ -7984,7 +8001,7 @@ async function generarPDFReunion() {
       + 'chk.addEventListener("change",function(){card.classList.toggle("excluida",!chk.checked);});'
     + '});}'
     + 'function _secAbrir(v){Array.prototype.forEach.call(document.querySelectorAll(".page .section,.com-card"),function(s){if(s.querySelector(".sec-head")||s.querySelector(".card-head"))s.classList.toggle("abierta",v);});}'
-    + 'function _secPdf(v){Array.prototype.forEach.call(document.querySelectorAll(".sec-chk,.card-chk"),function(c){c.checked=v;c.dispatchEvent(new Event("change"));});}'
+    + 'function _secPdf(v){Array.prototype.forEach.call(document.querySelectorAll(".sec-chk,.card-chk,.log-chk"),function(c){c.checked=v;c.dispatchEvent(new Event("change"));});}'
     + 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",_secInit);}else{_secInit();}';
 
   html+='<script>'+_scriptEdit+';'+_scriptSecc+'<\/script>';
