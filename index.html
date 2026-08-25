@@ -7540,6 +7540,25 @@ async function generarPDFReunion() {
   /* Meta como chips pastel */
   '.cover .meta-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.cover .meta-item{font-size:11px;color:#4B5563;background:#F3F4F6;border-radius:10px;padding:6px 14px}.cover .meta-item strong{color:#1E3A2F;font-weight:600}'+
   /* Secciones */
+  /* ===== Secciones plegables + selector de inclusión en PDF ===== */
+  '.sec-head{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;margin-bottom:16px;padding:6px 10px 6px 6px;border-radius:12px;transition:background .15s}'+
+  '.sec-head:hover{background:#F1F6F2}'+
+  '.sec-head .section-title{margin-bottom:0;flex:1;min-width:0}'+
+  '.sec-chk{width:17px;height:17px;flex:0 0 auto;margin:0;cursor:pointer;accent-color:#2D5A42}'+
+  '.sec-caret{flex:0 0 auto;font-size:12px;color:#7C9686;transition:transform .18s;padding:0 4px}'+
+  '.section.abierta > .sec-head .sec-caret{transform:rotate(90deg)}'+
+  '.sec-tag{flex:0 0 auto;display:none;font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#C0546A;background:#FBE7EC;border-radius:999px;padding:3px 10px}'+
+  '.section.excluida > .sec-head .sec-tag{display:inline-block}'+
+  '.section.excluida > .sec-head .section-title{opacity:.42;text-decoration:line-through}'+
+  '.section.excluida > .sec-body{opacity:.42}'+
+  '.sec-body{display:none}'+
+  '.section.abierta > .sec-body{display:block}'+
+  '.sec-toolbar{position:fixed;left:20px;bottom:20px;z-index:9999;display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #E1E8E3;border-radius:999px;padding:7px 10px;box-shadow:0 6px 20px rgba(30,58,47,.16);font-family:"DM Sans",sans-serif}'+
+  '.sec-toolbar .st-lbl{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#8A9B90;padding:0 4px}'+
+  '.sec-toolbar .st-sep{width:1px;height:18px;background:#E1E8E3}'+
+  '.sec-toolbar button{background:#F4F8F5;border:1px solid #E1E8E3;color:#2D5A42;border-radius:999px;padding:5px 12px;font-family:"DM Sans",sans-serif;font-size:11px;font-weight:600;cursor:pointer}'+
+  '.sec-toolbar button:hover{background:#E3F3EA;border-color:#C9E3CF}'+
+  '@media print{.sec-body{display:block !important;opacity:1 !important}.section.excluida{display:none !important}.sec-chk,.sec-caret,.sec-tag,.sec-toolbar{display:none !important}.sec-head{background:none !important;padding:0 !important;margin-bottom:16px;cursor:auto}}'+
   '.section{margin-bottom:30px}.section-title{font-family:"DM Serif Display",serif;font-size:21px;color:#1E3A2F;margin-bottom:16px;display:flex;align-items:center;gap:11px}.section-title:before{content:"";width:5px;height:22px;background:linear-gradient(#7C9686,#C49A2C);border-radius:3px;display:inline-block}.section-sub{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#8A9B90;margin-bottom:8px}'+
   /* Tarjeta contenedora suave */
   '.section-card{background:#fff;border:1px solid #ECEEE9;border-radius:16px;padding:20px 22px;box-shadow:0 3px 14px rgba(30,58,47,.05)}'+
@@ -7896,7 +7915,42 @@ async function generarPDFReunion() {
       + 'var btn=document.getElementById("tbSave");btn.disabled=true;btn.textContent="Guardando…";'
       + 'Promise.resolve(window.opener.guardarEdicionInforme(payload)).then(function(ok){btn.disabled=false;btn.textContent="Guardar cambios";if(ok){btn.textContent="✓ Guardado";setTimeout(function(){btn.textContent="Guardar cambios";},1800);}else{alert("Hubo un error al guardar. Revisa la plataforma.");}}).catch(function(){btn.disabled=false;btn.textContent="Guardar cambios";alert("Error al guardar.");});'
     + '}';
-  html+='<script>'+_scriptEdit+'<\/script>';
+
+  // ===== Secciones plegables + selector de inclusion en el PDF =====
+  var _scriptSecc = ''
+    + 'function _secTitulo(sec){var ch=sec.children;for(var i=0;i<ch.length;i++){var c=ch[i];if(c.classList&&c.classList.contains("section-title"))return c;}return null;}'
+    + 'function _secInit(){'
+      + 'var secs=document.querySelectorAll(".page .section");'
+      + 'Array.prototype.forEach.call(secs,function(sec){'
+        + 'var t=_secTitulo(sec);if(!t)return;'
+        + 'var body=document.createElement("div");body.className="sec-body";'
+        + 'var n=t.nextSibling,tmp=[];while(n){tmp.push(n);n=n.nextSibling;}'
+        + 'tmp.forEach(function(x){body.appendChild(x);});'
+        + 'var head=document.createElement("div");head.className="sec-head";'
+        + 'var chk=document.createElement("input");chk.type="checkbox";chk.className="sec-chk";chk.checked=true;'
+        + 'chk.title="Incluir esta seccion en el PDF";'
+        + 'var tag=document.createElement("span");tag.className="sec-tag";tag.textContent="No va al PDF";'
+        + 'var car=document.createElement("span");car.className="sec-caret";car.innerHTML="&#9654;";'
+        + 'head.title="Clic para abrir o cerrar esta seccion";'
+        + 'head.appendChild(chk);head.appendChild(t);head.appendChild(tag);head.appendChild(car);'
+        + 'sec.appendChild(head);sec.appendChild(body);'
+        + 'head.addEventListener("click",function(e){if(e.target===chk)return;sec.classList.toggle("abierta");});'
+        + 'chk.addEventListener("change",function(){sec.classList.toggle("excluida",!chk.checked);});'
+      + '});'
+      + 'var tb=document.createElement("div");tb.className="sec-toolbar no-print";'
+      + 'tb.innerHTML="<span class=\\"st-lbl\\">Secciones</span>"'
+        + '+"<button type=\\"button\\" onclick=\\"_secAbrir(true)\\">Abrir todas</button>"'
+        + '+"<button type=\\"button\\" onclick=\\"_secAbrir(false)\\">Cerrar todas</button>"'
+        + '+"<span class=\\"st-sep\\"></span><span class=\\"st-lbl\\">Al PDF</span>"'
+        + '+"<button type=\\"button\\" onclick=\\"_secPdf(true)\\">Todas</button>"'
+        + '+"<button type=\\"button\\" onclick=\\"_secPdf(false)\\">Ninguna</button>";'
+      + 'document.body.appendChild(tb);'
+    + '}'
+    + 'function _secAbrir(v){Array.prototype.forEach.call(document.querySelectorAll(".page .section"),function(s){if(s.querySelector(".sec-head"))s.classList.toggle("abierta",v);});}'
+    + 'function _secPdf(v){Array.prototype.forEach.call(document.querySelectorAll(".sec-chk"),function(c){c.checked=v;c.dispatchEvent(new Event("change"));});}'
+    + 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",_secInit);}else{_secInit();}';
+
+  html+='<script>'+_scriptEdit+';'+_scriptSecc+'<\/script>';
 
   html+='</div></body></html>';
   W.document.open();          // limpia la pantalla de carga
