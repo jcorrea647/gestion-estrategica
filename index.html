@@ -7733,16 +7733,21 @@ async function generarPDFReunion() {
   // Agrupar por ACCIÓN (no por mes): cada tarjeta lista sus comentarios fechados,
   // del más nuevo al más antiguo. El % y el estado corresponden al mes más reciente
   // con datos dentro de los meses evaluados por la reunión.
+  // La bitácora del informe NO se filtra por los meses de la reunión: se muestran
+  // TODOS los comentarios registrados en el colegio, con la fecha en que fueron
+  // creados. El mes/título elegido para la reunión no altera lo que se lista aquí.
   var porAccion = [];
-  var vistas = {};
-  accionesConSeg.forEach(function(it){
-    if(vistas[it.ac.id]) return;
-    var entradas = bitacoraAccion(it.ac.id, mesesReunion);
-    if(!entradas.length) return;
-    vistas[it.ac.id] = true;
-    var segsAc = accionesConSeg.filter(function(x){ return x.ac.id===it.ac.id && x.seg; })
-                               .sort(function(a,b){ return a.mes < b.mes ? 1 : -1; });
-    porAccion.push({area:it.area, ac:it.ac, seg:(segsAc[0]||{}).seg||null, entradas:entradas});
+  DB.areas.forEach(function(area){
+    DB.objetivos.filter(function(o){ return o.area_id===area.id; }).forEach(function(obj){
+      DB.acciones.filter(function(a){ return a.objetivo_id===obj.id; }).forEach(function(ac){
+        var entradas = bitacoraAccion(ac.id, null);   // null = todos los meses
+        if(!entradas.length) return;
+        // % y estado: el seguimiento más reciente que tenga la acción (cualquier mes)
+        var segsAc = (DB.seguimiento||[]).filter(function(s){ return s.accion_id===ac.id; })
+                                         .sort(function(a,b){ return a.mes < b.mes ? 1 : -1; });
+        porAccion.push({area:area, ac:ac, seg:segsAc[0]||null, entradas:entradas});
+      });
+    });
   });
   if(porAccion.length){
     porAccion.forEach(function(g){
